@@ -1,0 +1,3912 @@
+#!/usr/bin/perl
+
+=head1 NAME
+
+alti+server - Altitude server designed to support extended game types
+
+=cut
+
+use strict;
+
+use POSIX;
+use IO::Handle;
+use List::Util;
+
+my($INSTALL_ROOT)="$ENV{'HOME'}/altitude";
+
+my($MAPDIR)='';                         #Directory under $INSTALL_ROOT/maps
+		                              #to store maps.  (e.g. "download")
+my(%OPTIONS)=(
+	updateMapList	=> 1,               #Let alti+server change the mapList
+	dlSizeLimit	=> 10485760,        #Max allowed download size
+	boxColor		=> 'blue',          #Curses color palet:
+	chatFromColor	=> 'cyan',          # black, blue, cyan, green,
+	chatToColor	=> 'yellow',        # magenta, red, white, yellow
+	uiPrettyBoxes	=> 0,               #Use '|', '-' or of ACS/Unicode
+	requireLevel	=> 1,               #Require level 21 for Ace0, & 8 for 1-10
+	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
+	bullyKick		=> 1,               #Kick repeated aggressive language
+	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
+);
+
+my(@MOTD)=(
+	'Welcome to MapQA, the place to QA check new maps',
+	'See http://mapqa.glaciated.org for server manual',
+);
+
+=head1 DESCRIPTION
+
+The B<alti+server> server script is a perl wrapper around the Altitude
+game server engine.  Altitude provides facilities for server hosting
+integration for providing custom features and extensions.  
+
+B<alti+server> has one major limitation which is integral to it's design,
+and so will not be fixed.  It is designed to run only one server at a time.
+An Altitude game server is capable of running multiple engines simultaneously
+with a single set of log and command files.  This allows for a more efficient
+use of resources, as one java process can run each engine.  If you try to
+run multiple simultaneous game engines, B<alti+server> will fail
+misserably, don't bother trying.
+
+Beyond adding extra commands for users and map makers, B<alti+server> also
+makes management of the server easier.  For example, console errors are
+caught, and result in a server restart, allowing the server to maintain a
+higher uptime.  Also, B<alti+server> creates a multi-paned curses interface
+which allows management of the server to be easier.
+
+=cut
+
+my($FATAL_SERVER_ERRORS)=join('|',
+	'java.lang.RuntimeException',
+	'ERROR : serverLoop disrupted',
+);
+
+{	package utils;
+
+	my($Geoip)=grep(-x $_, (
+			'/bin/geoiplookup',
+			'/usr/bin/geoiplookup',
+			'/sbin/geoiplookup',
+			'/usr/sbin/geoiplookup',
+			'/usr/local/bin/geoiplookup',
+			'/opt/bin/geoiplookup',
+			"$ENV{'HOME'}/bin/geoiplookup",
+		));
+
+	sub minmax {
+		my($pair);
+		
+		return(undef, undef) unless(@_);
+
+		List::Util::reduce {
+			$pair=(ref($a) eq 'ARRAY')?$a:[$a, $a];
+			$pair->[0]=$b if($pair->[0]>$b);
+			$pair->[1]=$b if($pair->[1]<$b);
+
+			return($pair);
+		} @_;
+
+		return(@$pair);
+	}
+
+	sub invert {
+		my($hash)=@_;
+		my($inverted)={};
+
+		if($hash) {
+			foreach my $key (keys(%$hash)) {
+				push(@{$inverted->{$hash->{$key}}}, $key);
+			}
+		}
+
+		return($inverted);
+	}
+
+	sub geoip {
+		my($ip)=@_;
+		my($lookup)=IO::Handle->new;
+		my($country)=undef;
+
+		if($Geoip) {
+			$ip=~s/:.*$//;
+
+			open($lookup, '-|', $Geoip, $ip);
+			while(<$lookup>) {
+				$country=$1 if(m/,\s+(.*?)\s*$/);
+			}
+			close($lookup);
+		}
+
+		return($country);
+	}
+}
+
+=head2 Interface
+
+There are three panes to the B<alti+server> interface:
+
+=over 8
+
+=item top
+
+The top pane contains output from the Altitude server engine and additional
+logs from B<alti+server> itself.  This data should scroll in such a way
+that the scroll-back buffer on your terminal emulator.  Interestingly,
+xterm and urxvt tend to hold only this buffer in their scrollback, whereas
+screen tends to hold scrolled data from the middle pane also.  This pane
+is used to keep track of what is going on with the server.
+
+=item middle
+
+The middle pane is a boxed window.  Inside of it are all chat and
+serverMessage entries on the game.  Messages start with the originating user,
+then a code for the destination, then the message itself.  The codes are as
+such: (*) all user chat, (<) left team chat, (>) right team chat,
+(?) spectator team chat, and the nickname of the receipient for direct
+communication.
+
+=item bottom
+
+The bottom pane is a small one line box.  It works much the same as the
+in-game all-chat box.  Text typed into it will appear as a server message
+to players.  If the text starts with a slash (/) character, then it is
+assumed to be a server command.  Server commands have a limited tab
+completion.
+
+=back
+
+If your terminal supports color, colors will be used to make certain aspects
+stand out or fade away.  Specifically, the boxes around windows are dark
+blue, Nicks (in chat window) are cyan, and destination specifier (in chat
+window) is dark yellow/amber.
+
+=cut
+
+delete($ENV{'LINES'});
+delete($ENV{'COLUMNS'});
+
+{	package ui;
+
+	use Curses;
+
+	initscr();
+
+	my($Outfile)	="$INSTALL_ROOT/servers/stdout.txt";
+	my($Outfile_o)	="$INSTALL_ROOT/servers/stdout_old.txt";
+	my($Chatfile)	="$INSTALL_ROOT/servers/chat.txt";
+	my($Chatfile_o)="$INSTALL_ROOT/servers/chat_old.txt";
+
+	my($Rows, $Cols); getmaxyx($Rows, $Cols);
+	my($Sline, $Iline)=($Rows/2-1, $Rows-3);
+	my($Iputw)=$Cols-6;
+
+	my($Swin)=newwin($Sline,   $Cols,   0,        0 );
+	my($Cwin)=newwin($Sline-1, $Cols-2, $Sline,   1 );
+	my($Iwin)=newwin(3,        $Cols-4, $Iline,   2 );
+	my($Chat)=newwin($Sline-3, $Cols-4, $Sline+1, 2 );
+	my($Iput)=newwin(1,        $Iputw,  $Iline+1, 3 );
+	
+	sub setup_screen {
+		my($default)=-1;
+
+		start_color();
+		use_default_colors();
+		if(has_colors()) {
+			init_pair(1, eval(config::option('boxColor')),  $default);
+			init_pair(2, eval(config::option('chatFromColor')), $default);
+			init_pair(3, eval(config::option('chatToColor')),   $default);
+		} else {
+			init_pair(1, $default, $default);
+			init_pair(2, $default, $default);
+			init_pair(3, $default, $default);
+		}
+
+		stdscr->clear();
+		stdscr->refresh();
+
+		$Swin->scrollok(1);
+		$Chat->scrollok(1);
+
+		$Swin->redrawwin();
+		$Cwin->redrawwin();
+		$Chat->redrawwin();
+		$Iwin->redrawwin();
+		$Iput->redrawwin();
+
+		$Cwin->attron(COLOR_PAIR(1));
+		$Iwin->attron(COLOR_PAIR(1));
+		if(config::option('uiPrettyBoxes')) {
+			$Cwin->box(0, 0);
+			$Iwin->box(0, 0);
+		} else {
+			$Cwin->border('|', '|', '-', '-', ' ', ' ', ' ', ' ');
+			$Iwin->border('|', '|', '-', '-', ' ', ' ', ' ', ' ');
+		}
+		$Cwin->attroff(COLOR_PAIR(1));
+		$Iwin->attroff(COLOR_PAIR(1));
+
+		curs_set(0);
+		$Swin->leaveok(1);
+		$Cwin->leaveok(1);
+
+		noecho();
+		cbreak();
+		keypad(1);
+
+		$Swin->refresh();
+		$Cwin->refresh();
+		$Chat->refresh();
+		$Iwin->refresh();
+		$Iput->refresh();
+	}
+
+	sub slog {
+		my($slog)=IO::Handle->new;
+		my($entry)=join(' ', @_);
+
+		chomp($entry);
+
+		next unless($entry);
+
+		rename($Outfile, $Outfile_o) if(-s $Outfile > 1048576);
+
+		open($slog, '>>', $Outfile);
+		print $slog $entry, "\n";
+		close($slog);
+
+		$Swin->scrl(1);
+		$Swin->addstr($Sline-1, 0, $entry);
+		$Swin->refresh();
+	}
+
+	sub display {
+		my($pre, $type, $text)=@_;
+		my($offset1)=length($pre)+1;
+		my($offset2)=length($type)+$offset1+1;
+
+		$Chat->scrl(1);
+		if($pre) {
+			$Chat->attron(COLOR_PAIR(2));
+			$Chat->addstr($Sline-4, 0, $pre);
+			$Chat->attroff(COLOR_PAIR(2));
+
+			$Chat->attron(COLOR_PAIR(3));
+			$Chat->addstr($Sline-4, $offset1, $type);
+			$Chat->attroff(COLOR_PAIR(3));
+
+			$Chat->addstr($Sline-4, $offset2, $text);
+		} else {
+			$Chat->addstr($Sline-4, 0, $text);
+		}
+		$Chat->refresh();
+	}
+
+	sub chat_log {
+		my($type, $nick, $msg)=@_;
+		my($clog)=IO::Handle->new;
+		my($time)=POSIX::strftime("%Y%m%dT%H%M%S", localtime(time()));
+
+		rename($Chatfile, $Chatfile_o) if(-s $Chatfile > 1048576);
+
+		open($clog, '>>', $Chatfile);
+		printf($clog "[%s:%-16s:%s] %s\n", $time, $nick, $type, $msg);
+		close($clog);
+
+		&display($nick, $type, $msg);
+	}
+
+	sub update_input {
+		my($msg)=@_;
+
+		$Iput->addstr(0, 0, sprintf("%-${Iputw}s", substr($msg, -$Iputw)));
+		$Iput->refresh();
+		$Iput->attroff(A_REVERSE());
+	}
+
+	sub flash {
+		$Iput->attron(A_REVERSE());
+	}
+
+	sub shutdown {
+		stdscr->move($Rows, $Cols);
+		endwin;
+		print "\n";
+	}
+
+	sub keypress {
+		my($input)=getch();
+		my($ord)=ord($input);
+		
+		if($input == KEY_RESIZE) {
+			&slog('resize'); #Not working
+			return();
+		} elsif($input eq "\014") {
+			&setup_screen;
+			return();
+		} elsif($input == KEY_UP) {
+			return('up');
+		} elsif($input == KEY_DOWN) {
+			return('down');
+		} elsif($input == KEY_LEFT) {
+			return('left');
+		} elsif($input == KEY_RIGHT) {
+			return('right');
+		} elsif($input == KEY_BACKSPACE || $ord==127) {
+			return('bs');
+		} elsif($input eq "\025") {
+			return('clear');
+		} elsif($input eq "\t") {
+			return('tab');
+		} elsif($input eq "\n") {
+			return('enter');
+		} else {
+			return($input);
+		}
+	}
+}
+
+=head2 Input and Interaction
+
+Standard keyboard input is availble in the bottom window of the B<alti+server>
+interface.  Lines which start with a slash (/) character are assumed to be
+commands, and are interpeted as such.  Commands allow for tab expansion.
+Commands which require a map as an argument also allow for the expansion of
+the map name.  Additionally, a history buffer of the last 50 commands is saved
+for easy retrieval;  use the up and down arrow keys to access the history
+list.
+
+=cut
+
+{	package input;
+
+	my(@Hist)=();
+	my(@Clist)=();
+
+	my($Hindex)=-1;
+	my($Eindex)=0;
+
+	my($Input);
+
+	sub hist_up {
+		$Hindex++ if($Hindex<$#Hist);
+		return($Hist[$Hindex]);
+	}
+
+	sub hist_down {
+		if($Hindex>0) {
+			$Hindex--;
+			return($Hist[$Hindex]);
+		} else {
+			$Hindex=-1;
+			return('');
+		}
+	}
+
+	sub hist_push {
+		my($line)=@_;
+		unshift(@Hist, '/'.$line);
+		pop(@Hist) if(@Hist>50);
+		$Hindex=-1;
+	}
+
+	sub common_prefix {
+		my($len, $prefix, $newtry);
+
+		List::Util::reduce {
+			$len=List::Util::min(length($a), length($b));
+			$prefix=substr($a, 0, $len);
+			$newtry=substr($b, 0, $len);
+
+			while($prefix ne $newtry) {
+				chop($prefix);
+				chop($newtry);
+			}
+
+			return($prefix);
+		} @_;
+	}
+
+	sub expand_clear {
+		my($entry)=@Clist[0];
+		@Clist=();
+		return($entry);
+	}
+
+	sub expand_args {
+		my(@cmd)=@_;
+		my(@args)=config::arguments($cmd[0]);
+		my($arg)=$#cmd-1;
+		my($str)=pop(@cmd);
+		my($prefix);
+		local($_);
+
+		return('/'.join(' ', @cmd, $str)) unless(@args);
+
+		if(@Clist==1) {
+			ui::flash();
+			return('/'.join(' ', @cmd, &expand_clear));
+		} elsif(@Clist) {
+			$Eindex=($Eindex+1)%@Clist;
+			return('/'.join(' ', @cmd, $Clist[$Eindex]));
+		} else {
+			$str=~s/^"//;
+			if(ref($args[$arg]) eq 'ARRAY') {
+				@Clist=grep(m|^$str|i, @{$args[$arg]});
+			} elsif($args[$arg] eq 'map') {
+				@Clist=grep(m|^$str|i, config::maps());
+			} elsif($args[$arg] eq 'player') {
+				@Clist=grep(m|^$str|i, player::values('nickname'));
+			} elsif($args[$arg] eq 'vaporId') {
+				@Clist=grep(m|^$str|i, player::values('vaporId'));
+			} else {
+				return('/'.join(' ', @cmd, $str).'  ');
+			}
+
+			$Eindex=0;
+			$prefix=&common_prefix(@Clist);
+
+			foreach(@Clist) {
+				if(m/\s/) {
+					s/^/"/;
+					s/$/"/;
+				}
+			}
+
+			if(!@Clist) {
+				ui::flash();
+				return('/'.join(' ', @cmd, $str));
+			} elsif($str ne $prefix) {
+				@Clist=();
+				$prefix=~s/^/"/ if($prefix=~m/\s/);
+				return('/'.join(' ', @cmd, $prefix));
+			} else {
+				ui::slog('Choices:', @Clist) if(@Clist>1);
+				return('/'.join(' ', @cmd, $Clist[0]));
+			}
+		}
+	}
+
+	sub expand_command {
+		my($str)=@_;
+		my($prefix);
+
+		if(@Clist==1) {
+			ui::flash();
+			return('/'.&expand_clear);
+		} elsif(@Clist) {
+			$Eindex=($Eindex+1)%@Clist;
+			return('/'.$Clist[$Eindex]);
+		} else {
+			@Clist=config::commands($str);
+			$Eindex=0;
+			$prefix=&common_prefix(@Clist);
+
+			if(!@Clist) {
+				ui::flash();
+				return('/'.$str);
+			} elsif($str ne $prefix) {
+				@Clist=();
+				return('/'.$prefix);
+			} else {
+				ui::slog('Cmds:', @Clist) if(@Clist>1);
+				return('/'.$Clist[0]);
+			}
+		}
+	}
+
+	sub stdin {
+		my($key)=ui::keypress;
+		my(@cmd);
+
+		if($key eq 'up') {
+			$Input=&hist_up;
+		} elsif($key eq 'down') {
+			$Input=&hist_down;
+		} elsif($key eq 'left') {
+			ui::slog('left');
+		} elsif($key eq 'right') {
+			ui::slog('right');
+		} elsif($key eq 'bs') {
+			$Input=~s/.$//;
+		} elsif($key eq 'clear') {
+			$Input='';
+		} elsif($key eq 'tab') {
+			if($Input=~s|^\s*/||) {
+				@cmd=($Input=~m/(".*?"|".*$|\w+)/g);
+				if(@cmd==1) {
+					$Input=&expand_command(@cmd);
+				} else {
+					$Input=&expand_args(@cmd);
+				}
+			} else {
+				$Input.='  ';
+			}
+		} elsif($key eq ' ') {
+			if($Input=~m|^\s*/(\S+)$|) {
+				config::command_help($1);
+			}
+			$Input.=' ';
+		} elsif($key eq 'enter') {
+			$Input=~s|^\s+||;
+			if($Input=~m|^/shutdown|i) {
+				server::shutdown();
+				ui::shutdown();
+				exit(0);
+			} elsif($Input=~s|^/||) {
+				&hist_push($Input);
+				server::send($Input);
+				$Input='';
+			} else {
+				server::msg($Input);
+				$Input='';
+			}
+		} else {
+			$Input.=$key;
+		}
+
+		&expand_clear if($key ne 'tab');
+
+		ui::update_input($Input);
+	}
+}
+
+=head2 Configuration
+
+B<alti+server> gets it's configuration information from a
+variety of places.  Configuration files (either altitude server specific
+or B<alti+server> specific) are read in at startup, and used to gather
+data for a variety of purposes.  This list of files is used to control
+the behavior of B<alti+server>:
+
+=over 8
+
+=item custom_json_commands.txt
+
+This file isn't actually read by B<alti+server>; however, each command
+supported by B<altiude_mapqa> must be listed and defined in this file.
+This is the file which tells the server process what commands are known
+to B<alti+server>.
+
+=item launcher_config.xml
+
+This file contains the information used by the altitude C<server_launcher>
+process when the server is initially started.  It contains information
+used by B<alti+server> such as a Map list and a command list.  These
+are used in the interactive interface to provide command-line completion
+and for changing maps periodically.  What is especially nice is that admins
+never have to edit the launcher_config.xml to add new maps.  When the
+altitude server is restarted, the map directory is automatically searched
+for maps; these are added to the F<launcher_config.xml> file for you.
+
+=item filtered_swear_words.txt
+
+A list of naughty words which are often used to harrass other players are
+listed in this file.  Harrasment isn't cool!  So, when these words are used,
+the server notifies the person who wrote them that a language infraction
+has occured.  After too many infractions, the player is kicked by the server.
+
+=back
+
+=cut
+
+{	package json;
+
+	my($String)='';
+	my($Json);
+
+	if($Json=eval('use JSON::XS; JSON::XS->new()')) {
+		ui::slog('using JSON::XS (good)');
+	} elsif($Json=eval('use JSON::PP; JSON::PP->new()')) {
+		ui::slog('using JSON::PP, consider installing JSON::XS (its faster)');
+	} else {
+		die('Could not find a JSON library, please install JSON::XS');
+	}
+
+	sub decode {
+		local($SIG{'__DIE__'})=sub {
+			ui::slog(@_);
+			select(undef, undef, undef, 0.1);
+			return(0);
+		};
+		my($ds)=undef;
+
+		$String=join('', $String, @_);
+
+		if($String=~m/^\s*{/ && $String=~m/}\s*$/) {
+			$ds=eval { $Json->decode($String) };
+			$String='';
+		}
+
+		return($ds);
+	}
+
+	sub encode {
+		return($Json->encode(@_));
+
+	}
+
+	sub pretty {
+		my($string);
+
+		$Json->pretty(1);
+		$string=$Json->encode(@_);
+		$Json->pretty(0);
+
+		return($string);
+	}
+
+}
+
+{	package config;
+
+	use XML::Simple;
+
+	my($Conffile)	="$INSTALL_ROOT/servers/launcher_config.xml";
+	my($Custfile)	="$INSTALL_ROOT/servers/custom_json_commands.txt";
+	my($Filtfile)	="$INSTALL_ROOT/config/filtered_swear_words.txt";
+
+	my(%Commands)=();
+	my(@Maps)=();
+	my(%Mapdb)=();
+	my($Language);
+
+	our($Port)=0;
+	our($Ping)=500; #reset from launcher_config.xml
+	our($Goals)=6;  #reset from launcher_config.xml
+
+	$MAPDIR=~s|/*$|/| if($MAPDIR);
+
+	sub option {
+		my($key)=@_;
+
+		if($key=~m/color/i) {
+			return('COLOR_'.uc($OPTIONS{$key}));
+		} elsif($key=~m/^(true|yes|t|y)$/i) {
+			return(1);
+		} elsif($key=~m/^(false|no|f|n)$/i) {
+			return(0);
+		} else {
+			return($OPTIONS{$key});
+		}
+	}
+
+	sub launcher {
+		my($server)=XML::Simple::XMLin($Conffile);
+		my($fh)=IO::Handle->new;
+		my(@filter)=();
+		my($cmd);
+		local($_);
+
+		$Port=$server->{'servers'}{'AltitudeServerConfig'}{'port'};
+		$Ping=$server->{'servers'}{'AltitudeServerConfig'}{'maxPing'};
+
+		$Goals=POSIX::ceil(($server->
+						{'servers'}
+						{'AltitudeServerConfig'}
+						{'PlaneBallGameMode'}
+						{'goalsPerRound'}
+					)/2
+			);
+
+		%Commands=map(($_->{'ConsoleCommand'} => undef), @{$server->
+				{'servers'}
+				{'AltitudeServerConfig'}
+				{'consoleCommandPermissions'}
+				{'AltitudeServerConsoleCommandPermissions'}
+			});
+
+		$Commands{'changeMap'}=['map'];
+		$Commands{'removeMap'}=['map'];
+		$Commands{'kick'}=['player'];
+		$Commands{'ban'}=['vaporId'];
+		$Commands{'serverWhisper'}=['player', 'string'];
+
+		open($fh, '<', $Custfile);
+		while(<$fh>) {
+			$cmd=json::decode($_);
+			if($cmd->{'arguments'} && @{$cmd->{'arguments'}}) {
+				$Commands{$cmd->{'name'}}=$cmd->{'arguments'};
+			} else {
+				$Commands{$cmd->{'name'}}=undef;
+			}
+		}
+		close($fh);
+
+		$Commands{'shutdown'}=undef;
+
+		open($fh, '<', $Filtfile);
+		while(<$fh>) {
+			chomp;
+			s/\s+//g;
+			s/er$//;
+
+			next if(m/damn|bollocks/);
+
+			push(@filter, $_);
+		}
+		close($fh);
+		$Language=sprintf('(%s|\b)(%s)(%s)?s?\b',
+				'er|ing?',
+				join('|', @filter),
+				'a|er|ing?|ed'
+			);
+	}
+
+	sub read_maps {
+		my($lconfig)=IO::Handle->new;
+		my($maplist)=0;
+		local($_);
+
+		@Maps=();
+
+		open($lconfig, '<', $Conffile);
+
+		while(<$lconfig>) {
+			if(m{</mapList>}i) {
+				$maplist=0;
+			}
+
+			if($maplist) {
+				push(@Maps, $1) if(m{<String value="(.*?)" />});
+			}
+
+			if(m{<mapList>|<mapRotationList>}i) {
+				$maplist=1;
+			}
+		}
+
+		close($lconfig);
+	}
+
+	sub _map_sort {
+		$Mapdb{$a}=List::Util::min(-M $a, -A $a) unless($Mapdb{$a});
+		$Mapdb{$b}=List::Util::min(-M $b, -A $b) unless($Mapdb{$b});
+
+		return( $Mapdb{$a} <=> $Mapdb{$b} );
+	}
+
+	sub find_maps {
+		my($lconfig)=IO::Handle->new;
+		my($maplist)=0;
+		my(@xml);
+		local($_);
+
+		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$MAPDIR/*_*.altx>);
+
+		foreach(@Maps) {
+			s|^$INSTALL_ROOT/maps/+||;
+			s|\.altx$||;
+		}
+
+		while(length(join('', @Maps))>1625) {
+			pop(@Maps);
+		}
+
+		@Maps=List::Util::shuffle(@Maps);
+
+		unless(@Maps) {
+			ui::slog('Error: no maps found during startup');
+			return;
+		}
+
+		open($lconfig, '<', $Conffile);
+		@xml=<$lconfig>;
+		close($lconfig);
+
+		foreach(@xml) {
+			if(m{</mapList>}i) {
+				foreach my $map (@Maps) {
+					s{^}{        <String value="$map" />\r\n}s;
+				}
+				$maplist=0;
+			}
+			if(m{</mapRotationList>}i) {
+				foreach my $map (grep(m/($OPTIONS{'rotationRE'})/, @Maps)) {
+					s{^}{        <String value="$map" />\r\n}s;
+				}
+				$maplist=0;
+			}
+
+			if($maplist) {
+				$_=''
+			}
+
+			if(m{<mapList>|<mapRotationList>}i) {
+				$maplist=1;
+			}
+		}
+
+		rename($Conffile, "$Conffile.bak");
+		open($lconfig, '>', $Conffile);
+		print $lconfig @xml;
+		close($lconfig);
+	}
+
+	sub new_maps {
+		my($lconfig)=IO::Handle->new;
+		my(%maps)=();
+		local($_);
+
+		foreach my $map (@_) {
+			$maps{$map}=1 if(file::name_ok($map));
+		}
+
+		return(0) unless(%maps);
+
+		open($lconfig, '<', $Conffile);
+		while(<$lconfig>) {
+			delete($maps{$1}) if(m| <String value="($MAPDIR.*?)" />|);
+		}
+		close($lconfig);
+
+
+		if(%maps) {
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+	sub remove_maps {
+		my(@old)=@Maps;
+
+		foreach my $map (@_) {
+			@Maps=grep(!m/^$map$/, @old);
+		}
+
+		if(@old==@Maps) { #Same size?
+			return(0);
+		} else {
+			return(1);
+		}
+	}
+
+	sub maps {
+		return(@Maps);
+	}
+
+	sub random_map {
+		my(@candidates)=grep(m/($OPTIONS{'rotationRE'})/, @Maps);
+		return($candidates[int(rand(@candidates))]);
+	}
+
+	sub commands {
+		my($re)=@_;
+		grep(m|^$re|i, keys(%Commands));
+	}
+
+	sub arguments {
+		my($command)=@_;
+
+		if($Commands{$command}) {
+			return(@{$Commands{$command}});
+		} else {
+			return(undef);
+		}
+	}
+
+	sub command_help {
+		my($command)=@_;
+		my($msg)="Syntax: /$command";
+		my(@args)=();
+		my($choice)=1;
+		my($list);
+		local($_);
+
+		if($Commands{$command}) {
+			foreach my $arg (@{$Commands{$command}}) {
+				if(ref($arg) eq 'ARRAY') {
+					$msg.=" <choice$choice>";
+					push(@args, join(' ', "choice$choice:", @$arg));
+					$choice++;
+				} elsif($arg eq 'map') {
+					$msg.=" <map>";
+					$list=join(' ', "map:", @Maps);
+					if(length($list)>390) {
+						substr($list, 390, 4096, " ...");
+					}
+					push(@args, $list);
+				} elsif($arg eq 'player') {
+					$msg.=" <player>";
+					push(@args, join(' ', "players:", player::values('nickname')));
+				} elsif($arg eq 'vaporId') {
+					$msg.=" <vaporId>";
+					push(@args, join(' ', "vaporIds:", map(
+							"$_->{'nickname'}:$_->{'vaporId'}",
+							player::list()))
+						);
+				} else {
+					$msg.=" <...>";
+				}
+			}
+			ui::slog("| $msg");
+			foreach my $arg (@args) {
+				ui::slog("|  $arg");
+			}
+		}
+	}
+
+	sub language {
+		local($_)=@_;
+
+		if($OPTIONS{'bullyKick'} && m/$Language/i) {
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+}
+
+=head2 State
+
+B<alti+server> keeps state from one invocation to another.  It stores
+user preferences for certain extensions, and map preferences.  These are
+used to ensure games are playable as designed for different types of maps.
+This file is read from at startup, and written to when settings changes
+are requested by administrative users.
+
+=cut
+
+{	package stash;
+
+	my($Stashfile)="$INSTALL_ROOT/servers/json_stash.txt";
+	my($Stashattic)="$INSTALL_ROOT/servers/json_attic.txt";
+	my($Stash)=undef;
+
+	sub _read {
+		my($file)=@_;
+		my($stash)=IO::Handle->new;
+		my($data);
+
+		if(-r $file) {
+			open($stash, '<', $file);
+			$data=join('', <$stash>);
+			close($stash);
+			return(json::decode($data));
+		} else {
+			return({});
+		}
+	}
+
+	sub _write {
+		my($ds, $file)=@_;
+		my($stash)=IO::Handle->new;
+
+		foreach my $key (keys(%$ds)) {
+			if(ref($ds->{$key}) eq 'HASH') {
+				delete($ds->{$key}) unless(%{$ds->{$key}});
+			} elsif(ref($ds->{$key}) eq 'ARRAY') {
+				delete($ds->{$key}) unless(@{$ds->{$key}});
+			}
+		}
+
+		rename($file, "$file.bak");
+		open($stash, '>', $file);
+		print $stash json::pretty($ds);
+		close($stash);
+	}
+
+	sub get {
+		my($value);
+
+		$Stash=&_read($Stashfile) unless($Stash);
+
+		$value=$Stash;
+		while(@_) {
+			$value=$value->{pop(@_)};
+		}
+
+		return($value);
+	}
+
+	sub set {
+		my($data)=pop(@_);
+		my($next, $value);
+
+		$Stash=&_read($Stashfile) unless($Stash);
+
+		$value=$Stash;
+		while(@_>1) {
+			$next=pop(@_);
+			$value->{$next}={} unless(exists($value->{$next}));
+			$value=$value->{$next};
+		}
+		$next=pop(@_);
+
+		$value->{$next}=$data;
+
+		&_write($Stash, $Stashfile);
+
+		return($data);
+	}
+
+	sub delete {
+		my($value);
+
+		$Stash=&_read($Stashfile) unless($Stash);
+
+		$value=$Stash;
+		while(@_>1) {
+			$value=$value->{pop(@_)};
+		}
+
+		if(delete($value->{$_[0]})) {
+			&_write($Stash, $Stashfile);
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+	
+	sub archive {
+		my($stash)=IO::Handle->new;
+		my($attic)=&_read($Stashattic);
+		my($value, $archive, $next);
+
+		$Stash=&_read($Stashfile) unless($Stash);
+
+		$value=$Stash;
+		$archive=$attic;
+		while(@_>1) {
+			$next=pop(@_);
+
+			$value=$value->{$next};
+
+			$archive->{$next}={} unless(exists($archive->{$next}));
+			$archive=$archive->{$next};
+		}
+		$next=pop(@_);
+
+		$archive->{$next}=$value->{$next};
+		delete($value->{$next});
+
+		&_write($Stash, $Stashfile);
+		&_write($attic, $Stashattic);
+	}
+}
+
+=head2 Altitude Game Engine
+
+The core of B<alti+server> is the altitude game engine itself.  B<alti+server>
+starts the altitude server, watches it's output and log files, and interacts
+directly with it to manage the instance.
+
+=cut
+
+{	package server;
+
+	use IO::Select;
+
+	my($Logfile)	="$INSTALL_ROOT/servers/log.txt";
+	my($Logfile_o)	="$INSTALL_ROOT/servers/log_old.txt";
+	my($Pidfile)	="$INSTALL_ROOT/servers/server_launcher.pid";
+
+	my(%Trigger)=();
+
+	my($Log)=IO::Handle->new;
+	my($Server)=IO::Handle->new;
+
+	my($Streams)=IO::Select->new(\*STDIN);
+	my($Server_pid, $Tail_pid);
+
+	sub start {
+		if($Server_pid && kill('HUP', $Server_pid)) {
+			close($Server);
+			$Streams->remove($Server);
+			waitpid($Server_pid, 0);
+			$Server_pid=undef;
+		}
+
+		rename($Logfile, $Logfile_o);
+
+		chdir($INSTALL_ROOT);
+
+		open($Server, '-|:unix', './server_launcher', '-noui');
+		$Server->autoflush(1);
+		$Streams->add($Server);
+	}
+
+	sub reopen_log {
+		my($pid)=IO::Handle->new;
+		my($in)=IO::Handle->new;
+
+		if($Tail_pid && kill('HUP', $Tail_pid)) {
+			close($Log);
+			$Streams->remove($Log);
+			$Tail_pid=undef;
+		}
+
+		open($pid, '<', $Pidfile);
+		$Server_pid=<$pid>;
+		close($pid);
+
+		close(STDERR);
+		$Tail_pid=open($Log, '-|:unix', 'tail', '--pid', $Server_pid, '-F', $Logfile);
+		$Log->autoflush(1);
+		$Streams->add($Log);
+	}
+	
+	sub data { 
+		return($Streams->can_read);
+	}
+
+	sub is_log {
+		return($_[0]==$Log);
+	}
+
+	sub is_output {
+		return($_[0]==$Server);
+	}
+
+	sub event {
+		return(json::decode($Log->getline));
+	}
+
+	sub output {
+		return($Server->getline);
+	}
+
+	sub interrupt {
+		kill('INT', $Tail_pid) if($Tail_pid);
+		kill('INT', $Server_pid) if($Server_pid);
+	}
+
+	sub shutdown {
+		kill('HUP', $Tail_pid) if($Tail_pid);
+		kill('HUP', $Server_pid) if($Server_pid);
+
+		close($Server);
+		close($Log);
+
+		$Streams->remove($Server, $Log);
+
+		waitpid($Server_pid, 0);
+		waitpid($Tail_pid, 0);
+
+		$Server_pid=undef;
+		$Tail_pid=undef;
+	}
+
+	sub send {
+		my($command)=shift;
+		my($pipe)="$INSTALL_ROOT/servers/command.txt";
+		my($msg)=IO::Handle->new;
+
+		foreach my $arg (@_) {
+			if($arg=~m/^\s*".*"\s*$/) {
+				$command.=sprintf(' %s', $arg);
+			} elsif($arg=~m/[ \t'`]/) {
+				$command.=sprintf(' "%s"', $arg);
+			} else {
+				$command.=sprintf(' %s', $arg);
+			}
+		}
+		
+		open($msg, '>>', $pipe);
+		printf($msg "%d,%s,%s\n", $config::Port, 'console', $command);
+		close($msg);
+	}
+
+	sub msg {
+		my($msg)=join(' ', @_);
+		&send('serverMessage', $msg);
+	}
+
+	sub whisper {
+		my($p)=shift;
+		my($msg)=join(' ', @_);
+
+		if($p->{'isBot'}) {
+			ui::slog('|', $msg);
+		} else {
+			ui::chat_log($p->{'nickname'}, 'server', $msg);
+			&send('serverWhisper', $p->{'nickname'}, $msg);
+		}
+	}
+
+	sub laud {
+		server::msg(@_) if(config::option('snarkChance')>0);
+	}
+
+	sub snark {
+		my($p)=shift;
+		my($time)=time();
+
+		return if($p->{'isBot'});
+
+		if( config::option('snarkChance')>0 && ($time-$p->{'snark'}) > 10) {
+			$p->{'snark'}=$time;
+			server::msg(@_);
+		}
+	}
+
+	sub snarky {
+		my($multiplier)=config::option('snarkChance');
+
+		if($multiplier>0 && int(rand($multiplier*player::count()))==0) {
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+	sub trigger {
+		my($command, $key, @data)=@_;
+
+		&send($command);
+		push(@{$Trigger{$command}}, ["$command:$key", @data]);
+	}
+
+	sub triggers {
+		my($command)=@_;
+
+		if(exists($Trigger{$command})) {
+			return(shift(@{$Trigger{$command}}));
+		} else {
+			return();
+		}
+	}
+}
+
+=head2 Players
+
+The B<alti+server> wrapper initiates the altitude game engine to ensure
+it has full knowledge of it's state, and the users logged into the server.
+Since it manages starts, restarts, and shutdowns. it sees every user login
+and logoff.  This is used to keep active player profiles.  Statistics
+are kept on players, and information about what team they are on, etc.
+is updated with them as the games progress.
+
+=cut
+
+{	package player;
+
+	my(@Players)=();
+	my(%Pdb)=();
+
+	sub server {
+		return({
+			'nickname'=> 'server',
+			'vaporId'	=> '00000000-0000-0000-0000-000000000000',
+			'player'	=> -1,
+			'team'	=> -1,
+			'isBot'	=> 1,
+		});
+	}
+
+	sub add {
+		my($p)=@_;
+
+		if($p->{'nickname'}=~m/^Bot ([1-9]|[1-2][0-9])$/) {
+			$p->{'isBot'}=1;
+		} else {
+			$p->{'isBot'}=0;
+			push(@Players, $p);
+		}
+
+		$Pdb{$p->{'nickname'}}	=
+		$Pdb{$p->{'player'}}	=
+		$Pdb{$p->{'vaporId'}}	= $p;
+	}
+
+	sub rename {
+		my($old, $new)=@_;
+		my($p)=$Pdb{$old};
+
+		$Pdb{$new}=$p;
+		delete($Pdb{$old});
+
+		$p->{'nickname'}=$new;
+	}
+
+	sub remove {
+		my($p)=@_;
+
+		delete($Pdb{$p->{'nickname'}});
+		delete($Pdb{$p->{'vaporId'}});
+		delete($Pdb{$p->{'player'}});
+
+		for(my $i=0; $i<@Players; $i++) {
+			if($Players[$i]==$p) {
+				splice(@Players, $i, 1);
+				last;
+			}
+		}
+	}
+
+	sub lookup {
+		my($player)=@_;
+
+		return(undef) if($player eq '00000000-0000-0000-0000-000000000000');
+
+		if(length($player)>0 && exists($Pdb{$player})) {
+			return($Pdb{$player});
+		} else {
+			return(undef);
+		}
+	}
+
+	sub event_search {
+		my($e)=@_;
+		my($p);
+
+		$p=	&lookup($e->{'nickname'})	||
+			&lookup($e->{'player'})		||
+			&lookup($e->{'vaporId'})		||
+			&lookup($e->{'source'})		;
+
+		$p=$e if(	!$p					&&
+				exists($e->{'nickname'})	&&
+				exists($e->{'player'})	&&
+				exists($e->{'vaporId'})	);
+
+		return($p);
+	}
+
+	sub list {
+		return(@Players);
+	}
+
+	sub count {
+		return(scalar(@Players));
+	}
+
+	sub values {
+		my($key)=@_;
+		local($_);
+
+		return(map($_->{$key}, @Players));
+	}
+}
+
+=head2 Altitued Plus Games
+
+An alti+ game requires a lot of extra management.  The B<alti+server> wrapper
+provides interfaces for each game.  Functions relating to maps, spawning,
+game types, etc.  are available from the server wrapper.  This is the main
+purpose of this server code:  to extend the possibilities of Altitude game
+play though extended interfaces and server support.
+
+=cut
+
+{	package game;
+
+	my($Map)=undef;
+	my($Type)=undef;
+	my(@Score)=(0, 0);
+	my(%Stats)=();
+
+	sub set_type {
+		local($_)=@_;
+
+		if(m/(^|_)flag(_|$)/) {
+			$Type='flag';
+		} elsif(m/(^|_)zone(_|$)/) {
+			$Type='zone';
+		} elsif(m/(^|_)race(_|$)/) {
+			$Type='race';
+		} elsif(m/(^|_)coop(_|$)/) {
+			$Type='coop';
+		} else {
+			$Type='std';
+		}
+
+		return($Type);
+	}
+
+	sub type {
+		if(@_) {
+			return(grep(m/^$Type$/, @_)>0);
+		} else { 
+			return($Type);
+		}
+	}
+
+	sub new_map {
+		my($mapref)=@_;
+
+		$Map=$mapref;
+		&set_type($Map->{'map'});
+		$Map->{'idle'}=time();
+
+		%Stats=();
+	}
+
+	sub busy {
+		$Map->{'idle'}=time();
+	}
+
+	sub elapsed {
+		return(time()-$Map->{'idle'});
+	}
+
+	sub teams {
+		my($left, $right);
+		($Map->{'leftTeam'}, $Map->{'rightTeam'})=($left, $right);
+	}
+
+	sub _value_or_query {
+		my($key)=shift;
+
+		if(@_) {
+			return(grep(m/^$Map->{$key}$/, @_)>0);
+		} else {
+			return($Map->{$key});
+		}
+	}
+
+	sub mapname	{ &_value_or_query('map', @_);		}
+	sub mode		{ &_value_or_query('mode', @_);		}
+
+	sub left		{
+		local($_);
+
+		for(@_) {
+			return(1) if(m/left|<|all|both|\*/i);
+		}
+		&_value_or_query('leftTeam', @_);
+	}
+
+	sub right		{
+		local($_);
+
+		for(@_) {
+			return(1) if(m/right|>|all|both|\*/i);
+		}
+		&_value_or_query('rightTeam', @_);
+	}
+
+	sub start	{
+		return($Map->{'time'});
+	}
+
+	sub mapfile {
+		return("$INSTALL_ROOT/maps/$Map->{'map'}.altx");
+	}
+
+	sub update_score {
+		my($team)=@_;
+
+		if(@_==2) {
+			@Score=@_;
+		} elsif(&left($team)) {
+			$Score[0]++;
+		} elsif(&right($team)) {
+			$Score[1]++;
+		}
+	}
+
+	sub set_score {
+		server::send('overrideBallScore', @_);
+	}
+
+	sub score {
+		my($p)=@_;
+
+		&update_score(&left($p->{'team'})?'left':'right');
+		&set_score(@Score);
+	}
+
+	sub angle {
+		my($a)=lc($_[0]);
+
+		#Accept -90, 270, 'down', or 's' to signify straight down:
+		if($a eq 'up' || $a eq 'n' || $a eq 'north') {
+			$a=90;
+		} elsif($a eq 'down' || $a eq 's' || $a eq 'south') {
+			$a=-90;
+		} elsif($a eq 'left' || $a eq 'w' || $a eq 'west') {
+			$a=180;
+		} elsif($a eq 'right' || $a eq 'e' || $a eq 'east') {
+			$a=0;
+		} elsif($a eq 'ne' || $a eq 'northeast') {
+			$a=45;
+		} elsif($a eq 'se' || $a eq 'southeast') {
+			$a=-45;
+		} elsif($a eq 'sw' || $a eq 'southwest') {
+			$a=-135;
+		} elsif($a eq 'nw' || $a eq 'northwest') {
+			$a=135;
+		} elsif($a<=180) {
+			$a=int($a);
+		} else {
+			$a=int($a - 360);
+		}
+	}
+
+	sub spawn_here {
+		my($p, $x, $y, @angle)=@_;
+		my($angle);
+		
+		if(@angle==1) {
+			$angle=$angle[0];
+		} else {
+			$angle=int(atan2($angle[1], $angle[0])*180/3.14159);
+		}
+
+		if(abs($angle)>90) {
+			$x=POSIX::ceil($x);
+		} else {
+			$x=POSIX::floor($x);
+		}
+		if($angle<0) {
+			$y=POSIX::ceil($y);
+		} else {
+			$y=POSIX::floor($y);
+		}
+
+		#Spawn and /overrideSpawnPoint have different angle systems,
+		#will be fixed in next patch, per lamster.
+		if($angle<-90) {
+			$angle=180;
+		} elsif($angle<0) {
+			$angle=0;
+		}
+
+		server::send('overrideSpawnPoint', $p->{'nickname'}, $x, $y, $angle);
+	}
+
+	sub distance {
+		my($x1, $y1, $x2, $y2)=@_;
+
+		return(sqrt( ($x2-$x1)**2 + ($y2-$y1)**2 ));
+	}
+
+	sub spawn_near {
+		my($p, $x, $y)=@_;
+		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($near, $delta, $try)=('far', 2**20, 0);
+
+		if($spawn_mode eq 'near' && ref($zones) eq 'HASH' && %$zones) {
+			foreach my $zone (sort(keys(%$zones))) {
+				$try=&distance($x, $y, @{$zones->{$zone}}[0,1]);
+				if($try<$delta) {
+					$near=$zone;
+					$delta=$try;
+				}
+			}
+			&spawn_here($p, @{$zones->{$near}});
+		} else {
+			&spawn_here($p, 0, 0, 0);
+		}
+
+	}
+
+	sub bench {
+		my($p)=@_;
+
+		if(game::mode('ffa')) {
+			server::whisper($p, 'Players cannot be forced to respawn in FFA');
+		} elsif(game::left($p->{'team'})) {
+			server::send('assignTeam', $p->{'nickname'}, 0);
+		} elsif(game::right($p->{'team'})) {
+			server::send('assignTeam', $p->{'nickname'}, 1);
+		} else {
+			server::send('assignTeam', $p->{'nickname'}, -1);
+		}
+	}
+
+	sub no_repeats {
+		my($e, $p)=@_;
+		my($pickup)=join(',', @$e{'positionX','positionY'});
+		my($time)=$e->{'time'};
+
+		if($time<$p->{'stats'}{'timer'}{$pickup}) {
+			return(0);
+		} else {
+			$p->{'stats'}{'timer'}{$pickup}=$time+900;
+			return(1);
+		}
+	}
+
+	sub capture {
+		my($e, $p)=@_;
+		my($pickup)=join(',', @$e{'positionX','positionY'});
+		my($flag)=stash::get($pickup, $p->{'team'}, 'powerups', $Map->{'map'});
+
+		if($flag && no_repeats($e, $p)) {
+			unless(game::mode('ffa')) {
+				foreach my $player (player::list()) {
+					game::bench($player);
+				}
+			}
+			server::msg($p->{'nickname'}, 'captured the flag!');
+			$p->{'stats'}{'capture'}++;
+			game::score($p);
+		}
+	}
+
+	sub checkpoint {
+		my($e, $p)=@_;
+		my($pickup)=join(',', @$e{'positionX','positionY'});
+		my($checkpoints)=stash::get($p->{'team'}, 'powerups', $Map->{'map'});
+		my($cp)=$checkpoints->{$pickup};
+		my($teamstats, $t_all, $t_lap, $p_all, $p_lap);
+
+		return unless(defined($cp));
+
+		#Initialize team stats:
+		unless($Stats{$p->{'team'}}{'cp'}) {
+			foreach my $key (values(%$checkpoints)) {
+				$Stats{$p->{'team'}}{'cp'}{$key}=0;
+			}
+		}
+
+		#Initialize player stats:
+		unless($p->{'stats'}{'cp'}) {
+			foreach my $key (values(%$checkpoints)) {
+				$p->{'stats'}{'cp'}{$key}=0;
+			}
+		}
+
+		$teamstats=$Stats{$p->{'team'}}{'cp'};
+		($t_all, $t_lap)=utils::minmax(values(%$teamstats));
+		($p_all, $p_lap)=utils::minmax(values(%{$p->{'stats'}{'cp'}}));
+
+		if($p->{'stats'}{'cp'}{$cp}<$p_lap || $p_all==$p_lap) {
+			$p->{'stats'}{'cp'}{$cp}++;
+		}
+
+		if(&no_repeats($e, $p) && $p_lap==$t_lap &&
+		  ($teamstats->{$cp}<$t_lap || $t_all==$t_lap)) {
+			server::msg($p->{'nickname'}, 'reached checkpoint', $cp);
+			game::score($p);
+			$teamstats->{$cp}++;
+			$p->{'stats'}{'checkpoint'}++;
+		}
+	}
+
+	sub door_open {
+		my($team, $door)=@_;
+
+		return($Stats{$team}{'door'}{$door});
+	}
+
+	sub knock {
+		my($e, $p)=@_;
+		my($door)=stash::get('door', game::mapname());
+		my($pickup)=join(',', @$e{'positionX','positionY'});
+		my($keys);
+
+		if($door->{'doors'}{$pickup} && &no_repeats($e, $p)) {
+			unless(&door_open($p->{'team'}, $door->{'doors'}{$pickup})) {
+				game::bench($p);
+				server::whisper($p, $door->{'doors'}{$pickup}, 'is locked');
+			}
+
+			return(1);
+		} elsif($door->{'keys'}{$pickup} && &no_repeats($e, $p)) {
+			if($Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}) {
+				return(0);
+			}
+
+			if($Stats{$p->{'team'}}{'key'}{$pickup}) {
+				return(0);
+			} else {
+				server::whisper($p, 'Found a key to door:', $door->{'keys'}{$pickup});
+				$Stats{$p->{'team'}}{'key'}{$pickup}=1;
+				$p->{'stats'}{'keys'}++;
+			}
+
+			$keys=utils::invert(stash::get('keys', 'door', game::mapname()));
+
+			foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
+				unless($Stats{$p->{'team'}}{'key'}{$key}) {
+					return(0);
+				}
+			}
+
+			$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+
+			if(game::left($p->{'team'})) {
+				server::msg('Left team unlocked door:', $door->{'keys'}{$pickup});
+			} elsif(game::right($p->{'team'})) {
+				server::msg('Right team unlocked door:', $door->{'keys'}{$pickup});
+			}
+		}
+
+		return(0);
+	}
+
+	sub teleport {
+		my($e, $p)=@_;
+		my($portals)=stash::get('portals', game::mapname());
+		my($px, $py)=($e->{'positionX'}, $e->{'positionY'});
+
+		foreach my $portal (values(%$portals)) {
+			if($px==$portal->[0] && $py==$portal->[1]) {
+				game::bench($p);
+				game::spawn_here($p, @$portal[2,3,4]);
+				last;
+			}
+		}
+	}
+
+	sub most {
+		my($text, $stats, $players)=@_;
+		my($most)=0;
+		my($p);
+
+		for(my $i=0; $i<@$players; $i++) {
+			if($stats->[$i]>=$stats->[$most]) {
+				$p=player::lookup($players->[$i]);
+				$most=$i unless($p->{'isBot'});
+			}
+		}
+		if($stats->[$most]>0) {
+			$p=player::lookup($players->[$most]);
+			server::msg($text, $p->{'nickname'}) unless($p->{'isBot'});
+		}
+	}
+}
+
+=head2 Downloading Maps
+
+The B<alti+server> allows admin users access to download maps and restart
+the server on-the-fly.  Great care is taken to ensure this can be done in
+a secure way.  All file opens either use L<IPC::Open3> or perl's built-in
+3+ argument C<open> function.  Additionally, file names and URL's are
+reviewed for odd or special characters.
+
+Besides security, a number of functions are available to map makers to
+facilitate in map download and verifications.  Map makers have access
+to added server commands like C<cksum> for 32-bit checksums, and C<md5>,
+C<sha1>, and C<sha256> for stronger checksums.  Also, are download functions
+which support scanning the L<http://altitudegame.com/map> web pages for 
+easy map downloads.  Maps stored on this server can be downloads simply
+with their name.
+
+=cut
+
+{	package file;
+
+	use IPC::Open3;
+
+	sub sum {
+		my($sum, $file)=@_;
+		my($cmd)=IO::Handle->new;
+		my($output);
+
+		open($cmd, '-|', $sum, $file);
+		chomp($output=$cmd->getline);
+		close($cmd);
+
+		$output=~s/\s+\S+$//;
+
+		return($output);
+	}
+
+	sub type {
+		my($file)=@_;
+		my($cmd)=IO::Handle->new;
+		my($type);
+
+		open($cmd, '-|', 'file', $file);
+		chomp($type=$cmd->getline);
+		close($cmd);
+
+		return($type);
+	}
+
+	sub name_ok {
+		local($_)=@_;
+
+		s|^$INSTALL_ROOT/maps/$MAPDIR||;
+		s|^$MAPDIR||;
+
+		return(0) unless(m/^[\w.?!%:=+-]{5,}$/);
+		return(0) unless(m/^(1bd|1de|1dm|ball|ffa|tbd|tdm)_/);
+		return(0) if(m/\.\./);
+
+		return(1);
+	}
+
+	sub url_ok {
+		local($_)=@_;
+
+		return(0) if(m/\.\./);
+		if(m|^file:///var/tmp/([\w.?!%:=+-]+\.altx)|) {
+			return(0)	unless(&name_ok($1));
+		} else {
+			return(0) unless(m/^(https?|ftps?):\/\/[\w.-]+\/[\w.;&?!%:\/=+-]+$/i);
+		}
+
+		return(1);
+	}
+
+	sub download {
+		my($in, $out, $err)=(IO::Handle->new, IO::Handle->new, IO::Handle->new);
+		my($eout);
+		my($pid);
+
+		ui::slog('curl', @_);
+
+		return(0) unless(&url_ok($_[-1]));
+
+		$pid=open3($in, $out, $err,
+			'curl', '-s', '--max-filesize', config::option('dlSizeLimit'), @_);
+
+		$_=join('', <$out>);
+
+		while($eout=<$err>) {
+			chomp($eout);
+			ui::slog($eout);
+		}
+
+		close($in);
+		close($out);
+		close($err);
+
+		waitpid($pid, 0);
+	}
+
+	sub altigame_download {
+		my($file, $name)=@_;
+		my($url)='https://altitudegame.com/map/?p=';
+
+		return(0) unless(&name_ok($file));
+		return(0) unless(&name_ok($name));
+
+		foreach my $i (0 .. 25) {
+			&download("$url$i");
+
+			if(m|<a +href=".*?" *>$name</a>.*?<a +href="(.*?)" *>download</a>|) {
+				&download('-L', '-o', $file, $1);
+
+				if(-s $file) {
+					return(1);
+				} else {
+					unlink($file);
+					return(0);
+				}
+			}
+		}
+		return(0);
+	}
+}
+
+=head2 Normalized Hook Management
+
+The B<alti+server> makes supporting log hooks easier by normalizing the
+hook arguments.  Each hook is called with two arguments: the event data
+structure, and the person data structure for the player in question.  Most
+hooks would otherwise have to have code to lookup a player from the event
+details.  This method eliminates that, and provides for less overall code.
+
+=cut
+
+sub event {
+	my($event)=@_;
+	my($player)=undef;
+	
+	if($event->{'group'} eq 'server') {
+		$player=player::server();
+	} else {
+		$player=player::event_search($event);
+	}
+
+	if($event->{'group'}=~m/^(server|Administrator)$/) {
+		$event->{'admin'}=1;
+	} else {
+		$event->{'admin'}=0
+	}
+
+	return($event, $player);
+}
+
+=head2 Snarky Server Responses
+
+The B<alti+server> will periodically emit snarky comments about player's
+choices of planes, perks, or skins.  This is, of course, as long as the
+C<snarkChance> flag is set to a true value in the C<OPTIONS> configuration at
+the top of the B<alti+server> code file.  The server will take the value of
+C<snarkChance> and multiply it by the number of players.  Then, for each
+even which has snarks associated with it, there will be a 1 in that many
+chance of a snarky comment being made.
+
+These are not meant to be a large distraction from the game, but instead to
+make players chuckle.  The comments should be infrequent.
+
+Setting C<snarkChance> to 0 will also disable server lauds.  These are
+congratulations for a pass, nice goal, etc.  If C<snarkChance> is set to
+a non-zero value, these laudable activities are mentioned for each occurance.
+Frankly, people don't pass enough, this is enabled to try to coax more
+and better passing in the game.
+
+=cut
+
+my(%SNARKS)=(
+	"%s can't aim"
+			=> { 'perkRed' => 'Tracker' },
+
+	"%s is toxic"
+			=> { 'perkRed' => 'Acid Bomb' },
+
+	"%s likes to drop bombs on your head"
+			=> { 'perkRed' => 'Bombs' },
+
+	"I wouldn't fly behind %s"
+			=> { 'perkRed' => 'Flak Tailgun' },
+
+	"%s's other vehicle is a DeLorean"
+			=> { 'perkRed' => 'Time Anchor' },
+
+	"%s dares you to fly near a wall"
+			=> { 'perkRed' => 'Director|Thermobarics' },
+
+	"%s says rat-tat-tat-tat-tat"
+			=> { 'perkRed' => 'Recoilless Gun' },
+
+	"%s brought out the big gun"
+			=> { 'perkRed' => 'Heavy Cannon' },
+
+	"%s bounces, but recovers well"
+			=> { 'perkGreen' => 'Rubberized Hull' },
+
+	"%s can turn on a dime"
+			=> { 'perkGreen' => 'Flexible Wings' },
+
+	"%s needs a backup camera"
+			=> { 'perkBlue' => 'Reverse Thrust' },
+
+	"%s is an ace"
+			=> { 'perkBlue' => 'Ace Instincts' },
+
+	"%s says Grrrr"
+			=> { 'skin' => 'Shark Skin' },
+
+	"%s is on fire"
+			=> { 'skin' => 'Flame Skin' },
+
+	"%s is trying to hide"
+			=> { 'skin' => 'Zebra Skin' },
+
+	"%s, how about a nice game of chess?"
+			=> { 'skin' => 'Checker Skin' },
+
+	"%s says Ho Ho Ho!"
+			=> { 'skin' => 'Santa Hat' },
+
+	"You know, I have one simple request.  And that is to have sharks with frickin' laser beams attached to their heads!"
+			=> { 'skin' => 'Shark Skin', 'perkRed' => 'Laser' },
+);
+
+=head2 Log Parsing and Hooks
+
+The main interface for B<alti+server> to see what is going on with the
+Altitude game engine is the F<log.txt> file.  B<alti+server> reads this
+file continuously and interprets the entries.  Hooks are considered to be
+any of the following:
+
+=over 8
+
+=item type="x"
+
+These are events generated directly by the Altitude game engine.  They
+can be events which happened in a game, notifications about changes, or
+the result of a user request.  A hook name of C<x> will be executed
+each type an event of type="x" is seen in the log file.
+
+=item command="y" type="consoleCommandExecute"
+
+These are events generated either by players or by the B<alti+server> code
+itself.  This is the method by which B<alti+server> supports commands
+added to the F<custom_json_commands.txt> file.  Each time a log entry is
+made where command="y", the hook named C<y> will be executed.
+
+=item type="x" when triggered by hook "z"
+
+The B<alti+server> contains it's own trigger mechanism.  Not all commands
+execute by players, the server, or events thrown by the Altitude game engine
+contain enough information to complete a request.  In these cases, the
+hook code for C<z> will generate a request for the server to execute an
+additional command C<x>.  When C<x> is run, B<alti+server> looks for a hook
+named C<x:z>, and runs it instead of the normally defined hook for C<x>.
+The triggered code will then complete the original request with information
+from both the original hook C<z>, and the new one C<x>.
+
+=back
+
+=head2 Game Extensions
+
+Some of the extensions provided by the B<alti+server> are:
+
+=over 8
+
+=item Messaging
+
+Users can utilize the server to facilitate private communication.  The main
+purpose of this is for map makers to offer suggestions to players testing
+out a map.  Also, this works well in reverse.  If a player would like to
+bring up a point regarding game play private to the map map maker.  In case
+of abuse, users can disable this feature.
+
+=item Managed Map Downloads
+
+The server supports 3 methods to download new maps.  People often store maps
+on the altitudegame.com/map/ (the original map testing) site; maps can be
+downloads from here with just their name.  Another location where maps are
+often stored are on the Ladder servers, here maps can also be downloaded
+by name.  Finally, for other maps a download method for arbitrary URLs is
+supported; this method will not work for javascript enabled downloads.
+Conversely, a method also exists to remove maps from the server.
+
+=item Map Specific Settings
+
+Each map can have its own gravity, scale, team enforcement, spawn location,
+etc. settings.  Hooks exist for adding/changing/deleting these settings 
+on a per-map basis.  Each time a new map loads, these settings are made
+by B<alti+server>, so the game can be played as designed each time without
+user interaction.
+
+=item Spawn Enhancements
+
+A number of spawn possibilities are created by B<alti+server>.  Players
+can spawn normally as always.  However, the additional methods are also
+available:
+died (players spawn where they last died),
+zone (players can manually choose the location where they spawn),
+near (players spawn at the nearest defined zone location to where they die),
+portal (players use any number of listed health powerups and are respawned in a different location), 
+health (players spawn at the location where they pickup their last health),
+powerup (players spawn where they picked up their last powerup of any kind).
+
+=item Plane Limitations
+
+A map can have only specified plane types allowed.  This is helpful in certain
+"capture the flag" game types, where by whales can wildly disrupt the inner
+core protecting the flag.
+
+=back
+
+=cut
+
+my(%HOOKS);
+%HOOKS=(
+	'help'		=> sub {
+		my($e, $p)=@_;
+		my($type)=@{$e->{'arguments'}};
+
+		$HOOKS{"help $type"}->($e, $p) if(exists($HOOKS{"help $type"}));
+	},
+
+	'list'		=> sub {
+		my($e, $p)=@_;
+		my($type)=@{$e->{'arguments'}};
+
+		$HOOKS{"list $type"}->($e, $p) if(exists($HOOKS{"list $type"}));
+	},
+
+	'set'		=> sub {
+		my($e, $p)=@_;
+		my($type, $args)=@{$e->{'arguments'}};
+		my(@args)=split(m/[\s,]+/, $args);
+
+		return unless($e->{'admin'});
+
+		$HOOKS{"set $type"}->($e, $p, @args) if(exists($HOOKS{"set $type"}));
+	},
+
+	'unset'		=> sub {
+		my($e, $p)=@_;
+		my($type)=@{$e->{'arguments'}};
+
+		return unless($e->{'admin'});
+
+		$HOOKS{"unset $type"}->($e, $p) if(exists($HOOKS{"unset $type"}));
+	},
+
+	'add'		=> sub {
+		my($e, $p)=@_;
+		my($type, $args)=@{$e->{'arguments'}};
+		my(@args)=split(m/[\s,]+/, $args);
+
+		return unless($e->{'admin'});
+
+		$HOOKS{"add $type"}->($e, $p, @args) if(exists($HOOKS{"add $type"}));
+	},
+
+	'del'		=> sub {
+		my($e, $p)=@_;
+		my($type, $args)=@{$e->{'arguments'}};
+		my(@args)=split(m/[\s,]+/, $args);
+
+		return unless($e->{'admin'});
+
+		$HOOKS{"del $type"}->($e, $p, @args) if(exists($HOOKS{"del $type"}));
+	},
+
+	'switch'	=> sub {
+		my($e, $p)=@_;
+
+		server::send('assignTeam', $p->{'nickname'}, -1);
+	},
+
+	'mesg'	=> sub {
+		my($e, $p)=@_;
+		local($_)=$e->{'arguments'}[0];
+
+		if(m/y(es)?/i) {
+			stash::delete('block', $p->{'nickname'});
+			server::whisper($p, "Private on-server messaging enabled");
+		} elsif(m/no?/i) {
+			stash::set('block', $p->{'nickname'}, 1);
+			server::whisper($p, "Private on-server messaging disabled");
+		} else {
+			if(stash::get('block', $p->{'nickname'})) {
+				server::whisper($p, "Private on-server messaging disabled");
+			} else {
+				server::whisper($p, "Private on-server messaging enabled");
+			}
+		}
+	},
+
+	'talk'	=> sub {
+		my($e, $p)=@_;
+		my($to)=player::lookup(shift(@{$e->{'arguments'}}));
+		my($msg)=join(' ', @{$e->{'arguments'}});
+
+		if(config::language($msg)) {
+			$p->{'infractions'}++;
+			if($p->{'infractions'}<10) {
+				server::whisper($p, "language ($p->{'infractions'})");
+				server::whisper($p, "message not sent");
+			} else {
+				server::msg("kicking '$p->{'nickname'}' for infractions");
+				server::send('kick', $p->{'nickname'});
+			}
+		} elsif($p->{'nickname'} eq 'server') {
+			server::whisper($to, $msg);
+		} elsif(!stash::get('block', $to->{'nickname'})) {
+			ui::chat_log($to->{'nickname'}, $p->{'nickname'}, $msg);
+			server::send('serverWhisper', $to->{'nickname'}, "$p->{'nickname'}> $msg");
+		} else {
+			server::whisper($p, "private messaging is disabled for $to->{'nickname'}");
+		}
+		
+	},
+
+	'help updateMapAltitudegame'	=> sub {
+		my($e, $p)=@_;
+		server::whisper($p, '/updateMapAltitudegame <map>');
+		server::whisper($p, ' map: name is exactly as it appears on the website');
+	},
+
+	'updateMapAltitudegame'	=> sub {
+		my($e, $p)=@_;
+		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($mapname, $file);
+
+		return(0) unless($e->{'admin'});
+
+		$e->{'arguments'}[0]=~s|^$MAPDIR||;
+		$e->{'arguments'}[0]=~s|\.altx$||;
+		$e->{'arguments'}[0]=~s|\s+|_|g;
+
+		return(0) unless(file::name_ok($e->{'arguments'}[0]));
+
+		$mapname="$MAPDIR$e->{'arguments'}[0]";
+		$file="$maps$mapname.altx";
+
+		if(file::altigame_download($file, $e->{'arguments'}[0])) {
+			if(-s $file > config::option('dlSizeLimit')) {
+				unlink($file);
+				server::whisper($p, "$mapname too big");
+			} elsif(file::type($file)!~m/LZMA compressed data/) {
+				unlink($file);
+				server::whisper($p, "$mapname is not the right type");
+				server::whisper($p, "maybe redirect failure, or a javascript enabled download");
+			} else {
+				if(config::new_maps($mapname)) {
+					server::whisper($p,
+						"Map added to config, you must /restartServer");
+				}
+				server::msg("$mapname updated");
+			}
+		} else {
+			server::whisper($p, "Could not download $e->{'arguments'}[0] from altitudegame.com/map/");
+		}
+	},
+
+	'help updateMapAltituderank'	=> sub {
+		my($e, $p)=@_;
+		server::whisper($p, '/updateMapAltituderank <map>');
+		server::whisper($p, ' map: name is exactly as it appear if you were to /changeMap on ladder');
+	},
+
+	'updateMapAltituderank'	=> sub {
+		my($e, $p)=@_;
+		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($url)="http://altituderank.com/mapdownloads/%s.altx";
+		my($mapname, $file);
+
+		return(0) unless($e->{'admin'});
+
+		$e->{'arguments'}[0]=~s|^$MAPDIR||;
+		$e->{'arguments'}[0]=~s|\.altx$||;
+		$e->{'arguments'}[0]=~s|\s+|_|g;
+
+		return(0) unless(file::name_ok($e->{'arguments'}[0]));
+
+		$mapname="$MAPDIR$e->{'arguments'}[0]";
+		$file="$maps$mapname.altx";
+
+		file::download('-L', '-o', $file, sprintf($url, $e->{'arguments'}[0]));
+
+		if(-s $file < 1024) {
+			unlink($file);
+			server::whisper($p, "Could not find $e->{'arguments'}[0] on altituderank.com/mapdownloads/");
+		} elsif(-s $file > config::option('dlSizeLimit')) {
+			unlink($file);
+			server::whisper($p, "$mapname too big");
+		} elsif(file::type($file)!~m/LZMA compressed data/) {
+			unlink($file);
+			server::whisper($p, "$mapname is not the right type");
+			server::whisper($p, "maybe redirect failure, or a javascript enabled download");
+		} else {
+			if(config::new_maps($mapname)) {
+				server::whisper($p,
+					"Map added to config, you must /restartServer");
+			}
+			server::msg("$mapname updated");
+		}
+	},
+
+	'help updateMapURL'	=> sub {
+		my($e, $p)=@_;
+		server::whisper($p, '/updateMapAltituderank <map> <URL>');
+		server::whisper($p, ' map: exactly as it appear if you were to /changeMap');
+		server::whisper($p, ' URL: Full URL including http://. Javascript enabled downloads do not work.');
+	},
+
+	'updateMapURL'		=> sub {
+		my($e, $p)=@_;
+		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($mapname, $file);
+
+		return(0) unless($e->{'admin'});
+
+		$e->{'arguments'}[0]=~s|^$MAPDIR||;
+		$e->{'arguments'}[0]=~s|\.altx$||;
+		$e->{'arguments'}[0]=~s|\s+|_|g;
+
+		return(0) unless(file::name_ok($e->{'arguments'}[0]));
+		return(0) unless(file::url_ok($e->{'arguments'}[1]));
+
+		$mapname="$MAPDIR$e->{'arguments'}[0]";
+		$file="$maps$mapname.altx";
+
+		file::download('-L', '-o', $file, $e->{'arguments'}[1]);
+
+		if(-s $file > config::option('dlSizeLimit')) {
+			unlink($file);
+			server::whisper($p, "$mapname too big");
+		} elsif(file::type($file)!~m/LZMA compressed data/) {
+			unlink($file);
+			server::whisper($p, "$mapname is not the right type");
+			server::whisper($p, "maybe redirect failure, or a javascript enabled download");
+		} else {
+			if(config::new_maps($mapname)) {
+				server::whisper($p,
+					"Map added to config, you must /restartServer");
+			}
+			server::msg("$mapname updated");
+		}
+	},
+
+	'removeMap'		=> sub {
+		my($e, $p)=@_;
+		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($mapname, $file);
+
+		return(0) unless($e->{'admin'});
+
+		$e->{'arguments'}[0]=~s|^$MAPDIR||;
+		$e->{'arguments'}[0]=~s|\.altx$||;
+		$e->{'arguments'}[0]=~s|\s+|_|g;
+
+		return(0) unless(file::name_ok($e->{'arguments'}[0]));
+
+		$mapname="$MAPDIR$e->{'arguments'}[0]";
+		$file="$maps$mapname.altx";
+
+		if(-r $file) {
+			if(game::mapname($mapname)) {
+				server::send('changeMap', config::random_map())
+			}
+
+			stash::archive($mapname);
+
+			unlink($file);
+
+			#Should we be cleaning up the cache and server-unpacked-maps.xml?
+
+			if(config::remove_maps($mapname)) {
+				server::whisper($p,
+					"Map removed from config, you must /restartServer");
+			}
+			server::msg("$mapname deleted");
+		}
+	},
+
+	'help map'	=> sub {
+		my($e, $p)=@_;
+		server::whisper($p, '/list map');
+	},
+
+	'list map'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, game::mapname());
+	},
+
+	'help settings'	=> sub {
+		my($e, $p)=@_;
+		server::whisper($p, '/list settings');
+	},
+
+	'list settings'	=> sub {
+		my($e, $p)=@_;
+		my(@settings)=qw(
+			ballScore
+			gravity
+			cameraScale
+			planeScale
+			assignTeam
+			planes
+			spawnMode
+			gameType
+		);
+
+		foreach my $setting (@settings) {
+			$HOOKS{"list $setting"}->($e, $p)
+				if(exists($HOOKS{"list $setting"}));
+		}
+	},
+
+	'mapLoading'	=> sub {
+		my($e, $p)=@_;
+
+		#Moved to mapChange for now
+	},
+
+	'mapChange'	=> sub {
+		my($e, $p)=@_;
+		my(@settings)=qw(
+			ballScore
+			gravity
+			cameraScale
+			planeScale
+			assignTeam
+			planes
+			spawnMode
+			gameType
+		);
+
+		game::new_map($e);
+
+		foreach my $setting (@settings) {
+			$HOOKS{"enable $setting"}->($e, $p)
+				if(exists($HOOKS{"enable $setting"}));
+		}
+
+		server::msg('Server configured for map:', game::mapname);
+
+		foreach my $player (player::list()) {
+			$player->{'stats'}={};
+			$player->{'infractions'}-- if($player->{'infractions'});
+		}
+	},
+
+	'help gravity'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list gravity');
+		server::whisper($p, '/set gravity <0|1|2|3>');
+		server::whisper($p, '/unset gravity');
+	},
+
+	'list gravity'	=> sub {
+		my($e, $p)=@_;
+		my($gravity)=stash::get('gravity', game::mapname());
+
+		server::whisper($p, 'gravity:', $gravity || 'default');
+	},
+
+	'enable gravity'	=> sub {
+		my($e, $p)=@_;
+		my($gravity)=stash::get('gravity', game::mapname());
+
+		if(defined($gravity)) {
+			server::send('testGravityMode', $gravity);
+		} else {
+			server::send('testGravityMode', 0);
+		}
+	},
+
+	'set gravity'	=> sub {
+		my($e, $p, $grav)=@_;
+
+		if($grav==0) {
+			stash::delete('gravity', game::mapname());
+			server::msg('Returning gravity to normal');
+			server::send('testGravityMode', 0);
+		} elsif($grav<=3) {
+			stash::set('gravity', game::mapname(), $grav);
+			server::send('testGravityMode', $grav);
+		} else {
+			server::whisper($p, "Invalid gravity value: $grav");
+		}
+	},
+
+	'unset gravity'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('gravity', game::mapname());
+		server::send('testGravityMode', 0);
+
+		server::msg('Returning gravity to normal');
+	},
+
+	'help cameraScale'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list cameraScale');
+		server::whisper($p, '/set cameraScale <40-300>');
+		server::whisper($p, '/unset cameraScale');
+	},
+
+	'list cameraScale'	=> sub {
+		my($e, $p)=@_;
+		my($scale)=stash::get('cameraScale', game::mapname());
+
+		server::whisper($p, 'cameraScale:', $scale || '100');
+	},
+
+	'enable cameraScale'	=> sub {
+		my($e, $p)=@_;
+		my($scale)=stash::get('cameraScale', game::mapname());
+
+		server::send('testCameraViewScale', $scale || 100);
+	},
+
+	'set cameraScale'	=> sub {
+		my($e, $p, $zoom)=@_;
+
+		$zoom=~s/%$//;
+		$zoom=100 if($zoom=~m/default|normal/i);
+
+		if($zoom==100) {
+			stash::delete('cameraScale', game::mapname());
+			server::msg('Returning camera zoom to normal');
+			server::send('testCameraViewScale', 100);
+		} elsif(40<=$zoom && $zoom<=300) {
+			stash::set('cameraScale', game::mapname(), $zoom);
+			server::send('testCameraViewScale', $zoom);
+		} else {
+			server::whisper($p, "Invalid camera scale value: $zoom");
+		}
+	},
+
+	'unset cameraScale'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('cameraScale', game::mapname());
+		server::send('testCameraViewScale', 100);
+
+		server::msg('Returning camera zoom to normal');
+	},
+
+	'help planeScale'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list planeScale');
+		server::whisper($p, '/set planeScale <40-300>');
+		server::whisper($p, '/unset planeScale');
+	},
+
+	'list planeScale'	=> sub {
+		my($e, $p)=@_;
+		my($scale)=stash::get('planeScale', game::mapname());
+
+		server::whisper($p, 'planeScale:', $scale || 100);
+	},
+
+	'enable planeScale'	=> sub {
+		my($e, $p)=@_;
+		my($scale)=stash::get('planeScale', game::mapname());
+
+		server::send('testPlaneScale', $scale || 100);
+	},
+
+	'set planeScale'	=> sub {
+		my($e, $p, $zoom)=@_;
+
+		$zoom=~s/%$//;
+		$zoom=100 if($zoom=~m/default|normal/i);
+
+		if($zoom==100) {
+			stash::delete('planeScale', game::mapname());
+			server::msg('Returning plane zoom to normal');
+			server::send('testPlaneScale', 100);
+		} elsif(40<=$zoom && $zoom<=300) {
+			stash::set('planeScale', game::mapname(), $zoom);
+			server::send('testPlaneScale', $zoom);
+		} else {
+			server::whisper($p, "Invalid plane scale value: $zoom");
+		}
+	},
+
+	'unset planeScale'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('planeScale', game::mapname());
+		server::send('testPlaneScale', 100);
+
+		server::msg('Returning plane zoom to normal');
+	},
+
+	'help assignTeam'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list assignTeam');
+		server::whisper($p, '/set assignTeam <left|right|none>');
+		server::whisper($p, '/unset assignTeam');
+	},
+
+	'list assignTeam'	=> sub {
+		my($e, $p)=@_;
+		my($team)=stash::get('assignTeam', game::mapname());
+
+		server::whisper($p, 'assignTeam:', $team || 'none');
+	},
+
+	'enable assignTeam'	=> sub {
+		my($e, $p)=@_;
+		my($team)=stash::get('assignTeam', game::mapname());
+
+		if(defined($team)) {
+			server::msg('assignTeam:', $team);
+		}
+	},
+
+	'set assignTeam'	=> sub {
+		my($e, $p, $side)=@_;
+
+		if(game::left($side)) {
+			stash::set('assignTeam', game::mapname(), 'left');
+			server::msg(game::mapname(), 'is configured to force players left');
+
+			foreach my $m (player::list()) {
+				server::send('assignTeam', $m->{'nickname'}, 0)
+					if(game::right($m->{'team'}));
+			}
+		} elsif(game::right($side)) {
+			stash::set('assignTeam', game::mapname(), 'right');
+			server::msg(game::mapname(), 'is configured to force players right');
+
+			foreach my $m (player::list()) {
+				server::send('assignTeam', $m->{'nickname'}, 0)
+					if(game::left($m->{'team'}));
+			}
+		} elsif($side=~m/none/i) {
+			stash::delete('assignTeam', game::mapname());
+			server::msg('Side enforcement for', game::mapname(), 'is disabled');
+		}
+	},
+
+	'unset assignTeam'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('assignTeam', game::mapname());
+
+		server::msg('Deleted team assignment');
+	},
+
+	'help planes'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list planes');
+		server::whisper($p, '/set planes <Loopy|Bomber|Explodet|Biplane|Miranda>');
+		server::whisper($p, '/unset planes');
+	},
+
+	'list planes'	=> sub {
+		my($e, $p)=@_;
+		my($planes)=stash::get('planes', game::mapname());
+
+		server::whisper($p, 'planes:', $planes || 'all');
+	},
+
+	'enable planes'	=> sub {
+		my($e, $p)=@_;
+		my($planes)=stash::get('planes', game::mapname());
+
+		if(defined($planes)) {
+			server::msg('planes:', $planes);
+		}
+	},
+
+	'set planes'	=> sub {
+		my($e, $p, @planes)=@_;
+		my(%planes)=();
+		my($planere);
+		local($_);
+
+		if(game::mode('ffa')) {
+			server::whisper($p, 'Plane enforcement is not possible in FFA');
+			return;
+		}
+
+		foreach(split(m/[\s,;\|]+/, join(',', @planes))) {
+			s/["']//g;
+
+			s/loop.*/Loopy/i;
+			s/[bd]omb.*/Bomber/i;
+			s/whale/Explodet/i;
+			s/expl.*/Explodet/i;
+			s/bip.*/Biplane/i;
+			s/.*randa/Miranda/i;
+			s/mir.*/Miranda/i;
+
+			if(m/all|none/) {
+				stash::delete('planes', game::mapname());
+				server::msg('Plane enforcement for', game::mapname(), 'is disabled');
+				return;
+			} elsif(m/Loopy|Bomber|Explodet|Biplane|Miranda/) {
+				$planes{$_}=1;
+			}
+		}
+
+		$planere=join('|', keys(%planes));
+		stash::set('planes', game::mapname(), $planere);
+		server::msg(game::mapname(), 'only allows planes:', $planere);
+
+		foreach my $m (player::list()) {
+			game::bench($m) unless($m->{'plane'}=~m/$planere/);
+		}
+	},
+
+	'unset planes'	=> sub {
+		my($e, $p)=@_;
+
+		if(stash::delete('planes', game::mapname())) {
+			server::msg('Deleted plane requirements');
+		} else {
+			server::whisper($p, 'No plane requirements exist');
+		}
+	},
+
+	'help ballScore'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list ballScore');
+		server::whisper($p, '/set ballScore <-#|#> <-#|#>');
+		server::whisper($p, '/unset ballScore');
+		server::whisper($p, 'Negative numbers are an offset from the winning score');
+	},
+
+	'list ballScore'	=> sub {
+		my($e, $p)=@_;
+		my($scores)=stash::get('ballScore', game::mapname());
+
+		return unless(game::mode('ball'));
+
+		if($scores) {
+			server::whisper($p, 'ballScore: [', join(',', @$scores), ']');
+		} else {
+			server::whisper($p, 'ballScore: [', '0,0', ']');
+		}
+	},
+
+	'enable ballScore'	=> sub {
+		my($e, $p)=@_;
+		my($scores)=stash::get('ballScore', game::mapname());
+		my($goals)=$config::Goals;
+
+		if($scores) {
+			$scores->[0]=$goals+$scores->[0] if($scores->[0]<0);
+			$scores->[1]=$goals+$scores->[1] if($scores->[1]<0);
+			server::send('overrideBallScore', @$scores);
+		}
+	},
+
+	'set ballScore' 	=> sub {
+		my($e, $p, $l, $r)=@_;
+		my($goals)=$config::Goals;
+
+		return unless(game::mode('ball'));
+
+		if($l<=-$goals || $r<=-$goals || $goals<=$l || $goals<=$r) {
+			server::whisper($p, "Invalid goal #, must be between -$goals and $goals");
+		} elsif($l==0 && $r==0) {
+			server::whisper($p, "Initial score returned to normal for next round");
+			stash::delete('ballScore', game::mapname());
+		} else {
+			server::msg("Initial score set to [$l, $r]");
+			stash::set('ballScore', game::mapname(), [$l, $r]);
+
+			$l=$goals+$l if($l<0);
+			$r=$goals+$r if($r<0);
+			server::send('overrideBallScore', $l, $r);
+		}
+
+	},
+
+	'unset ballScore'	=> sub {
+		my($e, $p)=@_;
+
+		if(stash::delete('ballScore', game::mapname())) {
+			server::whisper($p, 'Removed initial ballScore');
+		} else {
+			server::whisper($p, 'Initial ballScore not set');
+		}
+	},
+
+	'help spawnMode'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list spawnMode');
+		server::whisper($p, '/set spawnMode <default|died|pickup|health|zone|near|portal>');
+		server::whisper($p, '/unset spawnMode');
+	},
+
+	'list spawnMode'	=> sub {
+		my($e, $p)=@_;
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+
+		if($spawn_mode) {
+			server::whisper($p, 'spawnMode:', $spawn_mode);
+		}
+	},
+
+	'enable spawnMode'	=> sub {
+		my($e, $p)=@_;
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+
+		if($spawn_mode) {
+			server::msg('spawnMode:', $spawn_mode);
+		}
+	},
+
+	'set spawnMode'	=> sub {
+		my($e, $p, $spawn)=@_;
+
+		if($spawn=~m/default|normal|start/i) {
+			server::msg("Player spawn returned to normal");
+			stash::delete('spawnMode', game::mapname());
+		} elsif($spawn=~m/die/i) {
+			server::msg("Players spawn where died, use '/sz start' to spawn normal");
+			stash::set('spawnMode', game::mapname(), 'died');
+		} elsif($spawn=~m/power|pick/i) {
+			server::msg("Players spawn at last powerup, use '/sz start' to spawn normal");
+			stash::set('spawnMode', game::mapname(), 'powerup');
+		} elsif($spawn=~m/health/i) {
+			server::msg("Players spawn at last health powerup, use '/sz start' to spawn normal");
+			stash::set('spawnMode', game::mapname(), 'health');
+		} elsif($spawn=~m/zone/i) {
+			server::msg("Spawn zones enabled, use /spawnZone to use them");
+			stash::set('spawnMode', game::mapname(), 'zone');
+		} elsif($spawn=~m/near/i) {
+			server::msg("Spawn in closest zone enabled, use '/sz start' to spawn normal");
+			stash::set('spawnMode', game::mapname(), 'near');
+		} elsif($spawn=~m/portal/i) {
+			if(game::mode('ffa')) {
+				server::whisper($p, 'Portals do not work in FFA');
+				return;
+			}
+
+			server::msg("Spawn portals enabled, use '/sz start' to spawn normal");
+			stash::set('spawnMode', game::mapname(), 'portal');
+		}
+	},
+
+	'unset spawnMode'	=> sub {
+		my($e, $p)=@_;
+
+		if(stash::delete('spawnMode', game::mapname())) {
+			server::msg('Disabled enhanced spawn locations');
+		} else {
+			server::whisper($p, 'Enhanced spawn locations not set');
+		}
+	},
+
+	'help gameType'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list gameType');
+		server::whisper($p, '/set gameType <mapname|std|coop|race|flag|zone>');
+		server::whisper($p, '/unset gameType');
+		server::whisper($p, 'mapname causes the type to be inferred from the map name');
+	},
+
+	'list gameType'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, 'gameType:', game::type());
+	},
+
+	'enable gameType'	=> sub {
+		my($e, $p)=@_;
+		my($type)=stash::get('gameType', game::mapname());
+
+		if($type) {
+			server::msg('gameType:', game::set_type($type));
+		} else {
+			server::msg('gameType:', game::set_type(game::mapname()));
+		}
+	},
+
+	'set gameType'		=> sub {
+		my($e, $p, $type)=@_;
+
+		if($type=~m/normal|file/i) {
+			stash::delete('gameType', game::mapname());
+			game::set_type(game::mapname());
+		} else {
+			stash::set('gameType', game::mapname(), $type);
+			game::set_type($type);
+		}
+
+		server::msg('gameType:', game::type());
+	},
+
+	'unset gameType'		=> sub {
+		my($e, $p)=@_;
+
+		if(stash::delete('gameType', game::mapname())) {
+			server::whisper($p, 'Removed gameType override');
+			server::msg('gameType:', game::set_type(game::mapname()));
+		} else {
+			server::whisper($p, 'gameType not set');
+		}
+	},
+
+	'help portals'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list portals');
+		server::whisper($p, '/add portal <name> <px>,<py> <sx>,<sy>,<sa>');
+		server::whisper($p, '/del portal <name>');
+	},
+
+	'list portals'	=> sub {
+		my($e, $p)=@_;
+		my($portals)=stash::get('portals', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($any)=0;
+
+		foreach my $portal (sort(keys(%$portals))) {
+			server::whisper($p, sprintf('%s: %d,%d -> %d,%d @%d',
+				$portal, @{$portals->{$portal}}));
+			$any=1;
+		}
+
+		if($spawn_mode eq 'portal') {
+			server::whisper($p, 'No spawn portals defined') unless($any);
+		} else {
+			server::whisper($p, 'spawnMode is not set to portal');
+		}
+	},
+
+	'add portal'	=> sub {
+		my($e, $p, $portal, $px, $py, $sx, $sy, $sa)=@_;
+
+		if(game::mode('ffa')) {
+			server::whisper($p, 'Portals cannot function in FFA games');
+			return;
+		}
+
+		$sa=game::angle($sa);
+
+		stash::set($portal, 'portals', game::mapname(),
+			[$px, $py => $sx, $sy, $sa]);
+		server::msg('Added portal:', $portal);
+	},
+
+	'del portal'	=> sub {
+		my($e, $p, $portal)=@_;
+
+		if(stash::delete($portal, 'portals', game::mapname())) {
+			server::msg('Deleted portal:', $portal);
+		} else {
+			server::whisper($p, 'No portal named:', $portal);
+		}
+	},
+
+	'help doors'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list doors');
+		server::whisper($p, '/add door <name> <dx>,<dy>');
+		server::whisper($p, '/del door <name>');
+	},
+
+	'help keys'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list keys');
+		server::whisper($p, '/add key <door_name> <kx>,<ky>');
+		server::whisper($p, '/del key <door_name>');
+	},
+
+	'list doors'	=> sub {
+		my($e, $p)=@_;
+		my($doors)=utils::invert(stash::get('doors', 'door', game::mapname()));
+		my($keys)=utils::invert(stash::get('keys', 'door', game::mapname()));
+		my($any)=0;
+		my($status);
+		local($_);
+
+		foreach my $door (sort(keys(%$doors))) {
+			if(game::door_open($p->{'team'}, $door)) {
+				$status='(open)';
+			} else {
+				$status='(locked)';
+			}
+			server::whisper($p, $door, ':', @{$doors->{$door}}, '<=',
+				@{$keys->{$door}}, $status);
+			delete($keys->{$door});
+			$any=1;
+		}
+
+		foreach my $key (sort(keys(%$keys))) {
+			server::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
+			$any=1;
+		}
+
+		server::whisper($p, 'No doors defined') unless($any);
+	},
+
+	'list keys'	=> sub {
+		$HOOKS{'list doors'}->(@_);
+	},
+
+	'add door'	=> sub {
+		my($e, $p, $name, $dx, $dy)=@_;
+
+		if(game::mode('ffa')) {
+			server::whisper($p, 'Doors cannot function in FFA games');
+			return;
+		}
+
+		stash::set("$dx,$dy", 'doors', 'door', game::mapname(), $name);
+		server::msg('Added door:', $name, "($dx,$dy)");
+	},
+
+	'add key'	=> sub {
+		my($e, $p, $name, $kx, $ky)=@_;
+
+		if(game::mode('ffa')) {
+			server::whisper($p, 'Doors cannot function in FFA games');
+			return;
+		}
+
+		stash::set("$kx,$ky", 'keys', 'door', game::mapname(), $name);
+		server::msg('Added key for door:', $name, "($kx,$ky)");
+	},
+
+	'del door'	=> sub {
+		my($e, $p, $name)=@_;
+		my($doors)=stash::get('doors', 'door', game::mapname());
+		my($any)=0;
+
+		foreach my $door (keys(%$doors)) {
+			if($doors->{$door} eq $name) {
+				stash::delete($door, 'doors', 'door', game::mapname());
+				server::msg('Deleted door:', $name, "($door)");
+				$any=1;
+			}
+		}
+
+		unless($any) {
+			server::whisper($p, 'No door named:', $name);
+		}
+	},
+
+	'del key'	=> sub {
+		my($e, $p, $name)=@_;
+		my($keys)=stash::get('keys', 'door', game::mapname());
+		my($any)=0;
+
+		foreach my $key (keys(%$keys)) {
+			if($keys->{$key} eq $name) {
+				stash::delete($key, 'keys', 'door', game::mapname());
+				server::msg('Deleted key for door:', $name, "($key)");
+				$any=1;
+			}
+		}
+
+		unless($any) {
+			server::whisper($p, 'No keys for door named:', $name);
+		}
+	},
+
+	'help zones'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list zones');
+		server::whisper($p, '/add zone <name> <team> <x>,<y>,<a>');
+		server::whisper($p, '/del zone <name> <team>');
+	},
+
+	'list zones'	=> sub {
+		my($e, $p)=@_;
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($any)=0;
+		my($zones);
+
+		server::whisper($p, 'start: default spawn zone for this map');
+
+		if($e->{'admin'}) {
+			$zones=stash::get(game::left, 'zones', game::mapname());
+			foreach my $zone (sort(keys(%$zones))) {
+				server::whisper($p,
+					sprintf('%s < %d,%d @%d', $zone, @{$zones->{$zone}}));
+				$any=1;
+			}
+
+			$zones=stash::get(game::right, 'zones', game::mapname());
+			foreach my $zone (sort(keys(%$zones))) {
+				server::whisper($p,
+					sprintf('%s > %d,%d @%d', $zone, @{$zones->{$zone}}));
+				$any=1;
+			}
+		} else {
+			$zones=stash::get($p->{'team'}, 'zones', game::mapname());
+			foreach my $zone (sort(keys(%$zones))) {
+				server::whisper($p,
+					sprintf('%s: %d,%d @%d', $zone, @{$zones->{$zone}}));
+				$any=1;
+			}
+		}
+
+		if($spawn_mode eq 'zone' || $spawn_mode eq 'near') {
+			server::whisper($p, 'No spawn zones defined') unless($any);
+		} else {
+			server::whisper($p, 'spawnMode is not set to zone');
+		}
+	},
+
+	'add zone'	=> sub {
+		my($e, $p, $zone, $team, $sx, $sy, $sa)=@_;
+
+		$sa=game::angle($sa);
+		$team='*' unless($team);
+
+		if(game::left($team)) {
+			stash::set($zone, game::left(), 'zones', game::mapname(), [$sx, $sy, $sa]);
+			server::msg('Added left zone:', $zone, "($sx,$sy)");
+		}
+
+		if(game::right($team)) {
+			stash::set($zone, game::right(), 'zones', game::mapname(), [$sx, $sy, $sa]);
+			server::msg('Added right zone:', $zone, "($sx,$sy)");
+		}
+	},
+
+	'del zone'	=> sub {
+		my($e, $p, $zone, $team)=@_;
+
+		$team='*' unless($team);
+
+		if(game::left($team)) {
+			if(stash::delete($zone, game::left(), 'zones', game::mapname())) {
+				server::msg('Deleted left zone:', $zone);
+			} else {
+				server::whisper($p, 'No left zone', $zone);
+			}
+		}
+
+		if(game::right($team)) {
+			if(stash::delete($zone, game::right(), 'zones', game::mapname())) {
+				server::msg('Deleted right zone:', $zone);
+			} else {
+				server::whisper($p, 'No right zone', $zone);
+			}
+		}
+	},
+
+	'help powerups'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list powerups');
+		server::whisper($p, '/add powerup <name> <team> <x> <y>');
+		server::whisper($p, '/del powerup <name> <team>');
+	},
+
+	'list powerups'	=> sub {
+		my($e, $p)=@_;
+		my($powerups)=stash::get('powerups', game::mapname());
+		my($any)=0;
+		my($groups);
+
+		if($e->{'admin'}) {
+			$groups=utils::invert(%{$powerups->{game::left()}});
+			foreach my $key (sort(keys(%$groups))) {
+				server::whisper($p, '<', $key, ':', @{$groups->{$key}});
+				$any=1;
+			}
+
+			$groups=utils::invert(%{$powerups->{game::right()}});
+			foreach my $key (sort(keys(%$groups))) {
+				server::whisper($p, '>', $key, ':', @{$groups->{$key}});
+				$any=1;
+			}
+		} else {
+			$groups=utils::invert(%{$powerups->{$p->{'team'}}});
+			foreach my $key (sort(keys(%$groups))) {
+				server::whisper($p, $key, ':', @{$groups->{$key}});
+				$any=1;
+			}
+		}
+
+		server::whisper($p, 'No special powerups defined') unless($any);
+	},
+
+	'add powerup'	=> sub {
+		my($e, $p, $powerup, $team, $px, $py)=@_;
+		my(@powerups)=();
+
+		$team='*' unless($team);
+
+		if(game::left($team)) {
+			stash::set("$px,$py", game::left(), 'powerups', game::mapname(), $powerup);
+			server::msg('Added left powerup:', $powerup, "($px,$py)");
+		}
+
+		if(game::right($team)) {
+			stash::set("$px,$py", game::right(), 'powerups', game::mapname(), $powerup);
+			server::msg('Added right powerup:', $powerup, "($px,$py)");
+		}
+	},
+	
+	'del powerup'	=> sub {
+		my($e, $p, $px, $py, $team)=@_;
+		my($powerup);
+
+		$team='*' unless($team);
+
+		if(game::left($team)) {
+			$powerup=stash::get("$px,$py", game::left(), 'powerups', game::mapname());
+			if(stash::delete("$px,$py", game::left(), 'powerups', game::mapname())) {
+				server::msg('Deleted left powerup:', $powerup, "($px,$py)");
+			} else {
+				server::whisper($p, 'No left powerup at', "$px,$py");
+			}
+		}
+
+		if(game::right($team)) {
+			$powerup=stash::get("$px,$py", game::right(), 'powerups', game::mapname());
+			if(stash::delete("$px,$py", game::right(), 'powerups', game::mapname())) {
+				server::msg('Deleted right powerup:', $powerup, "($px,$py)");
+			} else {
+				server::whisper($p, 'No right powerup at', "$px,$py");
+			}
+		}
+	},
+	
+	'spawnZone'	=> sub {
+		my($e, $p)=@_;
+		my($zone)=@{$e->{'arguments'}};
+		my($coords)=stash::get($zone, $p->{'team'}, 'zones', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+
+		if($zone=~m/^start$/i) {
+			game::bench($p);
+			game::spawn_here($p, 0, 0, 0);
+		} elsif($spawn_mode ne 'zone') {
+			server::whisper($p, "Zone spawning not allowed in mode: $spawn_mode");
+		} elsif(ref($coords) eq 'ARRAY') {
+			
+			if(game::mode('ffa')) {
+				server::whisper($p, 'Next spawn will be in', $zone);
+			} else {
+				game::bench($p);
+			}
+			game::spawn_here($p, @$coords);
+		} else {
+			server::whisper($p, "No zone named '$zone'");
+		}
+	},
+
+	'sz'			=> sub {
+		$HOOKS{'spawnZone'}->(@_);
+	},
+
+	'digest'		=> sub {
+		my($e, $p)=@_;
+		my($sum)=@{$e->{'arguments'}};
+		my($map)=game::mapfile();
+		my(%sums)=(
+			'crc32'	=> 'cksum',
+			'md5'	=> 'md5sum',
+			'sha1'	=> 'sha1sum',
+			'sha256'	=> 'sha256sum',
+		);
+
+		if(-r $map && file::name_ok($map)) {
+			server::whisper($p, game::mapname(), ':',
+				file::sum($sums{lc($sum)}, $map));
+		}
+	},
+
+	'showPlayer'		=> sub {
+		my($e, $p)=@_;
+		my($player)=player::lookup($e->{'arguments'}[0]);
+		my(@keys)=qw(
+			nickname
+			player
+			vaporId
+			team
+			level
+			aceRank
+			ip
+			country
+		);
+
+		foreach my $key (@keys) {
+			server::whisper($p, "$key:", $player->{$key});
+		}
+		server::whisper($p, "online:", ($e->{'time'}-$player->{'time'})/1000);
+	},
+
+	'clientAdd'		=> sub {
+		my($e, $p)=@_;
+		my($planes)=stash::get('planes', game::mapname());
+
+		if($p->{'nickname'}=~m/^\d{1,2}$/) {
+			server::whisper($e, "Invalid nickname for this server.");
+			server::send('kick', $e->{'nickname'});
+			return(undef);
+		}
+
+		return unless($e && $p);
+
+		$p->{'stats'}={};
+
+		player::add($p);
+
+		return if($p->{'isBot'});
+
+		if($p->{'country'}=utils::geoip($p->{'ip'})) {
+			ui::display('', '', "< $p->{'nickname'} entered from $p->{'country'} >");
+		} else {
+			ui::display('', '', "< $p->{'nickname'} entered >");
+		}
+
+		foreach my $statement (@MOTD) {
+			server::whisper($p, $statement);
+		}
+
+		server::whisper($p, 'Allowed Planes:', $planes) if($planes);
+	},
+
+	'clientNicknameChange'	=> sub {
+		my($e, $p)=@_;
+
+		player::rename($e->{'oldNickname'}, $e->{'newNickname'});
+	},
+
+	'clientRemove'		=> sub {
+		my($e, $p)=@_;
+
+		player::remove($p);
+
+		return if($p->{'isBot'});
+
+		game::busy();
+
+		ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
+	},
+
+	'teamChange'		=> sub {
+		my($e, $p)=@_;
+		my($map_team)=stash::get('assignTeam', game::mapname());
+
+		$p->{'team'}=$e->{'team'};
+
+		return if($p->{'isBot'});
+
+		if($map_team eq 'left' && game::right($p->{'team'})) {
+			server::send('assignTeam', $p->{'nickname'}, 0);
+			return;
+		} elsif($map_team eq 'right' && game::left($p->{'team'})) {
+			server::send('assignTeam', $p->{'nickname'}, 1);
+			return;
+		}
+
+		if(config::option('requireLevel')) {
+			if($p->{'aceRank'}==0) {
+				if($p->{'level'}<21) {
+					server::whisper($p,
+						"Watch and learn until you unlock all your planes");
+					$p->{'infractions'}++;
+					server::send('assignTeam', $p->{'nickname'}, -1);
+				}
+			} else {
+				if($p->{'level'}<8) {
+					server::whisper($p,
+						"You can play after you earn your blue perk");
+					$p->{'infractions'}++;
+					server::send('assignTeam', $p->{'nickname'}, -1);
+				}
+			}
+		}
+
+		if($p->{'infractions'}>10) {
+			server::send('kick', $p->{'nickname'});
+		}
+	},
+
+	'spawn'	=> sub {
+		my($e, $p)=@_;
+		my($planere)=stash::get('planes', game::mapname());
+		my($map_team)=stash::get('assignTeam', game::mapname());
+		my($match);
+
+		$p->{'plane'}=$e->{'plane'};
+		$p->{'team'}=$e->{'team'};
+		$p->{'stats'}{'turret'}=0;
+
+		return if($p->{'isBot'});
+
+		unless($p->{'plane'}=~m/$planere/) {
+			game::bench($p);
+			server::whisper($p, "Allowed planes: $planere");
+		}
+
+		if($map_team eq 'left' && game::right($p->{'team'})) {
+			server::send('assignTeam', $p->{'nickname'}, 0);
+			return;
+		} elsif($map_team eq 'right' && game::left($p->{'team'})) {
+			server::send('assignTeam', $p->{'nickname'}, 1);
+			return;
+		}
+
+		if(server::snarky()) {
+			foreach my $snark (List::Util::shuffle(keys(%SNARKS))) {
+				$match=1;
+				foreach my $test (keys(%{$SNARKS{$snark}})) {
+					$match&=($e->{$test}=~m/$SNARKS{$snark}{$test}/);
+				}
+				if($match) {
+					server::snark($p, sprintf($snark, $p->{'nickname'}));
+					last;
+				}
+			}
+		}
+	},
+
+	'goal'	=> sub {
+		my($e, $p)=@_;
+		my($a)=player::lookup($e->{'assister'});
+		my($a2)=player::lookup($e->{'secondaryAssister'});
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+
+		if(game::left($p->{'team'})) {
+			game::update_score('left');
+		} elsif(game::right($p->{'team'})) {
+			game::update_score('right');
+		}
+
+		if($spawn_mode eq 'near') {
+	 		foreach my $player (player::list()) {
+				game::spawn_here($player, 0, 0, 0);
+			}
+		}
+
+		if($p->{'Ball'}{'time'} && ($e->{'time'}-$p->{'Ball'}{'time'})>3000) {
+			server::laud("Nice Shot $p->{'nickname'}!");
+		}
+
+		if($a2 && !$a2->{'isBot'}) {
+			server::laud("Good pass $a->{'nickname'}, you too $a2->{'nickname'}.");
+		} elsif($a && !$a->{'isBot'}) {
+			server::laud("Good pass $a->{'nickname'}.");
+		}
+	},
+	
+	'overrideBallScore'	=> sub {
+		my($e, $p)=@_;
+
+		game::update_score( @{$e->{'arguments'}} );
+	},
+	
+	'logPickups'		=> sub {
+		my($e, $p)=@_;
+
+		$p->{'logPickups'}^=1;
+
+		if($p->{'logPickups'}) {
+			server::whisper($p, 'Pickup logging enabled');
+		} else {
+			server::whisper($p, 'Pickup logging disabled');
+		}
+	},
+
+	'location'		=> sub {
+		my($e, $p)=@_;
+		server::trigger('logPlanePositions', 'location', $e, $p);
+	},
+
+	'logPlanePositions:location'	=> sub {
+		my($e1, $p1, $e2, $p2)=@_;
+
+		my($x, $y)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
+			
+		server::whisper($p2, $x, $y);
+	},
+
+	'powerupUse'	=> sub {
+		my($e, $p)=@_;
+		my($diff)=$e->{'time'} - $p->{$e->{'powerup'}}{'time'};
+
+		if($e->{'powerup'} eq 'Ball') {
+			$p->{$e->{'powerup'}}{'time'}=$e->{'time'};
+		} elsif($diff<2000) {
+			$p->{$e->{'powerup'}}{'count'}++;
+		} else {
+			$p->{$e->{'powerup'}}{'time'}=$e->{'time'};
+			$p->{$e->{'powerup'}}{'count'}=1;
+		}
+
+		if($p->{'Homing Missile'}{'count'} > 12) {
+			server::snark($p, 'Hwacha');
+		}
+		if($p->{'Bomb'}{'count'} > 10) {
+			server::snark($p, "$p->{'nickname'} bombs with extreme prejudice");
+		}
+	},
+
+	'powerupPickup'	=> sub {
+		my($e, $p)=@_;
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my(@x)=POSIX::modf($e->{'positionX'});
+		my(@y)=POSIX::modf($e->{'positionY'});
+
+		game::capture($e, $p) if(game::type('flag'));
+		game::checkpoint($e, $p) if(game::type('race'));
+
+		return if($p->{'isBot'});
+
+		if($e->{'powerup'} eq 'Ball') {
+			$p->{$e->{'powerup'}}{'time'}=0;
+		} elsif($e->{'powerup'} eq 'Bomb') {
+			if($e->{'velocityX'} && $e->{'velocityY'} && server::snarky()) {
+				server::snark($p, 'Nice catch', $p->{'nickname'});
+			}
+		}
+
+		server::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
+
+		if(game::knock($e, $p)) {
+			1;
+		} elsif($spawn_mode eq 'powerup') {
+			unless($x[0] || $y[0] || $e->{'velocityX'} || $e->{'velocityY'}) {
+				server::trigger('logPlanePositions', 'powerup', $e, $p);
+			}
+		} elsif($spawn_mode eq 'portal') {
+			game::teleport($e, $p);
+		}
+	},
+
+	'powerupAutoUse'	=> sub {
+		my($e, $p)=@_;
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my(@x)=POSIX::modf($e->{'positionX'});
+		my(@y)=POSIX::modf($e->{'positionY'});
+
+		game::capture($e, $p) if(game::type('flag'));
+		game::checkpoint($e, $p) if(game::type('race'));
+
+		return if($p->{'isBot'});
+
+		server::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
+
+		if(game::knock($e, $p)) {
+			1;
+		} elsif($spawn_mode eq 'health' || $spawn_mode eq 'powerup') {
+			unless($x[0] || $y[0]) {
+				server::trigger('logPlanePositions', 'powerup', $e, $p);
+			}
+		} elsif($spawn_mode eq 'portal') {
+			game::teleport($e, $p);
+		}
+	},
+
+	'logPlanePositions:powerup'	=> sub {
+		my($e1, $p1, $e2, $p2)=@_;
+		my($x, $y)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
+
+		$x-=$e2->{'positionX'};
+		$y-=$e2->{'positionY'};
+
+		game::spawn_here($p2, $e2->{'positionX'}, $e2->{'positionY'}, $x, $y);
+	},
+
+	'kill'	=> sub {
+		my($e, $p)=@_;
+		my($v)=player::lookup($e->{'victim'});
+		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($angle);
+
+		return unless($v);
+		return if($v->{'isBot'});
+
+		if($spawn_mode eq 'died') {
+			if($e->{'player'}==-1 && $e->{'source'} eq 'plane') { #crash
+				$e->{'victimVelocityX'}*=-1;
+				$e->{'victimVelocityY'}*=-1;
+			}
+			game::spawn_here($v,
+				$e->{'victimPositionX'}, $e->{'victimPositionY'},
+				$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
+		} elsif($spawn_mode eq 'near') {
+			game::spawn_near($v,
+				$e->{'victimPositionX'}, $e->{'victimPositionY'});
+		}
+
+		return unless($p);
+		return unless($e->{'source'}=~m/plane/);
+		return if($p->{'isBot'});
+
+		if(List::Util::max(map(abs, @$e{'victimVelocityX', 'victimVelocityY'})) > 15) {
+			server::snark($v, "$v->{'nickname'} says Ouch!!");
+		}
+
+		$p->{'stats'}{'kill'}{$v->{'nickname'}}++;
+		$v->{'stats'}{'died'}++;
+
+		if($p->{'team'} == $v->{'team'}) {
+			server::snark($v, "$v->{'nickname'} was killed by friendly fire");
+		} elsif($e->{'multi'}>5) {
+			server::snark($p, "$p->{'nickname'} says Booyah!!");
+		} elsif($e->{'streak'}>10) {
+			server::snark($p, "$p->{'nickname'}: $e->{'streak'}");
+		} elsif(($v->{'stats'}{'died'}%15)==0 && player::count()>4) {
+			if($p->{'stats'}{'kill'}{$v->{'nickname'}} > $v->{'stats'}{'died'}/(player::count()/4)) {
+				server::snark($v, "$p->{'nickname'} must really like killing $v->{'nickname'}");
+			}
+		}
+	},
+
+	'structureDestroy'	=> sub {
+		my($e, $p)=@_;
+
+		$p->{'stats'}{$e->{'target'}}++;
+
+		if( ($p->{'stats'}{$e->{'target'}} % 35)==0 ) {
+			server::snark($p, "$p->{'nickname'} is tearing down the house");
+		}
+	},
+
+	'pingSummary'	=> sub {
+		my($e, $p)=@_;
+		my(%pings)=%{$e->{'pingByPlayer'}};
+		my($laggard);
+
+		return unless(server::snarky());
+
+		foreach my $player (List::Util::shuffle(keys(%pings))) {
+			if($pings{$player}>=$config::Ping) {
+				$laggard=player::lookup($player);
+				server::snark($laggard, $laggard->{'nickname'}, 'is laggy');
+				last;
+			}
+		}
+	},
+
+	'chat'		=> sub {
+		my($e, $p)=@_;
+
+		if($e->{'team'}) {
+			if(game::left($p->{'team'})) {
+				ui::chat_log('<', $p->{'nickname'}, $e->{'message'});
+			} elsif(game::right($p->{'team'})) {
+				ui::chat_log('>', $p->{'nickname'}, $e->{'message'});
+			} else {
+				ui::chat_log('?', $p->{'nickname'}, $e->{'message'});
+			}
+		} else {
+			ui::chat_log('*', $p->{'nickname'}, $e->{'message'});
+		}
+
+		if(config::language($e->{'message'})) {
+			$p->{'infractions'}++;
+			if($p->{'infractions'}<10) {
+				server::whisper($p, "language ($p->{'infractions'})");
+			} else {
+				server::msg("kicking '$p->{'nickname'}' for infractions");
+				server::send('kick', $p->{'nickname'});
+			}
+		}
+	},
+
+	'serverMessage'	=> sub {
+		my($e, $p)=@_;
+		my($msg)=join(' ', @{$e->{'arguments'}});
+
+		ui::chat_log('*', 'server', $msg);
+	},
+
+	'objectiveGameStart'	=> sub {
+		my($e, $p)=@_;
+
+		game::teams($e->{'leftTeam'}, $e->{'rightTeam'});
+	},
+
+	'roundEnd'	=> sub {
+		my($e, $p)=@_;
+		my(%stats)=%{$e->{'participantStatsByName'}};
+		my(%award)=%{$e->{'winnerByAward'}};
+		my($pls)=$e->{'participants'};
+		my($ratio)=[];
+		my($cps)=[];
+		my($keys)=[];
+
+		return if(@$pls<4);
+
+		if($stats{'Crashes'}) {
+			game::most('Training Wheels Award: ', $stats{'Crashes'}, $pls);
+		}
+		if($stats{'Deaths'}) {
+			game::most('Kenny McCormick Award: ', $stats{'Deaths'}, $pls);
+		}
+		if($stats{'Ball Possession Time'}) {
+			game::most('Ball Hog Award: ', $stats{'Ball Possession Time'}, $pls);
+		}
+		if($stats{'Damage Dealt'}) {
+			game::most('Sledge Hammer Award: ', $stats{'Damage Dealt'}, $pls);
+		}
+		if($stats{'Damage Received'}) {
+			game::most('Tank Award: ', $stats{'Damage Received'}, $pls);
+		}
+
+		if($stats{'Kills'} && $stats{'Deaths'} && !game::type('coop')) {
+			for(my $i=0; $i<@$pls; $i++) {
+				$stats{'Deaths'}->[$i]=1 unless($stats{'Deaths'}->[$i]);
+				$ratio->[$i]=$stats{'Kills'}->[$i]/$stats{'Deaths'}->[$i];
+			}
+			game::most('Best Ratio: ', $ratio, $pls);
+		}
+
+		if(game::type('race')) {
+			for(my $i=0; $i<@$pls; $i++) {
+				$cps->[$i]=player::lookup($pls->[$i])->{'stats'}{'checkpoint'};
+			}
+			game::most('Front Runner: ', $cps, $pls);
+		}
+
+		if('key finder stats') {
+			for(my $i=0; $i<@$pls; $i++) {
+				$keys->[$i]=player::lookup($pls->[$i])->{'stats'}{'keys'};
+			}
+			game::most('Key Master: ', $keys, $pls);
+		}
+	},
+
+	'restartMap'	=> sub {
+		my($e, $p)=@_;
+
+		server::trigger('logPlanePositions', 'restartMap', $e, $p);
+	},
+
+	'logPlanePositions:restartMap'	=> sub {
+		my($e1, $p1, $e2, $p2)=@_;
+		my(@alive)=();
+		my($p3);
+
+		foreach my $player (keys(%{$e1->{'positionByPlayer'}})) {
+			$p3=player::lookup($player);
+
+			next if($p3->{'isBot'});
+			next if($e1->{'positionByPlayer'}{$player} eq '-1,-1');
+
+			push(@alive, $p3);
+		}
+
+		if(@alive==1 && $p2==$alive[0]) {
+			server::send('balanceTeams');
+		} elsif(@alive<=2 && game::type('coop')) {
+			if(grep($p2==$_, @alive)) {
+				server::send('balanceTeams');
+			}
+		}
+	},
+
+	'restartServer'	=> sub {
+		my($e, $p)=@_;
+
+		return unless($e->{'admin'});
+
+		server::msg('Restarting server in');
+		ui::display('', '', 'Restarting server in');
+		server::msg("5"); ui::display('', '', '5');
+		sleep(1);
+		server::msg("4"); ui::display('', '', '4');
+		sleep(1);
+		server::msg("3"); ui::display('', '', '3');
+		sleep(1);
+		server::msg("2"); ui::display('', '', '2');
+		sleep(1);
+		server::msg("1"); ui::display('', '', '1');
+		sleep(1);
+
+		if($OPTIONS{'updateMapList'}) {
+			config::find_maps();
+		} else {
+			config::read_maps();
+		}
+
+		server::start();
+		server::reopen_log();
+	},
+
+	'updatePrepareRestart'	=> sub {
+		sleep(5);
+		server::reopen_log();
+	},
+
+	'serverShutdown'	=> sub {
+		server::shutdown();
+	},
+
+	'serverHitch'	=> sub {
+		my($e)=@_;
+
+		return if($e->{'changedMap'});
+		return if(($e->{'time'}-game::start())<10000);	#10 seconds
+
+		server::msg(sprintf('Server lag: %.2f seconds', $e->{'duration'}/1000));
+	},
+);
+
+=head2 Errors and Signals
+
+If the B<alti+server> code recognizes a failure or if it receives a signal
+to exit, it ensures the Altitude game engine is shut down first, then
+exits.  Any warnings (which would be produced from using deprecated functions)
+are sent to the server log (top) window of the user interface.
+
+=cut
+
+local(%SIG)=(
+	'__WARN__'	=> sub {
+		ui::slog(@_);
+	},
+	'__DIE__'		=> sub {
+		&server::shutdown();
+		&ui::shutdown();
+		print @_, "\n";
+		exit(1);
+	},
+	'HUP'		=> sub {
+		&server::shutdown();
+		&ui::shutdown();
+		exit(0);
+	},
+	'TERM'		=> sub {
+		&server::shutdown();
+		&ui::shutdown();
+		exit(0);
+	},
+	'INT'		=> sub {
+		&server::shutdown();
+		&ui::shutdown();
+		exit(0);
+	},
+);
+
+=head2 Operation
+
+The Altitude game engine will be invoked by B<alti+server> and will also be
+closed by B<alti+server>.  If an error occurs with the server, B<alti+server>
+will attempt to restart the server.  All managment of the Altitude game engine
+should be performed from within B<alti+server> to ensure it has proper
+knowledge of ports, players, log files, standard output, etc.
+
+=cut
+
+my($REQ, $SOUT, $TRIGGER);
+
+ui::setup_screen();
+
+config::launcher();
+
+if($OPTIONS{'updateMapList'}) {
+	config::find_maps();
+} else {
+	config::read_maps();
+}
+
+server::start();
+
+while(1) {
+	foreach my $fh (server::data()) {
+		if(server::is_log($fh)) {
+			next unless($REQ=server::event());
+		
+			if($TRIGGER=server::triggers($REQ->{'type'})) {
+				my($trigger)=shift(@$TRIGGER);
+				$HOOKS{$trigger}->(&event($REQ), @$TRIGGER);
+			} elsif(exists($HOOKS{$REQ->{'type'}})) {
+				$HOOKS{$REQ->{'type'}}->(&event($REQ));
+			} elsif(exists($HOOKS{$REQ->{'command'}})) {
+				$HOOKS{$REQ->{'command'}}->(&event($REQ));
+			}
+		} elsif(server::is_output($fh)) {
+			$SOUT=server::output();
+
+			if($SOUT=~m/Starting server on port $config::Port/) {
+				server::reopen_log();
+			} elsif($SOUT=~m/$FATAL_SERVER_ERRORS/) {
+				server::interrupt();
+				server::shutdown();
+
+				if($OPTIONS{'updateMapList'}) {
+					config::find_maps();
+				} else {
+					config::read_maps();
+				}
+				server::start();
+				server::reopen_log();
+			} elsif($SOUT=~m/Data Transfer Since Launch/) {
+				ui::slog('INFO  : CPU Totals (user system):', (times)[0,1]);
+
+				if(player::count()==0 && game::mapname()) {
+					server::send('changeMap', config::random_map())
+						if(game::elapsed()>3600);
+				}
+			}
+
+			ui::slog($SOUT);
+		} else {
+			input::stdin();
+		}
+	}
+}
+
+END {
+	server::shutdown();
+	ui::shutdown();
+	exit(0);
+}
+
+=head1 NOTES
+
+The B<alti+server> program is an interactive server manager, which is not
+convenient for running on a headless system or (for example) VPS.  It is
+recommended that B<alti+server> be run in a detachable terminal emulator
+to allow it to continue to function during a disconnect.  The author prefers
+screen, but tmux and dtach would both work just as well.  It is a good idea
+to name the detatched session if you run multiple already, so it is easy to
+re-attach to.
+
+=head1 AUTHOR
+
+William Totten < biell @ pobox . com >
+
+=head1 PUBLIC DOMAIN NOTICE
+
+I, William Totten, hereby release this work into the public domain. This
+applies worldwide.  In case this is not legally possible, I grant any entity
+the right to use this work for any purpose, without any conditions, unless
+such conditions are required by law.
+
+=head1 WARRANTY
+
+THIS SOFTWARE IS PROVIDED BY THE ORIGINAL AUTHOR AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE ORIGINAL AUTHOR OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+=cut
+
