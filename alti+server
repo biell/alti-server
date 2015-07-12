@@ -27,6 +27,13 @@ my(%OPTIONS)=(
 	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
 	bullyKick		=> 1,               #Kick repeated aggressive language
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
+	superAdmin	=> 'admin',		#Super Admin command access:
+	                                   # admin: all admins are super admins
+								# console: cmds typed at console only
+								# list: vaporId from @SUPER_ADMINS array
+);
+
+my(@SUPER_ADMINS)=(		#Use vaporIDs here, not nicknames!
 );
 
 my(@MOTD)=(
@@ -649,6 +656,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	my(@Maps)=();
 	my(%Mapdb)=();
 	my($Language);
+	my($Size)=0;
 
 	our($Port)=0;
 	our($Ping)=500; #reset from launcher_config.xml
@@ -668,6 +676,23 @@ has occured.  After too many infractions, the player is kicked by the server.
 		} else {
 			return($OPTIONS{$key});
 		}
+	}
+
+	sub _packet_length {
+		my($size)=0;
+		my($str);
+
+		foreach my $arg (@_) {
+			if(ref($arg)) {
+				$str=json::encode($arg);
+			} else {
+				$str=$arg;
+			}
+			$str=~s/\W//g;
+			$size+=length($str);
+		}
+
+		return($size);
 	}
 
 	sub launcher {
@@ -704,6 +729,9 @@ has occured.  After too many infractions, the player is kicked by the server.
 		open($fh, '<', $Custfile);
 		while(<$fh>) {
 			$cmd=json::decode($_);
+			#$Size+=&_packet_length(@$cmd{'name', 'arguments', 'argumentDescriptions'});
+			$Size+=&_packet_length($_);
+
 			if($cmd->{'arguments'} && @{$cmd->{'arguments'}}) {
 				$Commands{$cmd->{'name'}}=$cmd->{'arguments'};
 			} else {
@@ -768,9 +796,11 @@ has occured.  After too many infractions, the player is kicked by the server.
 	sub find_maps {
 		my($lconfig)=IO::Handle->new;
 		my($maplist)=0;
-		my($packet_space)=1625+length($MAPDIR)*30;
+		my($packet_space)=(1450-240-$Size/2.5)*2.5+length($MAPDIR)*40;
 		my(@xml);
 		local($_);
+
+		ui::slog('uncompressed space reserved for maps:', $packet_space);
 
 		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$MAPDIR/*_*.altx>);
 
@@ -1267,11 +1297,12 @@ is updated with them as the games progress.
 
 	sub server {
 		return({
-			'nickname'=> 'server',
-			'vaporId'	=> '00000000-0000-0000-0000-000000000000',
-			'player'	=> -1,
-			'team'	=> -1,
-			'isBot'	=> 1,
+			'nickname'	=> 'server',
+			'vaporId'		=> '00000000-0000-0000-0000-000000000000',
+			'player'		=> -1,
+			'team'		=> -1,
+			'isBot'		=> 1,
+			'superAdmin'	=> 1,
 		});
 	}
 
@@ -1283,6 +1314,11 @@ is updated with them as the games progress.
 		} else {
 			$p->{'isBot'}=0;
 			push(@Players, $p);
+		}
+
+		$p->{'superAdmin'}=0;
+		foreach my $admin (@SUPER_ADMINS) {
+			$p->{'superAdmin'}=1 if($p->{'vaporId'} eq $admin);
 		}
 
 		$Pdb{$p->{'nickname'}}	=
@@ -1887,10 +1923,19 @@ sub event {
 		$player=player::event_search($event);
 	}
 
-	if($event->{'group'}=~m/^(server|Administrator)$/) {
+	if($event->{'group'} eq 'server') {
 		$event->{'admin'}=1;
+		$event->{'superAdmin'}=1;
+	} elsif($event->{'group'} eq 'Administrator') {
+		$event->{'admin'}=1;
+		if($OPTIONS{'superAdmin'} eq 'list') {
+			$event->{'superAdmin'}=$player->{'superAdmin'};
+		} else {
+			$event->{'superAdmin'}=1;
+		}
 	} else {
-		$event->{'admin'}=0
+		$event->{'admin'}=0;
+		$event->{'superAdmin'}=0;
 	}
 
 	return($event, $player);
@@ -2179,7 +2224,7 @@ my(%HOOKS);
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($mapname, $file);
 
-		return(0) unless($e->{'admin'});
+		return(0) unless($e->{'superAdmin'});
 
 		$e->{'arguments'}[0]=~s|^$MAPDIR||;
 		$e->{'arguments'}[0]=~s|\.altx$||;
@@ -2222,7 +2267,7 @@ my(%HOOKS);
 		my($url)="http://altituderank.com/mapdownloads/%s.altx";
 		my($mapname, $file);
 
-		return(0) unless($e->{'admin'});
+		return(0) unless($e->{'superAdmin'});
 
 		$e->{'arguments'}[0]=~s|^$MAPDIR||;
 		$e->{'arguments'}[0]=~s|\.altx$||;
@@ -2266,7 +2311,7 @@ my(%HOOKS);
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($mapname, $file);
 
-		return(0) unless($e->{'admin'});
+		return(0) unless($e->{'superAdmin'});
 
 		$e->{'arguments'}[0]=~s|^$MAPDIR||;
 		$e->{'arguments'}[0]=~s|\.altx$||;
@@ -2301,7 +2346,7 @@ my(%HOOKS);
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($mapname, $file);
 
-		return(0) unless($e->{'admin'});
+		return(0) unless($e->{'superAdmin'});
 
 		$e->{'arguments'}[0]=~s|^$MAPDIR||;
 		$e->{'arguments'}[0]=~s|\.altx$||;
@@ -3720,7 +3765,7 @@ my(%HOOKS);
 	'restartServer'	=> sub {
 		my($e, $p)=@_;
 
-		return unless($e->{'admin'});
+		return unless($e->{'superAdmin'});
 
 		server::msg('Restarting server in');
 		ui::display('', '', 'Restarting server in');
