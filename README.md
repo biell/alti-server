@@ -8,6 +8,15 @@ Altitude game server wrapper to enable enhanced modes of game play.
   * custom_json_commands.txt  -  The custom commands which allow people to interact with the server
   * small_custom_json_commands.txt  -  A smaller version of the custom commands which don't help users but allow for more maps to be loaded.
 
+## Additional Commands
+
+### Console only commands
+
+/showPlayer <player>
+: Print information on *player*
+
+/shutdown
+: Shutdown the Altitude game engine, then alti+server itself
 
 ## More information
 See the MAP QA website for more information on using the server:

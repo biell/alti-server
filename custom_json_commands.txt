@@ -1,21 +1,18 @@
-{"name":"updateMapAltitudegame", "arguments":["string"], "argumentDescriptions":["Map Name"], "voteThreshold":100}
-{"name":"updateMapAltituderank", "arguments":["string"], "argumentDescriptions":["Map Name"], "voteThreshold":100}
-{"name":"updateMapURL", "arguments":["string", "string"], "argumentDescriptions":["Map Name", "URL"], "voteThreshold":100}
-{"name":"removeMap", "arguments":["map"], "voteThreshold":100}
-{"name":"digest", "arguments":[["crc32", "md5", "sha1", "sha256"]], "voteThreshold":0}
-{"name":"restartServer", "arguments":[], "voteThreshold":100}
-{"name":"restartMap", "arguments":[], "voteThreshold":0}
-{"name":"help", "arguments":[["map", "settings", "gravity", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "gameType", "powerups", "portals", "doors", "keys", "zones", "updateMapAltitudegame", "updateMapAltituderank", "updateMapURL"]], "voteThreshold":0}
+{"name":"help", "arguments":[["map", "settings", "gravity", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "gameType", "powerups", "portals", "doors", "keys", "zones", "altitudegame", "ladder", "url"]], "voteThreshold":0}
+{"name":"upload", "arguments":[["altitudegame", "ladder", "url"], "string"], "voteThreshold":0}
 {"name":"list", "arguments":[["map", "settings", "gravity", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "gameType", "powerups", "portals", "doors", "keys", "zones"]], "voteThreshold":0}
 {"name":"set", "arguments":[["gravity", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "gameType"], "string"], "voteThreshold":100}
 {"name":"unset", "arguments":[["gravity", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "gameType"]], "voteThreshold":100}
 {"name":"add", "arguments":[["powerup", "portal", "door", "key", "zone"], "string"], "voteThreshold":100}
 {"name":"del", "arguments":[["powerup", "portal", "door", "key", "zone"], "string"], "voteThreshold":100}
-{"name":"showPlayer", "arguments":["player"], "voteThreshold":0}
+{"name":"restartServer", "arguments":[], "voteThreshold":100}
+{"name":"removeMap", "arguments":["map"], "voteThreshold":100}
 {"name":"spawnZone", "arguments":["string"], "argumentDescriptions":["Zone name"], "voteThreshold":0}
 {"name":"sz", "arguments":["string"], "argumentDescriptions":["Zone name"], "voteThreshold":0}
+{"name":"sum", "arguments":[["crc32", "md5", "sha1", "sha256"]], "voteThreshold":0}
 {"name":"logPickups", "arguments":[], "voteThreshold":0}
 {"name":"location", "arguments":[], "voteThreshold":0}
 {"name":"switch", "arguments":[], "voteThreshold":0}
+{"name":"restartMap", "arguments":[], "voteThreshold":0}
 {"name":"talk", "arguments":["player", "string"], "argumentDescriptions":["Nick", "Msg"], "voteThreshold":0}
 {"name":"mesg", "arguments":[["Yes", "No", "?"]], "voteThreshold":0}

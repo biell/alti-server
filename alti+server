@@ -1,16 +1,12 @@
 #!/usr/bin/perl
 
+use strict;
+
 =head1 NAME
 
 alti+server - Altitude server designed to support extended game types
 
 =cut
-
-use strict;
-
-use POSIX;
-use IO::Handle;
-use List::Util;
 
 my($INSTALL_ROOT)="$ENV{'HOME'}/altitude";
 
@@ -22,7 +18,7 @@ my(%OPTIONS)=(
 	boxColor		=> 'blue',          #Curses color palet:
 	chatFromColor	=> 'cyan',          # black, blue, cyan, green,
 	chatToColor	=> 'yellow',        # magenta, red, white, yellow
-	uiPrettyBoxes	=> 0,               #Use '|', '-' or of ACS/Unicode
+	uiPrettyBoxes	=> 0,               #0='|','-' and 1=ACS/Unicode prettiness
 	requireLevel	=> 1,               #Require level 21 for Ace0, & 8 for 1-10
 	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
 	bullyKick		=> 1,               #Kick repeated aggressive language
@@ -62,6 +58,10 @@ higher uptime.  Also, B<alti+server> creates a multi-paned curses interface
 which allows management of the server to be easier.
 
 =cut
+
+use POSIX;
+use IO::Handle;
+use List::Util;
 
 my($FATAL_SERVER_ERRORS)=join('|',
 	'java.lang.RuntimeException',
@@ -729,7 +729,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 		open($fh, '<', $Custfile);
 		while(<$fh>) {
 			$cmd=json::decode($_);
-			#$Size+=&_packet_length(@$cmd{'name', 'arguments', 'argumentDescriptions'});
 			$Size+=&_packet_length($_);
 
 			if($cmd->{'arguments'} && @{$cmd->{'arguments'}}) {
@@ -740,6 +739,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 		}
 		close($fh);
 
+		#These work only from console:
+		$Commands{'showPlayer'}=['player'];
 		$Commands{'shutdown'}=undef;
 
 		open($fh, '<', $Filtfile);
@@ -2163,6 +2164,16 @@ my(%HOOKS);
 		$HOOKS{"del $type"}->($e, $p, @args) if(exists($HOOKS{"del $type"}));
 	},
 
+	'upload'		=> sub {
+		my($e, $p)=@_;
+		my($type, $args)=@{$e->{'arguments'}};
+		my(@args)=split(m/\s+/, $args);
+
+		return unless($e->{'superAdmin'});
+
+		$HOOKS{"upload $type"}->($e, $p, @args) if(exists($HOOKS{"upload $type"}));
+	},
+
 	'switch'	=> sub {
 		my($e, $p)=@_;
 
@@ -2213,29 +2224,28 @@ my(%HOOKS);
 		
 	},
 
-	'help updateMapAltitudegame'	=> sub {
+	'help altitudegame'	=> sub {
 		my($e, $p)=@_;
-		server::whisper($p, '/updateMapAltitudegame <map>');
+		server::whisper($p, '/upload altitudegame <map>');
 		server::whisper($p, ' map: name is exactly as it appears on the website');
+		server::whisper($p, ' Upload maps FROM http://altitudegame.com/map/');
 	},
 
-	'updateMapAltitudegame'	=> sub {
-		my($e, $p)=@_;
+	'upload altitudegame'	=> sub {
+		my($e, $p, $name)=@_;
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($mapname, $file);
 
-		return(0) unless($e->{'superAdmin'});
+		$name=~s|^$MAPDIR||;
+		$name=~s|\.altx$||;
+		$name=~s|\s+|_|g;
 
-		$e->{'arguments'}[0]=~s|^$MAPDIR||;
-		$e->{'arguments'}[0]=~s|\.altx$||;
-		$e->{'arguments'}[0]=~s|\s+|_|g;
+		return(0) unless(file::name_ok($name));
 
-		return(0) unless(file::name_ok($e->{'arguments'}[0]));
-
-		$mapname="$MAPDIR$e->{'arguments'}[0]";
+		$mapname="$MAPDIR$name";
 		$file="$maps$mapname.altx";
 
-		if(file::altigame_download($file, $e->{'arguments'}[0])) {
+		if(file::altigame_download($file, $name)) {
 			if(-s $file > config::option('dlSizeLimit')) {
 				unlink($file);
 				server::whisper($p, "$mapname too big");
@@ -2251,38 +2261,37 @@ my(%HOOKS);
 				server::msg("$mapname updated");
 			}
 		} else {
-			server::whisper($p, "Could not download $e->{'arguments'}[0] from altitudegame.com/map/");
+			server::whisper($p, "Could not download $name from altitudegame.com/map/");
 		}
 	},
 
-	'help updateMapAltituderank'	=> sub {
+	'help ladder'	=> sub {
 		my($e, $p)=@_;
-		server::whisper($p, '/updateMapAltituderank <map>');
-		server::whisper($p, ' map: name is exactly as it appear if you were to /changeMap on ladder');
+		server::whisper($p, '/upload ladder <map>');
+		server::whisper($p, ' map: name is exactly as it when running in ladder');
+		server::whisper($p, ' Upload maps FROM http://altituderank.com/mapdownloads/');
 	},
 
-	'updateMapAltituderank'	=> sub {
-		my($e, $p)=@_;
+	'upload ladder'	=> sub {
+		my($e, $p, $name)=@_;
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($url)="http://altituderank.com/mapdownloads/%s.altx";
 		my($mapname, $file);
 
-		return(0) unless($e->{'superAdmin'});
+		$name=~s|^$MAPDIR||;
+		$name=~s|\.altx$||;
+		$name=~s|\s+|_|g;
 
-		$e->{'arguments'}[0]=~s|^$MAPDIR||;
-		$e->{'arguments'}[0]=~s|\.altx$||;
-		$e->{'arguments'}[0]=~s|\s+|_|g;
+		return(0) unless(file::name_ok($name));
 
-		return(0) unless(file::name_ok($e->{'arguments'}[0]));
-
-		$mapname="$MAPDIR$e->{'arguments'}[0]";
+		$mapname="$MAPDIR$name";
 		$file="$maps$mapname.altx";
 
-		file::download('-L', '-o', $file, sprintf($url, $e->{'arguments'}[0]));
+		file::download('-L', '-o', $file, sprintf($url, $name));
 
 		if(-s $file < 1024) {
 			unlink($file);
-			server::whisper($p, "Could not find $e->{'arguments'}[0] on altituderank.com/mapdownloads/");
+			server::whisper($p, "Could not find $name on altituderank.com/mapdownloads/");
 		} elsif(-s $file > config::option('dlSizeLimit')) {
 			unlink($file);
 			server::whisper($p, "$mapname too big");
@@ -2299,31 +2308,30 @@ my(%HOOKS);
 		}
 	},
 
-	'help updateMapURL'	=> sub {
+	'help url'		=> sub {
 		my($e, $p)=@_;
-		server::whisper($p, '/updateMapAltituderank <map> <URL>');
-		server::whisper($p, ' map: exactly as it appear if you were to /changeMap');
-		server::whisper($p, ' URL: Full URL including http://. Javascript enabled downloads do not work.');
+		server::whisper($p, '/upload url <map> <url>');
+		server::whisper($p, ' map: name exactly as you want it to appear in the game');
+		server::whisper($p, ' url: the full URL (incld http://) of the map. Javascript enabled downloads do not work.');
 	},
 
-	'updateMapURL'		=> sub {
-		my($e, $p)=@_;
+
+	'upload url'		=> sub {
+		my($e, $p, $name, $url)=@_;
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($mapname, $file);
 
-		return(0) unless($e->{'superAdmin'});
+		$name=~s|^$MAPDIR||;
+		$name=~s|\.altx$||;
+		$name=~s|\s+|_|g;
 
-		$e->{'arguments'}[0]=~s|^$MAPDIR||;
-		$e->{'arguments'}[0]=~s|\.altx$||;
-		$e->{'arguments'}[0]=~s|\s+|_|g;
+		return(0) unless(file::name_ok($name));
+		return(0) unless(file::url_ok($url));
 
-		return(0) unless(file::name_ok($e->{'arguments'}[0]));
-		return(0) unless(file::url_ok($e->{'arguments'}[1]));
-
-		$mapname="$MAPDIR$e->{'arguments'}[0]";
+		$mapname="$MAPDIR$name";
 		$file="$maps$mapname.altx";
 
-		file::download('-L', '-o', $file, $e->{'arguments'}[1]);
+		file::download('-L', '-o', $file, $url);
 
 		if(-s $file > config::option('dlSizeLimit')) {
 			unlink($file);
@@ -3261,9 +3269,9 @@ my(%HOOKS);
 		$HOOKS{'spawnZone'}->(@_);
 	},
 
-	'digest'		=> sub {
+	'sum'		=> sub {
 		my($e, $p)=@_;
-		my($sum)=@{$e->{'arguments'}};
+		my($name)=@{$e->{'arguments'}};
 		my($map)=game::mapfile();
 		my(%sums)=(
 			'crc32'	=> 'cksum',
@@ -3271,10 +3279,17 @@ my(%HOOKS);
 			'sha1'	=> 'sha1sum',
 			'sha256'	=> 'sha256sum',
 		);
+		my($sum)=$sums{lc($name)};
+
+		unless($sum) {
+			server::whisper($p, "Invalid digest name: $sum");
+			server::whisper($p, "Choose from: crc32 md5 sha1 sha256");
+			return(0);
+		}
 
 		if(-r $map && file::name_ok($map)) {
 			server::whisper($p, game::mapname(), ':',
-				file::sum($sums{lc($sum)}, $map));
+				file::sum($sum, $map));
 		}
 	},
 

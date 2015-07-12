@@ -1,21 +1,18 @@
-{"name":"updateMapAltitudegame", "arguments":["string"], "argumentDescriptions":["Map Name"], "voteThreshold":100}
-{"name":"updateMapAltituderank", "arguments":["string"], "argumentDescriptions":["Map Name"], "voteThreshold":100}
-{"name":"updateMapURL", "arguments":["string", "string"], "argumentDescriptions":["Map Name", "URL"], "voteThreshold":100}
-{"name":"removeMap", "arguments":["map"], "voteThreshold":100}
-{"name":"digest", "arguments":["string"], "voteThreshold":0}
-{"name":"restartServer", "arguments":[], "voteThreshold":100}
-{"name":"restartMap", "arguments":[], "voteThreshold":0}
 {"name":"help", "arguments":["string"], "voteThreshold":0}
+{"name":"upload", "arguments":["string", "string"], "voteThreshold":0}
 {"name":"list", "arguments":["string"], "voteThreshold":0}
 {"name":"set", "arguments":["string", "string"], "voteThreshold":100}
 {"name":"unset", "arguments":["string"], "voteThreshold":100}
 {"name":"add", "arguments":["string", "string"], "voteThreshold":100}
 {"name":"del", "arguments":["string", "string"], "voteThreshold":100}
-{"name":"showPlayer", "arguments":["player"], "voteThreshold":0}
+{"name":"restartServer", "arguments":[], "voteThreshold":100}
+{"name":"removeMap", "arguments":["map"], "voteThreshold":100}
 {"name":"spawnZone", "arguments":["string"], "argumentDescriptions":["Zone name"], "voteThreshold":0}
 {"name":"sz", "arguments":["string"], "argumentDescriptions":["Zone name"], "voteThreshold":0}
+{"name":"sum", "arguments":["string"], "voteThreshold":0}
 {"name":"logPickups", "arguments":[], "voteThreshold":0}
 {"name":"location", "arguments":[], "voteThreshold":0}
 {"name":"switch", "arguments":[], "voteThreshold":0}
+{"name":"restartMap", "arguments":[], "voteThreshold":0}
 {"name":"talk", "arguments":["player", "string"], "argumentDescriptions":["Nick", "Msg"], "voteThreshold":0}
 {"name":"mesg", "arguments":["string"], "voteThreshold":0}
