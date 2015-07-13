@@ -30,11 +30,11 @@ my(%OPTIONS)=(
 );
 
 my(@SUPER_ADMINS)=(		#Use vaporIDs here, not nicknames!
+	'00000000-0000-0000-0000-000000000000',
 );
 
 my(@MOTD)=(
-	'Welcome to MapQA, the place to QA check new maps',
-	'See http://mapqa.glaciated.org for server manual',
+	'See https://github.com/biell/alti-server for server manual and code',
 );
 
 =head1 DESCRIPTION
