@@ -1,0 +1,79 @@
+###########
+INSTALL.txt
+###########
+
+The installation process for alti+server is very straight forward.  The
+software consists of two necessary files.
+
+  1. alti+server
+  2. custom_json_commands.txt
+
+There are two choices for the second file.  If you require your server
+to run more than 75 maps, it is recommended you use the file from GitHub
+named small_custom_json_commands.txt and rename it.  If you can safely
+run with fewer than 75 maps, you should use the original file.  It provides
+help to users on how to use the custom commands, making the server much
+easier to use and administrate.
+
+
+======================
+Step 0, Setup Altitude
+======================
+You must install altitude, and use the server_configurator to setup your
+server before beginning.  This is true if you use alti+server or not.
+When configuring your server, remember that you can only have one server
+if you use alti+server.  server_configurator allows you to configure
+multiple servers, as the base Nimbly code supports this.  However, this
+does not work with alti+server.
+
+
+=======================
+Step 1, the alti+server
+=======================
+
+Copy this file to wherever you want.  It does not need to be co-located
+with the Altitiude software, the author stores this code in the account
+which runs the software's ~/bin directory.
+
+Find the $INSTALL_ROOT variable and change it to the directory where you
+installed the altitude server.  This defaults to ~/altitude, as that is
+what the altitude.sh program defaults to.  If you chaned this value when
+you installed altitude, then change it here too.
+
+Some people like to install server maps in a seperate location like
+~/altitude/maps/download.  If this is the case for you, set $MAPDIR
+to be the part of that location past "maps/".  In our example, you would
+set $MAPDIR to 'download'.  It is recommended that you only change this
+if you must.  You can server more maps, and it is easier on server users
+to server files from the root maps directory.
+
+Edit this file and find the %OPITIONS section very close to the top.  Here,
+review and change any options you need.
+
+If you set 'superAdmin' to 'list', then add the vaporId of any super admins
+to the @SUPER_ADMINS array just below %OPTIONS.
+
+Next, change the @MOTD to say whatever you would like new users to see when
+they login.  Each element of the array will be a new line and message from
+the server.
+
+Save this file, it is configured and ready for your use.
+
+
+=======================
+Step 2, the alti+server
+=======================
+Copy the appropriate custom_json_commands.txt file to your ~/altitude/servers/
+directory (or wherever you installed altitude).  This file should be in the
+same location as your launcher_config.xml file.
+
+Choose the standard file first, and only switch to the small version of the
+file (you will have to rename it from small_custom_json_commands.txt to
+custom_json_commands.txt) if you need to run more than 75 maps on the server.
+
+
+=========================
+Step 3, Start alti+server
+=========================
+You should be ready to go to start your server, give it a try.
+
