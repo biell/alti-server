@@ -8,7 +8,46 @@ Altitude game server wrapper to enable enhanced modes of game play.
   * custom_json_commands.txt  -  The custom commands which allow people to interact with the server
   * small_custom_json_commands.txt  -  A smaller version of the custom commands which don't help users but allow for more maps to be loaded.
 
+## Alti+ game types
+
+### Capture the Flag
+There are number of options for game types which are different from what
+you would normally see. Capture the flag games have a powerup which is
+located in an area heavlily protected by one team. The power should only
+be accessible to the other team. The server game mode must be "Ball",
+as each capture increases the goal count. One variety of Flag capture
+is a 1-life version, where teams go head-to-head and is very similar to
+1dm. Another allows re-spawns and is timed. This mode type should favor
+the defensive team, and a single capture (goal) should be sufficient for
+winning. Capture the flag games can also be configured to allow both teams
+to score. Hear, the game would be similar to tbd, but withou a bomb to
+pickup. This would hopefully get teams to work together better, instead
+of people grabbing the bomb and flying off by themselves without support.
+
+### Races
+Races use specially assigne powerups to act as checkpoints.  Each time
+the first player on a team crosses a checkpoint, a goal is scored.  For
+this reason, the map must be configured for game type *ball*.  Most servers
+are setup to have 6 goal win.  Races are best accomplished with 2 laps and
+3 checkpoints, with players starting so that they cannot easilly access
+the winning (6th) checkpoint until the end of their first lap (starting in
+a pit row might work).
+
+A to B races would also be easy, with checkpoints along the way, and the
+6th checkpoint at the end.  If a final (winning) checkpoint is all that
+is desired in an A to B, then setting `/set ballScore -1 -1` would also
+help accomplish this game type.
+
+### Large Map Coops
+Many new spawn options are available with the alti+server. Players
+can be configured to spawn where they last died, to make continuation
+easier. If that is too immidiate, players can spawn at the place of their
+last pickup, or health. Coops can also be made more exciting by the use
+of devices like portals, to teleport players from one area to another.
+
 ## Additional Commands
+The below list of commands are available to players to interface with and
+manage Alti+ game maps.
 
 ### Extended Commands for Players
 
@@ -182,6 +221,17 @@ Altitude game server wrapper to enable enhanced modes of game play.
     Delete the special powerup `name` for `team`.
 
 ### Extended Commands for Super Admins
+Super admin functionality is set in the `alti+server` code itself.  The
+`superAdmin` setting can be set to either
+`admin` (all admins can perform super admin functionality),
+`console` (super admin functionality is limited to the console), and
+`list` (where an array `@SUPER_ADMINS` contains a list of vaporIds which
+are allowed to execute super admin functionality.  The purpose of the
+distinction between normal Altitude admin functionality and Super Admin
+functionality is that super admins can change the maps on a server and restart
+it.  There may be users who are admins to set ban and kick, and can also
+`set assignTeam` to keep the game going, but should have access to restart
+the server.
 
   * **/restartServer**<br>
     Restart the server. This will shut the currently running server down,
@@ -234,6 +284,91 @@ Altitude game server wrapper to enable enhanced modes of game play.
   * **/shutdown**<br>
     Shutdown the Altitude game engine, then alti+server itself
 
+
+## Angles
+Various interfaces in **alti+server** allow you to specify angles for
+spawning.  When specifying angles, the following table lists the
+allowed values:
+
+  * **0 to 80**<br>
+    The angle in degrees starting from 0(facing right) to 180(facing left)
+
+  * **-1 to -179**<br>
+    The downward facing angles in degrees starting from -1 (very nearly
+    facing right) to -179 (very nearly facing left). The angle of -90 is
+    straight down.
+
+  * **181 to 359**<br>
+    The downward facing angles in degrees. These numbers are converted
+    automatically to the correct -1 to -179 values where 181 is equivalent
+    to -179, 270 is equivalent to -90, and 359 is equivalent to -1.
+
+  * **right|up|left|down**<br>
+    These directions are converted to 0, 90, 180, and -90 respectively.
+
+  * **e|ne|n|nw|w|sw|s|se**<br>
+    Compass directions which are converted to
+    0, 45, 90, 135, 180, -135, -90, and -45 respectively.
+
+## Custom Awards
+
+  * **Training Wheels Award**<br>
+    This award goes to the player who crashes the most. 
+
+  * **Kenny McCormick Award**<br>
+    This award goes to the player who dies the most, named after
+    South Park character who can't make it to the end of an episode.
+
+  * **Ball Hog Award**<br>
+    This award goes to the player who holds onto the ball the most.
+    Though slightly derogative souding, this can be a compliement.
+
+  * **Sledge Hammer Award**<br>
+    This award is named after the 1980's TV character who shot first and
+    didn't bother to ask questions. To paraphrase:
+    guns don't kill people, bullets kill people.
+    This is for most damage dealt.
+
+  * **Tank Award**<br>
+    This award goes to the player who manages to sustain the most damage.
+    Every team needs a good tank.
+
+  * **Best Ratio**<br>
+    This award is given to the player who has the best final ratio
+    of Kills to Deaths. Players late to the game may scoop this award.
+
+  * **Front Runner**<br>
+    This award is given to the player who has is the first person on
+    their team to get to the most checkpoints.  This award is designed for
+    a game type of `race`.
+
+## Snarky Server
+The server can be configured to emit snarky comments from time to time by
+setting the code OPTION `snarkChance` to a positive value.  Setting this
+value to 20 (for example) should give each player a 1 in 20 change for
+receiving a snarky comment for things for which a comment like this may
+occur.  The most commong snarky comments are for plane configuraion choices
+and occur when a plan spawns.  So, if a `snarkChance` is set to 20 and a
+player dies 20 times in one game, it is likely that they will receive a
+snarky comment (if their plane choices have a preconfigured comment).
+
+Setting `snarkChance` to 0 disables this feature, and no snarky comments will
+be emitted by the server.
+
+## Minimum Level Requirements
+If the `requireLevel` OPTION is set, then the server will not allow players
+to spawn who don't meet the minimum requirements.
+
+New players (Ace 0) must unlock all their planes (level 21) to join a game.
+
+Recently aced players (Ace 1 - Ace 10) must unlock all their first loopy
+blue perk (level 8).
+
+## Managing Aggressive Behaviour
+The server can be configured with the `bullyKick` OPTION to warn, then
+eventually kick players who behave in overly aggressive ways towards other
+players.  Language which is often used in offensive statements is looked
+for, and after 10 utterances, the aggressive player is kicked.
 
 ## More information
 See the MAP QA website for more information on using the server:

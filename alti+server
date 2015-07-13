@@ -64,7 +64,8 @@ use IO::Handle;
 use List::Util;
 
 my($FATAL_SERVER_ERRORS)=join('|',
-	'java.lang.RuntimeException',
+	'Server config size \(\d+ bytes\) exceeds max allowed size',
+	'no available nuons!',
 	'ERROR : serverLoop disrupted',
 );
 
@@ -788,8 +789,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 	}
 
 	sub _map_sort {
-		$Mapdb{$a}=List::Util::min(-M $a, -A $a) unless($Mapdb{$a});
-		$Mapdb{$b}=List::Util::min(-M $b, -A $b) unless($Mapdb{$b});
+		$Mapdb{$a}=(-C $a) unless($Mapdb{$a});
+		$Mapdb{$b}=(-C $b) unless($Mapdb{$b});
 
 		return( $Mapdb{$a} <=> $Mapdb{$b} );
 	}
@@ -797,7 +798,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	sub find_maps {
 		my($lconfig)=IO::Handle->new;
 		my($maplist)=0;
-		my($packet_space)=(1450-240-$Size/2.5)*2.5+length($MAPDIR)*40;
+		my($packet_space)=(1450-50-240-$Size/2)*2+length($MAPDIR)*50;
 		my(@xml);
 		local($_);
 
@@ -852,6 +853,13 @@ has occured.  After too many infractions, the player is kicked by the server.
 		open($lconfig, '>', $Conffile);
 		print $lconfig @xml;
 		close($lconfig);
+	}
+
+	sub resize {
+		my($diff)=@_;
+		$diff-=1450;
+
+		$Size+=$diff*2;
 	}
 
 	sub new_maps {
@@ -961,7 +969,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	sub language {
 		local($_)=@_;
 
-		if($OPTIONS{'bullyKick'} && m/$Language/i) {
+		if(config::option('bullyKick') && m/$Language/i) {
 			return(1);
 		} else {
 			return(0);
@@ -1929,7 +1937,7 @@ sub event {
 		$event->{'superAdmin'}=1;
 	} elsif($event->{'group'} eq 'Administrator') {
 		$event->{'admin'}=1;
-		if($OPTIONS{'superAdmin'} eq 'list') {
+		if(config::option('superAdmin') eq 'list') {
 			$event->{'superAdmin'}=$player->{'superAdmin'};
 		} else {
 			$event->{'superAdmin'}=1;
@@ -2421,8 +2429,11 @@ my(%HOOKS);
 
 	'mapLoading'	=> sub {
 		my($e, $p)=@_;
+		my($map)="$INSTALL_ROOT/maps/$MAPDIR/$e->{'map'}";
+		my(@st)=stat($map);
 
-		#Moved to mapChange for now
+		#Update CTIME of map, we use this for sorting map popularity
+		chmod($st[2]&0777, $map);
 	},
 
 	'mapChange'	=> sub {
@@ -3795,7 +3806,7 @@ my(%HOOKS);
 		server::msg("1"); ui::display('', '', '1');
 		sleep(1);
 
-		if($OPTIONS{'updateMapList'}) {
+		if(config::option('updateMapList')) {
 			config::find_maps();
 		} else {
 			config::read_maps();
@@ -3876,7 +3887,7 @@ ui::setup_screen();
 
 config::launcher();
 
-if($OPTIONS{'updateMapList'}) {
+if(config::option('updateMapList')) {
 	config::find_maps();
 } else {
 	config::read_maps();
@@ -3906,7 +3917,11 @@ while(1) {
 				server::interrupt();
 				server::shutdown();
 
-				if($OPTIONS{'updateMapList'}) {
+				if($SOUT=~m/config size \((\d+) bytes\) exceeds max/) {
+					config::resize($1);
+				}
+
+				if(config::option('updateMapList')) {
 					config::find_maps();
 				} else {
 					config::read_maps();
