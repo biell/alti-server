@@ -21,6 +21,11 @@ Altitude game server wrapper to enable enhanced modes of game play.
 
 ## Alti+ game types
 
+### Normal Games
+All normal game types will run just as normal on `alti+server` systems.
+They can be run with all default values, or spiced up by changing
+camera or plane scale, gravity, etc.  It is up to the server admins.
+
 ### Capture the Flag
 There are number of options for game types which are different from what
 you would normally see. Capture the flag games have a powerup which is
@@ -50,7 +55,7 @@ is desired in an A to B, then setting `/set ballScore -1 -1` would also
 help accomplish this game type.
 
 ### Large Map Coops
-Many new spawn options are available with the alti+server. Players
+Many new spawn options are available with the `alti+server`. Players
 can be configured to spawn where they last died, to make continuation
 easier. If that is too immidiate, players can spawn at the place of their
 last pickup, or health. Coops can also be made more exciting by the use
@@ -303,11 +308,11 @@ the server.
     Print information on `player`
 
   * **/shutdown**<br>
-    Shutdown the Altitude game engine, then alti+server itself
+    Shutdown the Altitude game engine, then `alti+server` itself
 
 
 ## Angles
-Various interfaces in **alti+server** allow you to specify angles for
+Various interfaces in `alti+server` allow you to specify angles for
 spawning.  When specifying angles, the following table lists the
 allowed values:
 

@@ -14,12 +14,13 @@ my($MAPDIR)='';                         #Directory under $INSTALL_ROOT/maps
 		                              #to store maps.  (e.g. "download")
 my(%OPTIONS)=(
 	updateMapList	=> 1,               #Let alti+server change the mapList
-	dlSizeLimit	=> 10485760,        #Max allowed download size
+	ulSizeLimit	=> 10485760,        #Max allowed download size
 	boxColor		=> 'blue',          #Curses color palet:
 	chatFromColor	=> 'cyan',          # black, blue, cyan, green,
 	chatToColor	=> 'yellow',        # magenta, red, white, yellow
 	uiPrettyBoxes	=> 0,               #0='|','-' and 1=ACS/Unicode prettiness
-	requireLevel	=> 1,               #Require level 21 for Ace0, & 8 for 1-10
+	noviceLevel	=> 21,              #Require level 21 for Ace 0 to play
+	aceLevel		=> 8,               #Require 8 for Ace 1 to Ace 10 to play
 	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
 	bullyKick		=> 1,               #Kick repeated aggressive language
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
@@ -68,6 +69,8 @@ my($FATAL_SERVER_ERRORS)=join('|',
 	'no available nuons!',
 	'ERROR : serverLoop disrupted',
 );
+
+my(%HOOKS, %CONSOLE);
 
 {	package utils;
 
@@ -426,7 +429,6 @@ list.
 		my($arg)=$#cmd-1;
 		my($str)=pop(@cmd);
 		my($prefix);
-		local($_);
 
 		return('/'.join(' ', @cmd, $str)) unless(@args);
 
@@ -536,13 +538,22 @@ list.
 			$Input.=' ';
 		} elsif($key eq 'enter') {
 			$Input=~s|^\s+||;
-			if($Input=~m|^/shutdown|i) {
-				server::shutdown();
-				ui::shutdown();
-				exit(0);
-			} elsif($Input=~s|^/||) {
+
+			if($Input=~s|^/||) {
+				@cmd=($Input=~m/(".*?"|".*$|\w+)/g);
+				foreach(@cmd) {
+					s/^"//;
+					s/^"//;
+				}
+
 				&hist_push($Input);
-				server::send($Input);
+
+				if(exists($CONSOLE{$cmd[0]})) {
+					$CONSOLE{$cmd[0]}->(splice(@cmd, 1));
+				} else {
+					server::send($Input);
+				}
+
 				$Input='';
 			} else {
 				server::msg($Input);
@@ -740,7 +751,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		}
 		close($fh);
 
-		#These work only from console:
+		#These work only from console (see %CONSOLE):
 		$Commands{'showPlayer'}=['player'];
 		$Commands{'shutdown'}=undef;
 
@@ -800,7 +811,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($maplist)=0;
 		my($packet_space)=(1450-50-240-$Size/2)*2+length($MAPDIR)*50;
 		my(@xml);
-		local($_);
 
 		ui::slog('uncompressed space reserved for maps:', $packet_space);
 
@@ -931,7 +941,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my(@args)=();
 		my($choice)=1;
 		my($list);
-		local($_);
 
 		if($Commands{$command}) {
 			foreach my $arg (@{$Commands{$command}}) {
@@ -1129,6 +1138,8 @@ directly with it to manage the instance.
 	my($Streams)=IO::Select->new(\*STDIN);
 	my($Server_pid, $Tail_pid);
 
+	our($Start)=time();
+
 	sub start {
 		if($Server_pid && kill('HUP', $Server_pid)) {
 			close($Server);
@@ -1149,6 +1160,8 @@ directly with it to manage the instance.
 	sub reopen_log {
 		my($pid)=IO::Handle->new;
 		my($in)=IO::Handle->new;
+
+		$Start=time();
 
 		if($Tail_pid && kill('HUP', $Tail_pid)) {
 			close($Log);
@@ -1399,7 +1412,6 @@ is updated with them as the games progress.
 
 	sub values {
 		my($key)=@_;
-		local($_);
 
 		return(map($_->{$key}, @Players));
 	}
@@ -1485,8 +1497,6 @@ play though extended interfaces and server support.
 	sub mode		{ &_value_or_query('mode', @_);		}
 
 	sub left		{
-		local($_);
-
 		for(@_) {
 			return(1) if(m/left|<|all|both|\*/i);
 		}
@@ -1494,8 +1504,6 @@ play though extended interfaces and server support.
 	}
 
 	sub right		{
-		local($_);
-
 		for(@_) {
 			return(1) if(m/right|>|all|both|\*/i);
 		}
@@ -1871,7 +1879,7 @@ with their name.
 		return(0) unless(&url_ok($_[-1]));
 
 		$pid=open3($in, $out, $err,
-			'curl', '-s', '--max-filesize', config::option('dlSizeLimit'), @_);
+			'curl', '-s', '--max-filesize', config::option('ulSizeLimit'), @_);
 
 		$_=join('', <$out>);
 
@@ -2118,7 +2126,6 @@ core protecting the flag.
 
 =cut
 
-my(%HOOKS);
 %HOOKS=(
 	'help'		=> sub {
 		my($e, $p)=@_;
@@ -2255,7 +2262,7 @@ my(%HOOKS);
 		$file="$maps$mapname.altx";
 
 		if(file::altigame_download($file, $name)) {
-			if(-s $file > config::option('dlSizeLimit')) {
+			if(-s $file > config::option('ulSizeLimit')) {
 				unlink($file);
 				server::whisper($p, "$mapname too big");
 			} elsif(file::type($file)!~m/LZMA compressed data/) {
@@ -2301,7 +2308,7 @@ my(%HOOKS);
 		if(-s $file < 1024) {
 			unlink($file);
 			server::whisper($p, "Could not find $name on altituderank.com/mapdownloads/");
-		} elsif(-s $file > config::option('dlSizeLimit')) {
+		} elsif(-s $file > config::option('ulSizeLimit')) {
 			unlink($file);
 			server::whisper($p, "$mapname too big");
 		} elsif(file::type($file)!~m/LZMA compressed data/) {
@@ -2348,7 +2355,7 @@ my(%HOOKS);
 		file::download('-L', '-o', $file, "$url$next");
 
 		if($name) {
-			if(-s $file > config::option('dlSizeLimit')) {
+			if(-s $file > config::option('ulSizeLimit')) {
 				unlink($file);
 				server::whisper($p, "$mapname too big");
 			} elsif(file::type($file)!~m/LZMA compressed data/) {
@@ -2391,7 +2398,7 @@ my(%HOOKS);
 
 		file::download('-L', '-o', $file, $url);
 
-		if(-s $file > config::option('dlSizeLimit')) {
+		if(-s $file > config::option('ulSizeLimit')) {
 			unlink($file);
 			server::whisper($p, "$mapname too big");
 		} elsif(file::type($file)!~m/LZMA compressed data/) {
@@ -2747,7 +2754,6 @@ my(%HOOKS);
 		my($e, $p, @planes)=@_;
 		my(%planes)=();
 		my($planere);
-		local($_);
 
 		if(game::mode('ffa')) {
 			server::whisper($p, 'Plane enforcement is not possible in FFA');
@@ -3052,7 +3058,6 @@ my(%HOOKS);
 		my($keys)=utils::invert(stash::get('keys', 'door', game::mapname()));
 		my($any)=0;
 		my($status);
-		local($_);
 
 		foreach my $door (sort(keys(%$doors))) {
 			if(game::door_open($p->{'team'}, $door)) {
@@ -3354,26 +3359,6 @@ my(%HOOKS);
 		}
 	},
 
-	'showPlayer'		=> sub {
-		my($e, $p)=@_;
-		my($player)=player::lookup($e->{'arguments'}[0]);
-		my(@keys)=qw(
-			nickname
-			player
-			vaporId
-			team
-			level
-			aceRank
-			ip
-			country
-		);
-
-		foreach my $key (@keys) {
-			server::whisper($p, "$key:", $player->{$key});
-		}
-		server::whisper($p, "online:", ($e->{'time'}-$player->{'time'})/1000);
-	},
-
 	'clientAdd'		=> sub {
 		my($e, $p)=@_;
 		my($planes)=stash::get('planes', game::mapname());
@@ -3439,21 +3424,19 @@ my(%HOOKS);
 			return;
 		}
 
-		if(config::option('requireLevel')) {
-			if($p->{'aceRank'}==0) {
-				if($p->{'level'}<21) {
-					server::whisper($p,
-						"Watch and learn until you unlock all your planes");
-					$p->{'infractions'}++;
-					server::send('assignTeam', $p->{'nickname'}, -1);
-				}
-			} else {
-				if($p->{'level'}<8) {
-					server::whisper($p,
-						"You can play after you earn your blue perk");
-					$p->{'infractions'}++;
-					server::send('assignTeam', $p->{'nickname'}, -1);
-				}
+		if($p->{'aceRank'}==0) {
+			if($p->{'level'}<config::option('noviceLevel')) {
+				server::whisper($p,
+					"Watch and learn until you unlock all your planes");
+				$p->{'infractions'}++;
+				server::send('assignTeam', $p->{'nickname'}, -1);
+			}
+		} else {
+			if($p->{'level'}<config::option('aceLevel')) {
+				server::whisper($p,
+					"You can play after you earn your blue perk");
+				$p->{'infractions'}++;
+				server::send('assignTeam', $p->{'nickname'}, -1);
 			}
 		}
 
@@ -3885,6 +3868,49 @@ my(%HOOKS);
 	},
 );
 
+=head2 Console Interaction and Management
+
+When using the B<alti+server> console, there are commands which are not
+available under any other circumstance.  These allow the console access
+to data which is otherwise easy to access from the game, or to execute
+functions which should not be accessible from elsewhere.  These commands
+start with a slash (/) character, just like all other commands.
+
+The size of this list depende on the C<OPTIONS> value for C<superAdmin>.
+If C<superAdmin> is set to C<console>, then all super admin functions are
+also only available from the console.
+
+=cut
+
+%CONSOLE=(
+	'showPlayer'		=> sub {
+		my($p)=player::server();
+		my($player)=player::lookup(@_);
+		my(@keys)=qw(
+			nickname
+			player
+			vaporId
+			team
+			level
+			aceRank
+			ip
+			country
+		);
+
+		foreach my $key (@keys) {
+			server::whisper($p, "$key:", $player->{$key});
+		}
+		server::whisper($p, "joined:",
+			scalar(localtime($server::Start + $player->{'time'}/1000)));
+	},
+
+	'shutdown'		=> sub {
+		server::shutdown();
+		ui::shutdown();
+		exit(0);
+	},
+);
+
 =head2 Errors and Signals
 
 If the B<alti+server> code recognizes a failure or if it receives a signal
@@ -3904,21 +3930,9 @@ local(%SIG)=(
 		print @_, "\n";
 		exit(1);
 	},
-	'HUP'		=> sub {
-		&server::shutdown();
-		&ui::shutdown();
-		exit(0);
-	},
-	'TERM'		=> sub {
-		&server::shutdown();
-		&ui::shutdown();
-		exit(0);
-	},
-	'INT'		=> sub {
-		&server::shutdown();
-		&ui::shutdown();
-		exit(0);
-	},
+	'HUP'		=> $CONSOLE{'shutdown'},
+	'TERM'		=> $CONSOLE{'shutdown'},
+	'INT'		=> $CONSOLE{'shutdown'},
 );
 
 =head2 Operation
@@ -3969,13 +3983,16 @@ while(1) {
 
 				if($SOUT=~m/config size \((\d+) bytes\) exceeds max/) {
 					config::resize($1);
+
+					if(config::option('updateMapList')) {
+						config::find_maps();
+					} else {
+						ui::shutdown();
+						print "Config size too big, remove maps from mapList\n";
+						exit(1);
+					}
 				}
 
-				if(config::option('updateMapList')) {
-					config::find_maps();
-				} else {
-					config::read_maps();
-				}
 				server::start();
 				server::reopen_log();
 			} elsif($SOUT=~m/Data Transfer Since Launch/) {
