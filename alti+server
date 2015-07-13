@@ -34,7 +34,7 @@ my(@SUPER_ADMINS)=(		#Use vaporIDs here, not nicknames!
 );
 
 my(@MOTD)=(
-	'See https://github.com/biell/alti-server for server manual and code',
+	'See https://github.com/biell/alti-server for server manual',
 );
 
 =head1 DESCRIPTION
@@ -1890,6 +1890,7 @@ with their name.
 	sub altigame_download {
 		my($file, $name)=@_;
 		my($url)='https://altitudegame.com/map/?p=';
+		local($_);
 
 		return(0) unless(&name_ok($file));
 		return(0) unless(&name_ok($name));
@@ -2316,13 +2317,62 @@ my(%HOOKS);
 		}
 	},
 
+	'help tinyupload'		=> sub {
+		my($e, $p)=@_;
+		server::whisper($p, '/upload tinyupload <key>');
+		server::whisper($p, ' key: 20 digit file_id decimal key');
+		server::whisper($p, ' You only need to enter key after "file_id"');
+	},
+
+	'upload tinyupload'		=> sub {
+		my($e, $p, $key)=@_;
+		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($url)='http://s000.tinyupload.com/';
+		my($name, $next, $mapname, $file);
+		local($_);
+
+		return(0) unless($key=~m/^\d+$/);
+
+		file::download("$url?file_id=$key");
+
+		($next, $name)=m|<a href="(download.php.*?)"><b>(\w+).altx</b></a>|i;
+
+		$name=~s|\s+|_|g;
+
+		return(0) unless(file::name_ok($name));
+		return(0) unless(file::url_ok("$url$next"));
+
+		$mapname="$MAPDIR$name";
+		$file="$maps$mapname.altx";
+
+		file::download('-L', '-o', $file, "$url$next");
+
+		if($name) {
+			if(-s $file > config::option('dlSizeLimit')) {
+				unlink($file);
+				server::whisper($p, "$mapname too big");
+			} elsif(file::type($file)!~m/LZMA compressed data/) {
+				unlink($file);
+				server::whisper($p, "$mapname is not the right type");
+				server::whisper($p, "maybe redirect failure, or a javascript enabled download");
+			} else {
+				if(config::new_maps($mapname)) {
+					server::whisper($p,
+						"Map added to config, you must /restartServer");
+				}
+				server::msg("$mapname updated");
+			}
+		} else {
+			server::whisper($p, "Could not download $name from tinyupload.com");
+		}
+	},
+
 	'help url'		=> sub {
 		my($e, $p)=@_;
 		server::whisper($p, '/upload url <map> <url>');
 		server::whisper($p, ' map: name exactly as you want it to appear in the game');
 		server::whisper($p, ' url: the full URL (incld http://) of the map. Javascript enabled downloads do not work.');
 	},
-
 
 	'upload url'		=> sub {
 		my($e, $p, $name, $url)=@_;
