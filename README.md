@@ -267,8 +267,18 @@ the server.
 
   * **/upload ladder [map]**<br>
     Upload the map `map` FROM http://altituderank.com/ and save it to
-    the server in the maps directory. The name`map`  must be exacly the
+    the server in the maps directory. The name `map` must be exacly the
     same as the name of the file but without the *.altx* extension.
+    If the uploaded map is not currently listed in the server configuration
+    file, it will be added. However, the server must be restarted for the
+    map to be added to the maplist and rotation.
+
+  * **/upload tinyupload [key]**<br>
+    Upload the map stored on http://s000.tinyupload.com/ with the *file_id*
+    of `key` and save it to the server in the maps directory.  The key
+    should be a 20 digit decimal number, you do not need to provide the
+    rest of the URL.  Get the map name from the tinyupload website, and
+    name the map in the maps directory from that scraped web content.
     If the uploaded map is not currently listed in the server configuration
     file, it will be added. However, the server must be restarted for the
     map to be added to the maplist and rotation.
