@@ -11,7 +11,6 @@
 {"name":"sz", "arguments":["string"], "argumentDescriptions":["Zone name"], "voteThreshold":0}
 {"name":"sum", "arguments":["string"], "voteThreshold":0}
 {"name":"logPickups", "arguments":[], "voteThreshold":0}
-{"name":"location", "arguments":[], "voteThreshold":0}
 {"name":"switch", "arguments":[], "voteThreshold":0}
 {"name":"restartMap", "arguments":[], "voteThreshold":0}
 {"name":"talk", "arguments":["player", "string"], "argumentDescriptions":["Nick", "Msg"], "voteThreshold":0}

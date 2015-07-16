@@ -212,6 +212,44 @@ manage Alti+ game maps.
   * **/del portal [name]**<br>
     Delete the *portal* named `name` for this map.
 
+  * **/add door [name] [x],[y]**<br>
+    Create a door named `name` at coordinates `x`,`y`.  Any number of
+    keys can be created with the same name, and all of these must be
+    found before unlocking the door.  When a key is found, the finder
+    will receive a message from the server.   When all the keys for
+    a door are found, all users on the team which has unlocked the
+    door will receive a message from the server.
+
+  * **/del door [name]**<br>
+    Delete the door named `name`.
+
+  * **/add key [name] [x],[y]**<br>
+    Create a key for the door named `name` at coordinates `x`,`y`.
+
+  * **/del key [name]**<br>
+    Delete all keys for the door named `name`.
+
+  * **/add diverter [name] [x1],[y1] [x2],[y2]**<br>
+    Create a diverter pair called `name` with one powerup diverter
+    at coordinates `x1`,`y1` and the other at coordinates `x2`,`y2`.
+    A diverter alternates access between it's two powerups.  The purpose
+    is to forcably break up a team and ensure a fairly even split between
+    two sections.
+
+  * **/del diverter [name]**<br>
+    Remove the divirter pair named `name`.
+
+  * **/add oneway [x],[y] [direction]**<br>
+    Specify that a powerup can only be used in one direction.  It isn't
+    exactly one direction, it is actually 180 degrees of a circle with
+    the middle being the specified direction.  So, players do not have
+    to perfectly pass through a oneway.  This device is very useful when
+    it is applied to the same powerups which make up checkpoints for
+    races, it ensures players go around the track in the correct direction.
+
+  * **/del oneway [x],[y]**<br>
+    Delete the oneway powerup located at coordinates `x`,`y`.
+
   * **/add zone [name] [team] [sx],[sy],[sa]**<br>
     Create (or overwrite) a spawn zone named `name`. When invoked, spawn
     users at coordinates `sx`,`sy` and at angle `sa`.

@@ -1763,6 +1763,22 @@ play though extended interfaces and server support.
 		return(0);
 	}
 
+	sub divert {
+		my($e, $p)=@_;
+		my($divs)=stash::get('diverters', game::mapname());
+		my($pickup)=join(',', @$e{'positionX','positionY'});
+
+		if($divs->{$pickup}) {
+			if($Stats{'diverters'}{$pickup}) {
+				server::whisper($p, 'Wrong diverter');
+				game::bench($p);
+			} else {
+				$Stats{'diverters'}{$pickup}=1;
+				$Stats{'diverters'}{$divs->{$pickup}}=0;
+			}
+		}
+	}
+
 	sub teleport {
 		my($e, $p)=@_;
 		my($portals)=stash::get('portals', game::mapname());
@@ -3143,6 +3159,72 @@ core protecting the flag.
 		}
 	},
 
+	'help diverters'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list diverters');
+		server::whisper($p, '/add diverter <x1>,<y1> <x2>,<y2>');
+		server::whisper($p, '/del diverter <x1>,<y1>');
+		server::whisper($p, 'only binary diverters are supported');
+	},
+
+	'list diverters'	=> sub {
+		my($e, $p)=@_;
+		my($divs)=stash::get('diverters', game::mapname());
+		my(%seen)=();
+
+		foreach my $diverter (keys(%$divs)) {
+			unless(exists($seen{$diverter})) {
+				server::whisper($p, $diverter, ':', $divs->{$diverter});
+				$seen{$divs->{$diverter}}=1;
+			}
+		}
+	},
+
+	'add diverter'	=> sub {
+		my($e, $p, $x1, $y1, $x2, $y2)=@_;
+
+		stash::set("$x1,$y1", 'diverters', game::mapname(), "$x2,$y2");
+		stash::set("$x2,$y2", 'diverters', game::mapname(), "$x1,$y1");
+	},
+
+	'del diverter'	=> sub {
+		my($e, $p, $x1, $y1)=@_;
+		my($divs)=stash::get('diverters', game::mapname());
+
+		stash::delete($divs->{"$x1,$y1"}, 'diverters', game::mapname());
+		stash::delete("$x1,$y1", 'diverters', game::mapname());
+	},
+
+	'help oneways'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list oneways');
+		server::whisper($p, '/add oneway <x>,<y> <direction>');
+		server::whisper($p, '/del oneway <x>,<y>');
+	},
+
+	'list oneways'	=> sub {
+		my($e, $p)=@_;
+		my($oneway)=stash::get('oneways', game::mapname());
+
+		foreach my $powerup (keys(%$oneway)) {
+			server::whisper($p, $powerup, ':', $oneway->{$powerup});
+		}
+	},
+
+	'add oneway'	=> sub {
+		my($e, $p, $x, $y, $direction)=@_;
+
+		stash::set("$x,$y", 'oneways', game::mapname(), lc($direction));
+	},
+
+	'del oneway'	=> sub {
+		my($e, $p, $x, $y)=@_;
+
+		stash::delete("$x,$y", 'oneways', game::mapname());
+	},
+
 	'help zones'	=> sub {
 		my($e, $p)=@_;
 
@@ -3531,19 +3613,6 @@ core protecting the flag.
 		}
 	},
 
-	'location'		=> sub {
-		my($e, $p)=@_;
-		server::trigger('logPlanePositions', 'location', $e, $p);
-	},
-
-	'logPlanePositions:location'	=> sub {
-		my($e1, $p1, $e2, $p2)=@_;
-
-		my($x, $y)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
-			
-		server::whisper($p2, $x, $y);
-	},
-
 	'powerupUse'	=> sub {
 		my($e, $p)=@_;
 		my($diff)=$e->{'time'} - $p->{$e->{'powerup'}}{'time'};
@@ -3574,6 +3643,8 @@ core protecting the flag.
 		game::capture($e, $p) if(game::type('flag'));
 		game::checkpoint($e, $p) if(game::type('race'));
 
+		game::divert($e, $p);
+
 		return if($p->{'isBot'});
 
 		if($e->{'powerup'} eq 'Ball') {
@@ -3586,8 +3657,10 @@ core protecting the flag.
 
 		server::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
 
-		if(game::knock($e, $p)) {
-			1;
+		return if(game::knock($e, $p));
+
+		if(stash::get("$x[1],$y[1]", 'oneways', game::mapname())) {
+			server::trigger('logPlanePositions', 'oneway', $e, $p);
 		} elsif($spawn_mode eq 'powerup') {
 			unless($x[0] || $y[0] || $e->{'velocityX'} || $e->{'velocityY'}) {
 				server::trigger('logPlanePositions', 'powerup', $e, $p);
@@ -3606,12 +3679,16 @@ core protecting the flag.
 		game::capture($e, $p) if(game::type('flag'));
 		game::checkpoint($e, $p) if(game::type('race'));
 
+		game::divert($e, $p);
+
 		return if($p->{'isBot'});
 
 		server::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
 
-		if(game::knock($e, $p)) {
-			1;
+		return if(game::knock($e, $p));
+
+		if(stash::get("$x[1],$y[1]", 'oneways', game::mapname())) {
+			server::trigger('logPlanePositions', 'oneway', $e, $p);
 		} elsif($spawn_mode eq 'health' || $spawn_mode eq 'powerup') {
 			unless($x[0] || $y[0]) {
 				server::trigger('logPlanePositions', 'powerup', $e, $p);
@@ -3629,6 +3706,20 @@ core protecting the flag.
 		$y-=$e2->{'positionY'};
 
 		game::spawn_here($p2, $e2->{'positionX'}, $e2->{'positionY'}, $x, $y);
+	},
+
+	'logPlanePositions:oneway' 	=> sub {
+		my($e1, $p1, $e2, $p2)=@_;
+		my($x1, $y1)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
+		my($x2, $y2)=@$e2{'positionX','positionY'};
+		my($allowed)=game::angle(stash::get("$x2,$y2", 'oneways', game::mapname()));
+		my($direction)=int(atan2($y1-$y2, $x1-$x2)*180/3.14159);
+
+		if($direction<($allowed-90) || ($allowed+90)<$direction) {
+			game::bench($p2);
+			game::spawn_here($p2, $x2, $y2, $allowed);
+			server::whisper($p2, 'Wrong way!');
+		}
 	},
 
 	'kill'	=> sub {
