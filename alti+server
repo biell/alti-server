@@ -18,7 +18,7 @@ my(%OPTIONS)=(
 	boxColor		=> 'blue',          #Curses color palet:
 	chatFromColor	=> 'cyan',          # black, blue, cyan, green,
 	chatToColor	=> 'yellow',        # magenta, red, white, yellow
-	uiPrettyBoxes	=> 0,               #0='|','-' and 1=ACS/Unicode prettiness
+	uiPrettyBoxes	=> 0,               #0='|','-'; 1=ACS/Unicode prettiness
 	noviceLevel	=> 21,              #Require level 21 for Ace 0 to play
 	aceLevel		=> 8,               #Require 8 for Ace 1 to Ace 10 to play
 	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
@@ -27,15 +27,13 @@ my(%OPTIONS)=(
 	superAdmin	=> 'admin',		#Super Admin command access:
 	                                   # admin: all admins are super admins
 								# console: cmds typed at console only
-								# list: vaporId from @SUPER_ADMINS array
-);
-
-my(@SUPER_ADMINS)=(		#Use vaporIDs here, not nicknames!
-	'00000000-0000-0000-0000-000000000000',
-);
-
-my(@MOTD)=(
-	'See https://github.com/biell/alti-server for server manual',
+								# list: vaporId from @superAdmins array:
+	superAdmins	=> join(';',
+			'00000000-0000-0000-0000-000000000000',
+		),
+	motd			=> join(';', 
+			'See https://github.com/biell/alti-server for server manual',
+		),
 );
 
 =head1 DESCRIPTION
@@ -205,13 +203,16 @@ delete($ENV{'COLUMNS'});
 	
 	sub setup_screen {
 		my($default)=-1;
+		my($boxColor)='COLOR_'.uc(config::option('boxColor'));
+		my($chatFromColor)='COLOR_'.uc(config::option('chatFromColor'));
+		my($chatToColor)='COLOR_'.uc(config::option('chatToColor'));
 
 		start_color();
 		use_default_colors();
 		if(has_colors()) {
-			init_pair(1, eval(config::option('boxColor')),  $default);
-			init_pair(2, eval(config::option('chatFromColor')), $default);
-			init_pair(3, eval(config::option('chatToColor')),   $default);
+			init_pair(1, eval($boxColor),		$default);
+			init_pair(2, eval($chatFromColor),	$default);
+			init_pair(3, eval($chatToColor),	$default);
 		} else {
 			init_pair(1, $default, $default);
 			init_pair(2, $default, $default);
@@ -575,42 +576,13 @@ list.
 	}
 }
 
-=head2 Configuration
+=head2 State
 
-B<alti+server> gets it's configuration information from a
-variety of places.  Configuration files (either altitude server specific
-or B<alti+server> specific) are read in at startup, and used to gather
-data for a variety of purposes.  This list of files is used to control
-the behavior of B<alti+server>:
-
-=over 8
-
-=item custom_json_commands.txt
-
-This file isn't actually read by B<alti+server>; however, each command
-supported by B<altiude_mapqa> must be listed and defined in this file.
-This is the file which tells the server process what commands are known
-to B<alti+server>.
-
-=item launcher_config.xml
-
-This file contains the information used by the altitude C<server_launcher>
-process when the server is initially started.  It contains information
-used by B<alti+server> such as a Map list and a command list.  These
-are used in the interactive interface to provide command-line completion
-and for changing maps periodically.  What is especially nice is that admins
-never have to edit the launcher_config.xml to add new maps.  When the
-altitude server is restarted, the map directory is automatically searched
-for maps; these are added to the F<launcher_config.xml> file for you.
-
-=item filtered_swear_words.txt
-
-A list of naughty words which are often used to harrass other players are
-listed in this file.  Harrasment isn't cool!  So, when these words are used,
-the server notifies the person who wrote them that a language infraction
-has occured.  After too many infractions, the player is kicked by the server.
-
-=back
+B<alti+server> keeps state from one invocation to another.  It stores
+user preferences for certain extensions, and map preferences.  These are
+used to ensure games are playable as designed for different types of maps.
+This file is read from at startup, and written to when settings changes
+are requested by administrative users.
 
 =cut
 
@@ -661,348 +633,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 	}
 
 }
-
-{	package config;
-
-	use XML::Simple;
-
-	my($Conffile)	="$INSTALL_ROOT/servers/launcher_config.xml";
-	my($Custfile)	="$INSTALL_ROOT/servers/custom_json_commands.txt";
-	my($Filtfile)	="$INSTALL_ROOT/config/filtered_swear_words.txt";
-
-	my(%Commands)=();
-	my(@Maps)=();
-	my(%Mapdb)=();
-	my($Language);
-	my($Size)=0;
-
-	our($Port)=0;
-	our($Ping)=500; #reset from launcher_config.xml
-	our($Goals)=6;  #reset from launcher_config.xml
-	our($Maxp)=14;  #reset from launcher_config.xml
-
-	$MAPDIR=~s|/*$|/| if($MAPDIR);
-
-	sub option {
-		my($key)=@_;
-
-		if($key=~m/color/i) {
-			return('COLOR_'.uc($OPTIONS{$key}));
-		} elsif($key=~m/^(true|yes|t|y)$/i) {
-			return(1);
-		} elsif($key=~m/^(false|no|f|n)$/i) {
-			return(0);
-		} else {
-			return($OPTIONS{$key});
-		}
-	}
-
-	sub _packet_length {
-		my($size)=0;
-		my($str);
-
-		foreach my $arg (@_) {
-			if(ref($arg)) {
-				$str=json::encode($arg);
-			} else {
-				$str=$arg;
-			}
-			$str=~s/\W//g;
-			$size+=length($str);
-		}
-
-		return($size);
-	}
-
-	sub launcher {
-		my($server)=XML::Simple::XMLin($Conffile);
-		my($fh)=IO::Handle->new;
-		my(@filter)=();
-		my($cmd);
-		local($_);
-
-		$Port=$server->{'servers'}{'AltitudeServerConfig'}{'port'};
-		$Ping=$server->{'servers'}{'AltitudeServerConfig'}{'maxPing'};
-		$Maxp=$server->{'servers'}{'AltitudeServerConfig'}{'maxPlayerCount'};
-
-		$Goals=POSIX::ceil(($server->
-						{'servers'}
-						{'AltitudeServerConfig'}
-						{'PlaneBallGameMode'}
-						{'goalsPerRound'}
-					)/2
-			);
-
-		%Commands=map(($_->{'ConsoleCommand'} => undef), @{$server->
-				{'servers'}
-				{'AltitudeServerConfig'}
-				{'consoleCommandPermissions'}
-				{'AltitudeServerConsoleCommandPermissions'}
-			});
-
-		$Commands{'changeMap'}=['map'];
-		$Commands{'removeMap'}=['map'];
-		$Commands{'kick'}=['player'];
-		$Commands{'ban'}=['vaporId'];
-		$Commands{'serverWhisper'}=['player', 'string'];
-
-		open($fh, '<', $Custfile);
-		while(<$fh>) {
-			$cmd=json::decode($_);
-			$Size+=&_packet_length($_);
-
-			if($cmd->{'arguments'} && @{$cmd->{'arguments'}}) {
-				$Commands{$cmd->{'name'}}=$cmd->{'arguments'};
-			} else {
-				$Commands{$cmd->{'name'}}=undef;
-			}
-		}
-		close($fh);
-
-		#These work only from console (see %CONSOLE):
-		$Commands{'showPlayer'}=['player'];
-		$Commands{'shutdown'}=undef;
-
-		open($fh, '<', $Filtfile);
-		while(<$fh>) {
-			chomp;
-			s/\s+//g;
-			s/er$//;
-
-			next if(m/damn|bollocks/);
-
-			push(@filter, $_);
-		}
-		close($fh);
-		$Language=sprintf('(%s|\b)(%s)(%s)?s?\b',
-				'er|ing?',
-				join('|', @filter),
-				'a|er|ing?|ed'
-			);
-	}
-
-	sub read_maps {
-		my($lconfig)=IO::Handle->new;
-		my($maplist)=0;
-		local($_);
-
-		@Maps=();
-
-		open($lconfig, '<', $Conffile);
-
-		while(<$lconfig>) {
-			if(m{</mapList>}i) {
-				$maplist=0;
-			}
-
-			if($maplist) {
-				push(@Maps, $1) if(m{<String value="(.*?)" />});
-			}
-
-			if(m{<mapList>|<mapRotationList>}i) {
-				$maplist=1;
-			}
-		}
-
-		close($lconfig);
-	}
-
-	sub _map_sort {
-		$Mapdb{$a}=(-C $a) unless($Mapdb{$a});
-		$Mapdb{$b}=(-C $b) unless($Mapdb{$b});
-
-		return( $Mapdb{$a} <=> $Mapdb{$b} );
-	}
-
-	sub find_maps {
-		my($lconfig)=IO::Handle->new;
-		my($maplist)=0;
-		my($packet_space)=(1450-50-240-$Size/2)*2+length($MAPDIR)*50;
-		my(@xml);
-
-		ui::slog('uncompressed space reserved for maps:', $packet_space);
-
-		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$MAPDIR/*_*.altx>);
-
-		foreach(@Maps) {
-			s|^$INSTALL_ROOT/maps/+||;
-			s|\.altx$||;
-		}
-
-		while(length(join('', @Maps))>$packet_space) {
-			pop(@Maps);
-		}
-
-		@Maps=List::Util::shuffle(@Maps);
-
-		unless(@Maps) {
-			ui::slog('Error: no maps found during startup');
-			return;
-		}
-
-		open($lconfig, '<', $Conffile);
-		@xml=<$lconfig>;
-		close($lconfig);
-
-		foreach(@xml) {
-			if(m{</mapList>}i) {
-				foreach my $map (@Maps) {
-					s{^}{        <String value="$map" />\r\n}s;
-				}
-				$maplist=0;
-			}
-			if(m{</mapRotationList>}i) {
-				foreach my $map (grep(m/($OPTIONS{'rotationRE'})/, @Maps)) {
-					s{^}{        <String value="$map" />\r\n}s;
-				}
-				$maplist=0;
-			}
-
-			if($maplist) {
-				$_=''
-			}
-
-			if(m{<mapList>|<mapRotationList>}i) {
-				$maplist=1;
-			}
-		}
-
-		rename($Conffile, "$Conffile.bak");
-		open($lconfig, '>', $Conffile);
-		print $lconfig @xml;
-		close($lconfig);
-	}
-
-	sub resize {
-		my($diff)=@_;
-		$diff-=1450;
-
-		$Size+=$diff*2;
-	}
-
-	sub new_maps {
-		my($lconfig)=IO::Handle->new;
-		my(%maps)=();
-		local($_);
-
-		foreach my $map (@_) {
-			$maps{$map}=1 if(file::name_ok($map));
-		}
-
-		return(0) unless(%maps);
-
-		open($lconfig, '<', $Conffile);
-		while(<$lconfig>) {
-			delete($maps{$1}) if(m| <String value="($MAPDIR.*?)" />|);
-		}
-		close($lconfig);
-
-
-		if(%maps) {
-			return(1);
-		} else {
-			return(0);
-		}
-	}
-
-	sub remove_maps {
-		my(@old)=@Maps;
-
-		foreach my $map (@_) {
-			@Maps=grep(!m/^$map$/, @old);
-		}
-
-		if(@old==@Maps) { #Same size?
-			return(0);
-		} else {
-			return(1);
-		}
-	}
-
-	sub maps {
-		return(@Maps);
-	}
-
-	sub random_map {
-		my(@candidates)=grep(m/($OPTIONS{'rotationRE'})/, @Maps);
-		return($candidates[int(rand(@candidates))]);
-	}
-
-	sub commands {
-		my($re)=@_;
-		grep(m|^$re|i, keys(%Commands));
-	}
-
-	sub arguments {
-		my($command)=@_;
-
-		if($Commands{$command}) {
-			return(@{$Commands{$command}});
-		} else {
-			return(undef);
-		}
-	}
-
-	sub command_help {
-		my($command)=@_;
-		my($msg)="Syntax: /$command";
-		my(@args)=();
-		my($choice)=1;
-		my($list);
-
-		if($Commands{$command}) {
-			foreach my $arg (@{$Commands{$command}}) {
-				if(ref($arg) eq 'ARRAY') {
-					$msg.=" <choice$choice>";
-					push(@args, join(' ', "choice$choice:", @$arg));
-					$choice++;
-				} elsif($arg eq 'map') {
-					$msg.=" <map>";
-					$list=join(' ', "map:", @Maps);
-					if(length($list)>390) {
-						substr($list, 390, 4096, " ...");
-					}
-					push(@args, $list);
-				} elsif($arg eq 'player') {
-					$msg.=" <player>";
-					push(@args, join(' ', "players:", player::values('nickname')));
-				} elsif($arg eq 'vaporId') {
-					$msg.=" <vaporId>";
-					push(@args, join(' ', "vaporIds:", map(
-							"$_->{'nickname'}:$_->{'vaporId'}",
-							player::list()))
-						);
-				} else {
-					$msg.=" <...>";
-				}
-			}
-			ui::slog("| $msg");
-			foreach my $arg (@args) {
-				ui::slog("|  $arg");
-			}
-		}
-	}
-
-	sub language {
-		local($_)=@_;
-
-		if(config::option('bullyKick') && m/$Language/i) {
-			return(1);
-		} else {
-			return(0);
-		}
-	}
-}
-
-=head2 State
-
-B<alti+server> keeps state from one invocation to another.  It stores
-user preferences for certain extensions, and map preferences.  These are
-used to ensure games are playable as designed for different types of maps.
-This file is read from at startup, and written to when settings changes
-are requested by administrative users.
-
-=cut
 
 {	package stash;
 
@@ -1119,6 +749,397 @@ are requested by administrative users.
 
 		&_write($Stash, $Stashfile);
 		&_write($attic, $Stashattic);
+	}
+}
+
+=head2 Configuration
+
+B<alti+server> gets it's configuration information from a
+variety of places.  Configuration files (either altitude server specific
+or B<alti+server> specific) are read in at startup, and used to gather
+data for a variety of purposes.  This list of files is used to control
+the behavior of B<alti+server>:
+
+=over 8
+
+=item custom_json_commands.txt
+
+This file isn't actually read by B<alti+server>; however, each command
+supported by B<altiude_mapqa> must be listed and defined in this file.
+This is the file which tells the server process what commands are known
+to B<alti+server>.
+
+=item launcher_config.xml
+
+This file contains the information used by the altitude C<server_launcher>
+process when the server is initially started.  It contains information
+used by B<alti+server> such as a Map list and a command list.  These
+are used in the interactive interface to provide command-line completion
+and for changing maps periodically.  What is especially nice is that admins
+never have to edit the launcher_config.xml to add new maps.  When the
+altitude server is restarted, the map directory is automatically searched
+for maps; these are added to the F<launcher_config.xml> file for you.
+
+=item filtered_swear_words.txt
+
+A list of naughty words which are often used to harrass other players are
+listed in this file.  Harrasment isn't cool!  So, when these words are used,
+the server notifies the person who wrote them that a language infraction
+has occured.  After too many infractions, the player is kicked by the server.
+
+=back
+
+=cut
+
+{	package config;
+
+	use XML::Simple;
+
+	my($Conffile)	="$INSTALL_ROOT/servers/launcher_config.xml";
+	my($Custfile)	="$INSTALL_ROOT/servers/custom_json_commands.txt";
+	my($Filtfile)	="$INSTALL_ROOT/config/filtered_swear_words.txt";
+
+	my(%Commands)=();
+	my(@Maps)=();
+	my(%Mapdb)=();
+	my($Language);
+	my($Size)=0;
+
+	our($Port)=0;
+	our($Ping)=500; #reset from launcher_config.xml
+	our($Goals)=6;  #reset from launcher_config.xml
+	our($Maxp)=14;  #reset from launcher_config.xml
+
+	$MAPDIR=~s|/*$|/| if($MAPDIR);
+
+	sub option {
+		my($key)=@_;
+		my($value)=stash::get($key, 'server') || $OPTIONS{$key};
+
+		if(ref($value)) {
+			return($value);
+		} elsif($value=~m/^(true|yes|t|y)$/i) {
+			return(1);
+		} elsif($value=~m/^(false|no|f|n)$/i) {
+			return(0);
+		} else {
+			return($value);
+		}
+	}
+
+	sub option_set {
+		my($name, $value)=@_;
+
+		stash::set($name, 'server', $value);
+	}
+
+	sub option_del {
+		my($name)=@_;
+
+		stash::delete($name, 'server');
+	}
+
+	sub _packet_length {
+		my($size)=0;
+		my($str);
+
+		foreach my $arg (@_) {
+			if(ref($arg)) {
+				$str=json::encode($arg);
+			} else {
+				$str=$arg;
+			}
+			$str=~s/\W//g;
+			$size+=length($str);
+		}
+
+		return($size);
+	}
+
+	sub launcher {
+		my($server)=XML::Simple::XMLin($Conffile);
+		my($fh)=IO::Handle->new;
+		my(@filter)=();
+		my($cmd);
+		local($_);
+
+		$Port=$server->{'servers'}{'AltitudeServerConfig'}{'port'};
+		$Ping=$server->{'servers'}{'AltitudeServerConfig'}{'maxPing'};
+		$Maxp=$server->{'servers'}{'AltitudeServerConfig'}{'maxPlayerCount'};
+
+		$Goals=POSIX::ceil(($server->
+						{'servers'}
+						{'AltitudeServerConfig'}
+						{'PlaneBallGameMode'}
+						{'goalsPerRound'}
+					)/2
+			);
+
+		%Commands=map(($_->{'ConsoleCommand'} => undef), @{$server->
+				{'servers'}
+				{'AltitudeServerConfig'}
+				{'consoleCommandPermissions'}
+				{'AltitudeServerConsoleCommandPermissions'}
+			});
+
+		$Commands{'changeMap'}=['map'];
+		$Commands{'removeMap'}=['map'];
+		$Commands{'kick'}=['player'];
+		$Commands{'ban'}=['vaporId'];
+		$Commands{'serverWhisper'}=['player', 'string'];
+
+		open($fh, '<', $Custfile);
+		while(<$fh>) {
+			$cmd=json::decode($_);
+			$Size+=&_packet_length($_);
+
+			if($cmd->{'arguments'} && @{$cmd->{'arguments'}}) {
+				$Commands{$cmd->{'name'}}=$cmd->{'arguments'};
+			} else {
+				$Commands{$cmd->{'name'}}=undef;
+			}
+		}
+		close($fh);
+
+		#These work only from console (see %CONSOLE):
+		$Commands{'server'}=[
+				['list', 'set', 'unset', 'add', 'del'],
+				[keys(%OPTIONS)],
+				'string',
+			];
+		$Commands{'showPlayer'}=['player'];
+		$Commands{'shutdown'}=undef;
+
+		open($fh, '<', $Filtfile);
+		while(<$fh>) {
+			chomp;
+			s/\s+//g;
+			s/er$//;
+
+			next if(m/damn|bollocks/);
+
+			push(@filter, $_);
+		}
+		close($fh);
+		$Language=sprintf('(%s|\b)(%s)(%s)?s?\b',
+				'er|ing?',
+				join('|', @filter),
+				'a|er|ing?|ed'
+			);
+	}
+
+	sub read_maps {
+		my($lconfig)=IO::Handle->new;
+		my($maplist)=0;
+		local($_);
+
+		@Maps=();
+
+		open($lconfig, '<', $Conffile);
+
+		while(<$lconfig>) {
+			if(m{</mapList>}i) {
+				$maplist=0;
+			}
+
+			if($maplist) {
+				push(@Maps, $1) if(m{<String value="(.*?)" />});
+			}
+
+			if(m{<mapList>|<mapRotationList>}i) {
+				$maplist=1;
+			}
+		}
+
+		close($lconfig);
+	}
+
+	sub _map_sort {
+		$Mapdb{$a}=(-C $a) unless($Mapdb{$a});
+		$Mapdb{$b}=(-C $b) unless($Mapdb{$b});
+
+		return( $Mapdb{$a} <=> $Mapdb{$b} );
+	}
+
+	sub find_maps {
+		my($lconfig)=IO::Handle->new;
+		my($maplist)=0;
+		my($packet_space)=(1450-50-240-$Size/2)*2+length($MAPDIR)*50;
+		my($rotation)=config::option('rotationRE');
+		my(@xml);
+
+		ui::slog('uncompressed space reserved for maps:', $packet_space);
+
+		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$MAPDIR/*_*.altx>);
+
+		foreach(@Maps) {
+			s|^$INSTALL_ROOT/maps/+||;
+			s|\.altx$||;
+		}
+
+		while(length(join('', @Maps))>$packet_space) {
+			pop(@Maps);
+		}
+
+		@Maps=List::Util::shuffle(@Maps);
+
+		unless(@Maps) {
+			ui::slog('Error: no maps found during startup');
+			return;
+		}
+
+		open($lconfig, '<', $Conffile);
+		@xml=<$lconfig>;
+		close($lconfig);
+
+		foreach(@xml) {
+			if(m{</mapList>}i) {
+				foreach my $map (@Maps) {
+					s{^}{        <String value="$map" />\r\n}s;
+				}
+				$maplist=0;
+			}
+			if(m{</mapRotationList>}i) {
+				foreach my $map (grep(m/($rotation)/, @Maps)) {
+					s{^}{        <String value="$map" />\r\n}s;
+				}
+				$maplist=0;
+			}
+
+			if($maplist) {
+				$_=''
+			}
+
+			if(m{<mapList>|<mapRotationList>}i) {
+				$maplist=1;
+			}
+		}
+
+		rename($Conffile, "$Conffile.bak");
+		open($lconfig, '>', $Conffile);
+		print $lconfig @xml;
+		close($lconfig);
+	}
+
+	sub resize {
+		my($diff)=@_;
+		$diff-=1450;
+
+		$Size+=$diff*2;
+	}
+
+	sub new_maps {
+		my($lconfig)=IO::Handle->new;
+		my(%maps)=();
+		local($_);
+
+		foreach my $map (@_) {
+			$maps{$map}=1 if(file::name_ok($map));
+		}
+
+		return(0) unless(%maps);
+
+		open($lconfig, '<', $Conffile);
+		while(<$lconfig>) {
+			delete($maps{$1}) if(m| <String value="($MAPDIR.*?)" />|);
+		}
+		close($lconfig);
+
+
+		if(%maps) {
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+	sub remove_maps {
+		my(@old)=@Maps;
+
+		foreach my $map (@_) {
+			@Maps=grep(!m/^$map$/, @old);
+		}
+
+		if(@old==@Maps) { #Same size?
+			return(0);
+		} else {
+			return(1);
+		}
+	}
+
+	sub maps {
+		return(@Maps);
+	}
+
+	sub random_map {
+		my($rotation)=config::option('rotationRE');
+		my(@candidates)=grep(m/($rotation)/, @Maps);
+		return($candidates[int(rand(@candidates))]);
+	}
+
+	sub commands {
+		my($re)=@_;
+		grep(m|^$re|i, keys(%Commands));
+	}
+
+	sub arguments {
+		my($command)=@_;
+
+		if($Commands{$command}) {
+			return(@{$Commands{$command}});
+		} else {
+			return(undef);
+		}
+	}
+
+	sub command_help {
+		my($command)=@_;
+		my($msg)="Syntax: /$command";
+		my(@args)=();
+		my($choice)=1;
+		my($list);
+
+		if($Commands{$command}) {
+			foreach my $arg (@{$Commands{$command}}) {
+				if(ref($arg) eq 'ARRAY') {
+					$msg.=" <choice$choice>";
+					push(@args, join(' ', "choice$choice:", @$arg));
+					$choice++;
+				} elsif($arg eq 'map') {
+					$msg.=" <map>";
+					$list=join(' ', "map:", @Maps);
+					if(length($list)>390) {
+						substr($list, 390, 4096, " ...");
+					}
+					push(@args, $list);
+				} elsif($arg eq 'player') {
+					$msg.=" <player>";
+					push(@args, join(' ', "players:", player::values('nickname')));
+				} elsif($arg eq 'vaporId') {
+					$msg.=" <vaporId>";
+					push(@args, join(' ', "vaporIds:", map(
+							"$_->{'nickname'}:$_->{'vaporId'}",
+							player::list()))
+						);
+				} else {
+					$msg.=" <...>";
+				}
+			}
+			ui::slog("| $msg");
+			foreach my $arg (@args) {
+				ui::slog("|  $arg");
+			}
+		}
+	}
+
+	sub language {
+		local($_)=@_;
+
+		if(config::option('bullyKick') && m/$Language/i) {
+			return(1);
+		} else {
+			return(0);
+		}
 	}
 }
 
@@ -1338,6 +1359,7 @@ is updated with them as the games progress.
 
 	sub add {
 		my($p)=@_;
+		my($sas)=config::option{'superAdmins'};
 
 		$p->{'alive'}=1;
 
@@ -1348,9 +1370,10 @@ is updated with them as the games progress.
 			push(@Players, $p);
 		}
 
-		$p->{'superAdmin'}=0;
-		foreach my $admin (@SUPER_ADMINS) {
-			$p->{'superAdmin'}=1 if($p->{'vaporId'} eq $admin);
+		if($sas=~m/(^|;)$p->{'vaporId'}(;|$)/) {
+			$p->{'superAdmin'}=1;
+		} else {
+			$p->{'superAdmin'}=0;
 		}
 
 		$Pdb{$p->{'nickname'}}	=
@@ -1570,7 +1593,7 @@ play though extended interfaces and server support.
 		&_value_or_query('rightTeam', @_);
 	}
 
-	sub hunted	{
+	sub hunted {
 		my($p)=@_;
 		my($hunted)=&_value_or_query('hunted', $p);
 
@@ -1586,6 +1609,12 @@ play though extended interfaces and server support.
 		} else {
 			return($Map->{'hunted'});
 		}
+	}
+
+	sub cower {
+		my($p)=@_;
+
+		$Map->{'hunted'}=undef;
 	}
 
 	sub start	{
@@ -2569,17 +2598,6 @@ core protecting the flag.
 
 	'list map'	=> sub {
 		my($e, $p)=@_;
-
-		server::whisper($p, game::mapname());
-	},
-
-	'help settings'	=> sub {
-		my($e, $p)=@_;
-		server::whisper($p, '/list settings');
-	},
-
-	'list settings'	=> sub {
-		my($e, $p)=@_;
 		my(@settings)=qw(
 			ballScore
 			gravity
@@ -2591,6 +2609,8 @@ core protecting the flag.
 			maxPlayers
 			gameType
 		);
+
+		server::whisper($p, 'Name:', game::mapname());
 
 		foreach my $setting (@settings) {
 			$HOOKS{"list $setting"}->($e, $p)
@@ -3595,7 +3615,7 @@ core protecting the flag.
 			ui::display('', '', "< $p->{'nickname'} entered >");
 		}
 
-		foreach my $statement (@MOTD) {
+		foreach my $statement (split(m/;/, config::option('motd'))) {
 			server::whisper($p, $statement);
 		}
 
@@ -3637,6 +3657,7 @@ core protecting the flag.
 			$p->{'team'}=$e->{'team'};
 			if(!game::left($p->{'team'}) && !game::right($p->{'team'})) {
 				game::leave();
+				game::cower($p) if(game::hunted($p));
 			}
 		} elsif(game::enter()) {
 			$p->{'team'}=$e->{'team'};
@@ -4154,13 +4175,65 @@ to data which is otherwise easy to access from the game, or to execute
 functions which should not be accessible from elsewhere.  These commands
 start with a slash (/) character, just like all other commands.
 
-The size of this list depende on the C<OPTIONS> value for C<superAdmin>.
+The size of this list depend on the C<OPTIONS> value for C<superAdmin>.
 If C<superAdmin> is set to C<console>, then all super admin functions are
 also only available from the console.
 
 =cut
 
 %CONSOLE=(
+	'server'			=> sub {
+		my($action, $name, @args)=@_;
+		my($value)=join(' ', @args);
+		my($s)=player::server();
+		my($current);
+
+		if($action eq 'list') {
+			'defer';
+		} elsif($action eq 'set') {
+			if($name=~m/Color/i && $value!~m/black|blue|cyan|green|magenta|red|white|yellow/) {
+				server::whisper($s, 'Invalid color:', $value);
+				return;
+			}
+
+			config::option_set($name, $value);
+
+			ui::setup_screen() if($name=~m/^ui|Color$/i);
+		} elsif($action eq 'unset') {
+			config::option_del($name);
+			server::whisper($s, $name, 'restored to default');
+
+			ui::setup_screen() if($name=~m/^ui|Color$/i);
+		} elsif($action eq 'add') {
+			$current=config::option($name);
+
+			if($name eq 'superAdmins' && $value!~m/^[0-9a-f-]{36}$/) {
+				$value=player::lookup($value)->{'vaporId'};
+				unless($value) {
+					server::whisper($s, 'Could not find vaporID');
+					return;
+				}
+			}
+
+			unless($current=~m/(^|;)$value(;|$)/) {
+				config::option_set($name, join(';', $current, $value));
+			}
+		} elsif($action eq 'del') {
+			$current=config::option($name);
+			$current=~s/$value;|;?$value//;
+			config::option_set($name, $current);
+		} else {
+			server::whisper($s, 'Syntax: /server [list|set|unset] [...]');
+			return;
+		}
+
+		$current=config::option($name);
+		foreach my $entry (split(m/;/, $current)) {
+			server::whisper($s, "$name:", $entry);
+		}
+
+	},
+
 	'showPlayer'		=> sub {
 		my($p)=player::server();
 		my($player)=player::lookup(@_);

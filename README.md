@@ -358,12 +358,156 @@ the server.
 
 ### Console only commands
 
+  * **/server [list|set|unset|add|del] [option] [args...]**<br>
+    List, set, etc. server options.  These commands are available only
+    from the console because they are sensitive.  For example, you can
+    specify who is a super admin using these commands, change the
+    message of the day (motd), or change the maximum size allowed for
+    upload files.  These settings are stored in your stash, and read in
+    front of the default options listed in the server code.  Which means
+    they persist across software updates.  See Server Options below
+    for a full list of options with descriptions.
+
   * **/showPlayer [player]**<br>
     Print information on `player`
 
   * **/shutdown**<br>
     Shutdown the Altitude game engine, then `alti+server` itself
 
+
+## Server Options
+Use the console-only `/server list`, `/server set`, `/server unset`,
+`/server add`, and `/server del` commands to modify the below values.
+
+  * **updateMapList [0|1]**<br>
+    Specify if alti+server can change your launcher_config.xml
+    file with an updated map list and map rotation list.  These
+    lists will be automatically randomized each time the server
+    restarts.  Furthermore, if your map list is too large for
+    the Altitude game engine to support, it will trim the list
+    focusing on keeping more recent and popular maps in the
+    list, and discarding less popular/older maps.  This feature
+    is required if you wish to have the map upload feature
+    automatically add new maps to the map list.  Without this
+    feature, you will need to edit your launcher_config.xml
+    file by hand (or with the server_configurator) to manually
+    add new maps.
+    Set to 1 to enable this feature, set to 0 to disable.
+    
+  * **ulSizeLimit [#]**<br>
+    Specify the maximum size of an uploaded map.  This number
+    is an integer which represents Bytes.  Since you may allow
+    other people to upload files to your server, there needs
+    to be some sort of maximum value.  Please note that the
+    file may need to be fully downloaded before its size can
+    be checked.  If the size is above ulSizeLimit, then the
+    map file will be promptly deleted.
+
+  * **boxColor [black|blue|cyan|green|magenta|red|white|yellow]**<br>
+    Two sections of the console curses interface are encapsulated
+    in boxes.  This value specifes the color of these boxes.
+    The color must fall into the limited Curses color name values.
+
+  * **chatFromColor [black|blue|cyan|green|magenta|red|white|yellow]**<br>
+    In the chat window, the name of the person sending a chat
+    message will be displayed.  This value is the color of the
+    nickname text of that person.  You must use the limited
+    The color must fall into the limited Curses color name values.
+
+  * **chatToColor [black|blue|cyan|green|magenta|red|white|yellow]**<br>
+    In the chat window, a specifer as to the recipients of a
+    message is displayed.  This value is the color of that specification.
+    The color must fall into the limited Curses color name values.
+
+  * **uiPrettyBoxes [0|1]**<br>
+    Curses can draw attractive boxes on the screeen using either
+    a terminal's Alternate Character Set (ACS) or Unicode
+    drawing characters.  This almost always works, but when it
+    doesn't, the experience is quite appalling.
+    Setting this to `0` will disable these specialty characters
+    and just the standard ASCII '-' and '|' characters.  Setting
+    this to `1` will tell Curses to draw attractive boxes on the
+    terminal screen.
+
+  * **noviceLevel [#]**<br>
+    Require the novice users (Ace 0) attain at least this level
+    before being allowed to play on the server.  Players below
+    this level will be forced to spectate, and sent a server
+    message outlining the policy.  Continued attempts to join
+    will result in a kick.  This value differes from the server
+    enforced level requirements, as it only affects players of
+    Ace Rank 0.
+
+  * **aceLevel [#]**<br>
+    Require users who have recently Aced (anywhere from 1 to 10)
+    to have at least obtained this level before being allowed to
+    play.  Players below this level will be forced to spectate,
+    and sent a server message outlining the policy.  Continued
+    attempts to join will result in a kick.  This value differs
+    from the server enforced level requirements, as it only
+    affects players of Ace Ranks `1` through `10`.
+
+  * **snarkChance [#]**<br>
+    Specify the likelihood that a snarky comment will be made
+    about a player.  The server is configured with a number of
+    funny comments to make about plane choices, perks, skins,
+    etc.  Events which cause these to be displayed are things
+    like spawning.  So, this number is the likelihood per user
+    that this happens.  If you set this to `0`, then snarky
+    comments are disabled.
+
+  * **bullyKick [0|1]**<br>
+    Online games with chat functionality will, from time to time,
+    attract players who play a sort of meta-game, one where
+    (for them) the real game is to abuse other players and create
+    havoc.  These sorts of individuals often result to vulgar
+    language to acheive their goals.  The server looks for these
+    types of behaviour and warns players who engage in it.  After
+    many repeated attempts, the server will kick the bullies.
+    Setting this to 1 enables this player protection and the
+    support of a positive gamming experience.  Setting this to
+    0 disables the servers ability to protect players from this
+    sort of harrasment.
+
+  * **rotationRE [RE]**<br>
+    Not all maps need to be in the map rotation, and should only
+    be available via an admin */changeMap* or a */vote changeMap*.
+    This value is a regular expression (so you can seperate
+    values with a pipe "|" character) which specifies which maps
+    should be in rotation.  For example, "1de_coop" maps often
+    kill servers, causing players to quit.  This can be used
+    to keep this from happening.  Conversely, it could also
+    be used to make only 1-life games occur.  It is the
+    perogative of the server administrator.
+
+  * **superAdmin [admin|console|list]**<br>
+    Some servers have two levels of admins.  Admins whose job
+    it is to keep the peace, and admins who support the server.
+    This setting allows for a distinction between these two types
+    of admins with respect to alti+server's custom commands.
+    Commands which add or remove maps are super admin commands.
+    Also are commands which allow the restart of a server. Set
+    this to `admin` to make admins and super admins the same
+    group.  Set this to `console`, and super admin commands
+    will only be available for users at the alti+server console.
+    Finally, setting this to `list` will allow a list of
+    vaporIds to be set with actual super admin users.
+   
+  * **superAdmins [vaporID|nickname]**<br>
+    This is an array (so use "add" and "del" when at the console)
+    of vapor IDs which have super admin privledges.  It is used
+    only if the value of the above "superAdmin" value is set to "list".
+    If you specify a `vaporID`, then it will be added to the list of
+    super admins.  If you specify a `nickname`, then that player must be
+    on the server right now, so their vaporID can be looked up and stored
+    in the list of super admins.  You cannot actually store a nickname
+    in the list of super admins and have it work, that would be dangerous.
+
+  * **motd [message text...]**<br>
+    This is the Message of the Day (motd) used when players
+    join the server.  It is an array (each element is a new
+    line) so use the "add" and "del" sub functions of
+    `/server` when entering from the console.
 
 ## Angles
 Various interfaces in `alti+server` allow you to specify angles for
