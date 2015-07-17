@@ -130,12 +130,6 @@ manage Alti+ game maps.
     help identify powerups for use with *portals*, *doors*, and different
     spawn types.  These are defined more below.
 
-  * **/location**<br>
-    Display the *X* and *Y* coordinates for the plane where it is about to
-    The purpose of this command is to help identify locations for spawn
-    points for for use with *portals*, *zones*, etc.
-    These are defined more below.
-
   * **/help [setting]**<br>
     Display a help message for `setting`.  If a `setting` has a
     `/list`, `/set`, `/unset`, `/add`, `/del`, or `/upload`
@@ -219,6 +213,11 @@ manage Alti+ game maps.
     Normally the type of a game is ascertained by te file name.
     If that cannot be done properly, the game type can be set via this
     mechanism.
+
+  * **/set intro [text ...]**<br>
+    Store text to be displayed at the loading of a map, and to new players
+    when they join.  This is intended to help players figure out what to
+    do on the map, and what it is all about.
 
   * **/add portal [name] [px],[py] [sx],[sy],[sa]**<br>
     When a player auto-uses the health powerup located at `px`,`py`, then

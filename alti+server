@@ -1487,7 +1487,6 @@ play though extended interfaces and server support.
 	my($Type)=undef;
 	my(@Score)=(0, 0);
 	my(%Stats)=();
-	my($Count)=0;
 
 	sub set_type {
 		local($_)=@_;
@@ -1526,8 +1525,6 @@ play though extended interfaces and server support.
 
 		%Stats=();
 
-		$Count=0;
-
 		foreach my $player (player::list()) {
 			delete($player->{'team'});
 		}
@@ -1547,19 +1544,34 @@ play though extended interfaces and server support.
 	}
 
 	sub enter {
+		my($p)=@_;
 		my($max)=stash::get('maxPlayers', game::mapname()) || $config::Maxp;
 
-		if($Count<$max) {
-			$Count++;
+		if($Stats{'players'}{'playing'}{$p}) {
+			return(1);
+		} elsif($Stats{'players'}{'count'}<$max) {
+			$Stats{'players'}{'playing'}{$p}=1;
+			$Stats{'players'}{'count'}++;
 			return(1);
 		} else {
 			return(0);
 		}
 	}
 
+	sub playing {
+		my($p)=@_;
+
+		return($Stats{'players'}{'playing'}{$p});
+	}
+
 	sub leave {
-		if($Count>0) {
-			$Count--;
+		my($p)=@_;
+
+		if($Stats{'players'}{'playing'}{$p}) {
+			delete($Stats{'players'}{'playing'}{$p});
+			if($Stats{'players'}{'count'}>0) {
+				$Stats{'players'}{'count'}--;
+			}
 			return(1);
 		} else {
 			return(0);
@@ -1580,17 +1592,25 @@ play though extended interfaces and server support.
 	sub mode		{ &_value_or_query('mode', @_);		}
 
 	sub left		{
-		for(@_) {
+		foreach(@_) {
 			return(1) if(m/left|<|all|both|\*/i);
 		}
 		&_value_or_query('leftTeam', @_);
 	}
 
 	sub right		{
-		for(@_) {
+		foreach(@_) {
 			return(1) if(m/right|>|all|both|\*/i);
 		}
 		&_value_or_query('rightTeam', @_);
+	}
+
+	sub spec		{
+		foreach my $team (@_) {
+			return(0) if(&left($team));
+			return(0) if(&right($team));
+		}
+		return(1);
 	}
 
 	sub hunted {
@@ -2269,7 +2289,8 @@ core protecting the flag.
 	'set'		=> sub {
 		my($e, $p)=@_;
 		my($type, $args)=@{$e->{'arguments'}};
-		my(@args)=split(m/[\s,]+/, $args);
+		#my(@args)=split(m/[\s,]+/, $args);
+		my(@args)=($args=~m/(".*?"|".*$|[\S,]+)/g);
 
 		return unless($e->{'admin'});
 
@@ -2608,6 +2629,7 @@ core protecting the flag.
 			spawnMode
 			maxPlayers
 			gameType
+			intro
 		);
 
 		server::whisper($p, 'Name:', game::mapname());
@@ -2639,6 +2661,7 @@ core protecting the flag.
 			spawnMode
 			maxPlayers
 			gameType
+			intro
 		);
 
 		game::new_map($e);
@@ -3150,6 +3173,54 @@ core protecting the flag.
 		}
 	},
 
+	'help intro'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, 'Set an introductory message for players on a map');
+		server::whisper($p, '/list intro');
+		server::whisper($p, '/set intro <text ...>');
+		server::whisper($p, '/unset intro');
+	},
+
+	'list intro'	=> sub {
+		my($e, $p)=@_;
+		my($intro)=stash::get('intro', game::mapname());
+
+		if($intro) {
+			server::whisper($p, $intro);
+		} else {
+			server::whisper($p, 'This map does not have an introduction');
+		}
+	},
+
+	'enable intro'	=> sub {
+		my($e, $p)=@_;
+		my($intro)=stash::get('intro', game::mapname());
+
+		server::msg($intro) if($intro);
+	},
+
+	'set intro'		=> sub {
+		my($e, $p, @text)=@_;
+		my($text)=join(' ', @text);
+
+		if($text) {
+			stash::set('intro', game::mapname(), $text);
+			server::msg($text);
+		} else {
+			stash::delete('intro', game::mapname());
+			server::whisper($p, 'Removed map introduction');
+		}
+
+	},
+
+	'unset intro'		=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('intro', game::mapname());
+		server::whisper($p, 'Removed map introduction');
+	},
+
 	'help portals'	=> sub {
 		my($e, $p)=@_;
 
@@ -3594,6 +3665,7 @@ core protecting the flag.
 	'clientAdd'		=> sub {
 		my($e, $p)=@_;
 		my($planes)=stash::get('planes', game::mapname());
+		my($intro)=stash::get('intro', game::mapname());
 
 		if($p->{'nickname'}=~m/^\d{1,2}$/) {
 			server::whisper($e, "Invalid nickname for this server.");
@@ -3620,12 +3692,18 @@ core protecting the flag.
 		}
 
 		server::whisper($p, 'Allowed Planes:', $planes) if($planes);
+		server::whisper($p, $intro) if($intro);
 	},
 
 	'clientNicknameChange'	=> sub {
 		my($e, $p)=@_;
 
 		player::rename($e->{'oldNickname'}, $e->{'newNickname'});
+
+		if(server::snarky()) {
+			server::whisper($p, 'Oh', $p->{'nickname'},
+				', you will always be', $p->{'vaporId'}, 'to me.');
+		}
 	},
 
 	'clientRemove'		=> sub {
@@ -3639,7 +3717,7 @@ core protecting the flag.
 
 		ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
 
-		game::leave() if($p->{'team'});
+		game::leave($p);
 
 		$p->{'alive'}=0;
 		delete($p->{'player'});
@@ -3653,17 +3731,24 @@ core protecting the flag.
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			return;
-		} elsif($p->{'team'}) {
-			$p->{'team'}=$e->{'team'};
-			if(!game::left($p->{'team'}) && !game::right($p->{'team'})) {
-				game::leave();
+		} elsif(game::spec($e->{'team'})) {
+			if(game::spec($p->{'team'})) {
+				$p->{'team'}=$e->{'team'};
+				return;
+			} else {
+				$p->{'team'}=$e->{'team'};
+
+				game::leave($p);
 				game::cower($p) if(game::hunted($p));
 			}
-		} elsif(game::enter()) {
+		} elsif(game::enter($p)) {
 			$p->{'team'}=$e->{'team'};
 		} else {
 			server::send('assignTeam', $p->{'nickname'}, -1);
+			$p->{'team'}=-1;
 			player::infraction($p, 0.2);
+
+			return;
 		}
 
 		if(game::type('mdg') && game::hunted($p)) {
@@ -3714,13 +3799,24 @@ core protecting the flag.
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			return;
-		} elsif($p->{'team'}) {
-			$p->{'team'}=$e->{'team'};
-		} elsif(game::enter()) {
+		} elsif(game::spec($e->{'team'})) {
+			if(game::spec($p->{'team'})) {
+				$p->{'team'}=$e->{'team'};
+				return;
+			} else {
+				$p->{'team'}=$e->{'team'};
+
+				game::leave($p);
+				game::cower($p) if(game::hunted($p));
+			}
+		} elsif(game::enter($p)) {
 			$p->{'team'}=$e->{'team'};
 		} else {
 			server::send('assignTeam', $p->{'nickname'}, -1);
+			$p->{'team'}=-1;
 			player::infraction($p, 0.2);
+
+			return;
 		}
 
 		unless($p->{'plane'}=~m/$planere/) {
