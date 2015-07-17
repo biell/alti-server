@@ -130,6 +130,12 @@ my(%HOOKS, %CONSOLE);
 
 		return($country);
 	}
+
+	sub random_value {
+		my(@values)=values(%{$_[0]});
+
+		return($values[int(rand(@values))]);
+	}
 }
 
 =head2 Interface
@@ -540,10 +546,10 @@ list.
 			$Input=~s|^\s+||;
 
 			if($Input=~s|^/||) {
-				@cmd=($Input=~m/(".*?"|".*$|\w+)/g);
+				@cmd=($Input=~m/(".*?"|".*$|\S+)/g);
 				foreach(@cmd) {
 					s/^"//;
-					s/^"//;
+					s/"$//;
 				}
 
 				&hist_push($Input);
@@ -673,6 +679,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	our($Port)=0;
 	our($Ping)=500; #reset from launcher_config.xml
 	our($Goals)=6;  #reset from launcher_config.xml
+	our($Maxp)=14;  #reset from launcher_config.xml
 
 	$MAPDIR=~s|/*$|/| if($MAPDIR);
 
@@ -716,6 +723,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 		$Port=$server->{'servers'}{'AltitudeServerConfig'}{'port'};
 		$Ping=$server->{'servers'}{'AltitudeServerConfig'}{'maxPing'};
+		$Maxp=$server->{'servers'}{'AltitudeServerConfig'}{'maxPlayerCount'};
 
 		$Goals=POSIX::ceil(($server->
 						{'servers'}
@@ -1331,6 +1339,8 @@ is updated with them as the games progress.
 	sub add {
 		my($p)=@_;
 
+		$p->{'alive'}=1;
+
 		if($p->{'nickname'}=~m/^Bot ([1-9]|[1-2][0-9])$/) {
 			$p->{'isBot'}=1;
 		} else {
@@ -1371,6 +1381,9 @@ is updated with them as the games progress.
 				last;
 			}
 		}
+
+		$p->{'alive'}=0;
+		delete($p->{'player'});
 	}
 
 	sub lookup {
@@ -1383,6 +1396,24 @@ is updated with them as the games progress.
 		} else {
 			return(undef);
 		}
+	}
+
+	sub infraction {
+		my($p, $value)=@_;
+
+		$p->{'infractions'}+=$value;
+		if($p->{'infractions'}>10) {
+			server::send('kick', $p->{'nickname'});
+			return(0);
+		} else {
+			return($p->{'infractions'});
+		}
+	}
+
+	sub forgive {
+		my($p)=@_;
+
+		$p->{'infractions'}-- if($p->{'infractions'}>0);
 	}
 
 	sub event_search {
@@ -1433,6 +1464,7 @@ play though extended interfaces and server support.
 	my($Type)=undef;
 	my(@Score)=(0, 0);
 	my(%Stats)=();
+	my($Count)=0;
 
 	sub set_type {
 		local($_)=@_;
@@ -1445,6 +1477,8 @@ play though extended interfaces and server support.
 			$Type='race';
 		} elsif(m/(^|_)coop(_|$)/) {
 			$Type='coop';
+		} elsif(m/(^|_)mdg(_|$)/) {
+			$Type='mdg';
 		} else {
 			$Type='std';
 		}
@@ -1468,6 +1502,12 @@ play though extended interfaces and server support.
 		$Map->{'idle'}=time();
 
 		%Stats=();
+
+		$Count=0;
+
+		foreach my $player (player::list()) {
+			delete($player->{'team'});
+		}
 	}
 
 	sub busy {
@@ -1483,11 +1523,31 @@ play though extended interfaces and server support.
 		($Map->{'leftTeam'}, $Map->{'rightTeam'})=($left, $right);
 	}
 
+	sub enter {
+		my($max)=stash::get('maxPlayers', game::mapname()) || $config::Maxp;
+
+		if($Count<$max) {
+			$Count++;
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+	sub leave {
+		if($Count>0) {
+			$Count--;
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
 	sub _value_or_query {
 		my($key)=shift;
 
 		if(@_) {
-			return(grep(m/^$Map->{$key}$/, @_)>0);
+			return(grep($Map->{$key} eq $_, @_)>0);
 		} else {
 			return($Map->{$key});
 		}
@@ -1508,6 +1568,24 @@ play though extended interfaces and server support.
 			return(1) if(m/right|>|all|both|\*/i);
 		}
 		&_value_or_query('rightTeam', @_);
+	}
+
+	sub hunted	{
+		my($p)=@_;
+		my($hunted)=&_value_or_query('hunted', $p);
+
+		if($p) {
+			if($Map->{'hunted'}==$p) {
+				return(1);
+			} elsif(!$Map->{'hunted'} || !$Map->{'hunted'}{'alive'}) {
+				$Map->{'hunted'}=$p;
+				return(1);
+			} else {
+				return(0);
+			}
+		} else {
+			return($Map->{'hunted'});
+		}
 	}
 
 	sub start	{
@@ -1542,7 +1620,13 @@ play though extended interfaces and server support.
 	}
 
 	sub angle {
-		my($a)=lc($_[0]);
+		my($a);
+
+		if(@_==1) {
+			$a=lc($_[0]);
+		} else {
+			$a=atan2($_[1], $_[0])*180/3.14159;
+		}
 
 		#Accept -90, 270, 'down', or 's' to signify straight down:
 		if($a eq 'up' || $a eq 'n' || $a eq 'north') {
@@ -1561,23 +1645,19 @@ play though extended interfaces and server support.
 			$a=-135;
 		} elsif($a eq 'nw' || $a eq 'northwest') {
 			$a=135;
-		} elsif($a<=180) {
-			$a=int($a);
-		} else {
+		} elsif($a<=-180) {
+			$a=int($a + 360);
+		} elsif($a>180) {
 			$a=int($a - 360);
+		} else {
+			$a=int($a);
 		}
 	}
 
 	sub spawn_here {
 		my($p, $x, $y, @angle)=@_;
-		my($angle);
+		my($angle)=&angle(@angle);
 		
-		if(@angle==1) {
-			$angle=$angle[0];
-		} else {
-			$angle=int(atan2($angle[1], $angle[0])*180/3.14159);
-		}
-
 		if(abs($angle)>90) {
 			$x=POSIX::ceil($x);
 		} else {
@@ -2231,20 +2311,37 @@ core protecting the flag.
 		}
 	},
 
+	'vote'	=> sub {
+		my($e, $p)=@_;
+		my($command)=shift(@{$e->{'arguments'}});
+		our($kicker, $kickee);
+
+		if(config::option('bullyKick') && $command eq 'kick') {
+			$kicker=$p;
+			$kickee=shift(@{$e->{'arguments'}});
+			player::infraction($p, 1);
+		}
+	},
+
+	'kick'	=> sub {
+		my($e, $p)=@_;
+		my($nick)=shift(@{$e->{'arguments'}});
+		our($kicker, $kickee);
+
+		if($nick eq $kickee && ref($kicker) eq 'HASH') {
+			player::forgive($kicker);
+			undef($kicker);
+		}
+	},
+
 	'talk'	=> sub {
 		my($e, $p)=@_;
 		my($to)=player::lookup(shift(@{$e->{'arguments'}}));
 		my($msg)=join(' ', @{$e->{'arguments'}});
 
 		if(config::language($msg)) {
-			$p->{'infractions'}++;
-			if($p->{'infractions'}<10) {
-				server::whisper($p, "language ($p->{'infractions'})");
-				server::whisper($p, "message not sent");
-			} else {
-				server::msg("kicking '$p->{'nickname'}' for infractions");
-				server::send('kick', $p->{'nickname'});
-			}
+			server::whisper($p, "message not sent");
+			server::whisper($p, 'language(', player::infraction($p, 1), ')');
 		} elsif($p->{'nickname'} eq 'server') {
 			server::whisper($to, $msg);
 		} elsif(!stash::get('block', $to->{'nickname'})) {
@@ -2491,6 +2588,7 @@ core protecting the flag.
 			assignTeam
 			planes
 			spawnMode
+			maxPlayers
 			gameType
 		);
 
@@ -2519,6 +2617,7 @@ core protecting the flag.
 			assignTeam
 			planes
 			spawnMode
+			maxPlayers
 			gameType
 		);
 
@@ -2533,7 +2632,7 @@ core protecting the flag.
 
 		foreach my $player (player::list()) {
 			$player->{'stats'}={};
-			$player->{'infractions'}-- if($player->{'infractions'});
+			player::forgive($player);
 		}
 	},
 
@@ -2881,6 +2980,37 @@ core protecting the flag.
 		}
 	},
 
+	'help maxPlayers'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list maxPlayers');
+		server::whisper($p, '/set maxPlayers #');
+		server::whisper($p, '/unset maxPlayers');
+	},
+
+	'list maxPlayers'	=> sub {
+		my($e, $p)=@_;
+		my($count)=stash::get('maxPlayers', game::mapname());
+
+		server::whisper($p, 'maxPlayers:', $count || $config::Maxp);
+	},
+
+	'set maxPlayers'	=> sub {
+		my($e, $p, $count)=@_;
+
+		if($count>0) {
+			stash::set('maxPlayers', game::mapname(), $count);
+		} else {
+			stash::delete('maxPlayers', game::mapname());
+		}
+	},
+
+	'del maxPlayers'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('maxPlayers', game::mapname());
+	},
+
 	'help spawnMode'	=> sub {
 		my($e, $p)=@_;
 
@@ -2953,7 +3083,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		server::whisper($p, '/list gameType');
-		server::whisper($p, '/set gameType <mapname|std|coop|race|flag|zone>');
+		server::whisper($p, '/set gameType <mapname|std|coop|race|flag|zone|mdg>');
 		server::whisper($p, '/unset gameType');
 		server::whisper($p, 'mapname causes the type to be inferred from the map name');
 	},
@@ -3488,17 +3618,43 @@ core protecting the flag.
 		game::busy();
 
 		ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
+
+		game::leave() if($p->{'team'});
+
+		$p->{'alive'}=0;
+		delete($p->{'player'});
 	},
 
 	'teamChange'		=> sub {
 		my($e, $p)=@_;
 		my($map_team)=stash::get('assignTeam', game::mapname());
+		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname());
 
-		$p->{'team'}=$e->{'team'};
+		if($p->{'isBot'}) {
+			$p->{'team'}=$e->{'team'};
+			return;
+		} elsif($p->{'team'}) {
+			$p->{'team'}=$e->{'team'};
+			if(!game::left($p->{'team'}) && !game::right($p->{'team'})) {
+				game::leave();
+			}
+		} elsif(game::enter()) {
+			$p->{'team'}=$e->{'team'};
+		} else {
+			server::send('assignTeam', $p->{'nickname'}, -1);
+			player::infraction($p, 0.2);
+		}
 
-		return if($p->{'isBot'});
-
-		if($map_team eq 'left' && game::right($p->{'team'})) {
+		if(game::type('mdg') && game::hunted($p)) {
+			if(ref($zones) eq 'HASH' && %$zones) {
+				game::spawn_here($p, @{utils::random_value($zones)});
+			}
+			if($map_team eq 'left' && game::left($p->{'team'})) {
+				server::send('assignTeam', $p->{'nickname'}, 1);
+			} elsif($map_team eq 'right' && game::right($p->{'team'})) {
+				server::send('assignTeam', $p->{'nickname'}, 0);
+			}
+		} elsif($map_team eq 'left' && game::right($p->{'team'})) {
 			server::send('assignTeam', $p->{'nickname'}, 0);
 			return;
 		} elsif($map_team eq 'right' && game::left($p->{'team'})) {
@@ -3510,20 +3666,16 @@ core protecting the flag.
 			if($p->{'level'}<config::option('noviceLevel')) {
 				server::whisper($p,
 					"Watch and learn until you unlock all your planes");
-				$p->{'infractions'}++;
+				player::infraction($p, 1);
 				server::send('assignTeam', $p->{'nickname'}, -1);
 			}
 		} else {
 			if($p->{'level'}<config::option('aceLevel')) {
 				server::whisper($p,
 					"You can play after you earn your blue perk");
-				$p->{'infractions'}++;
+				player::infraction($p, 1);
 				server::send('assignTeam', $p->{'nickname'}, -1);
 			}
-		}
-
-		if($p->{'infractions'}>10) {
-			server::send('kick', $p->{'nickname'});
 		}
 	},
 
@@ -3531,20 +3683,40 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($planere)=stash::get('planes', game::mapname());
 		my($map_team)=stash::get('assignTeam', game::mapname());
+		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname());
 		my($match);
 
 		$p->{'plane'}=$e->{'plane'};
 		$p->{'team'}=$e->{'team'};
 		$p->{'stats'}{'turret'}=0;
 
-		return if($p->{'isBot'});
+		if($p->{'isBot'}) {
+			$p->{'team'}=$e->{'team'};
+			return;
+		} elsif($p->{'team'}) {
+			$p->{'team'}=$e->{'team'};
+		} elsif(game::enter()) {
+			$p->{'team'}=$e->{'team'};
+		} else {
+			server::send('assignTeam', $p->{'nickname'}, -1);
+			player::infraction($p, 0.2);
+		}
 
 		unless($p->{'plane'}=~m/$planere/) {
 			game::bench($p);
 			server::whisper($p, "Allowed planes: $planere");
 		}
 
-		if($map_team eq 'left' && game::right($p->{'team'})) {
+		if(game::type('mdg') && game::hunted($p)) {
+			if(ref($zones) eq 'HASH' && %$zones) {
+				game::spawn_here($p, @{utils::random_value($zones)});
+			}
+			if($map_team eq 'left' && game::left($p->{'team'})) {
+				server::send('assignTeam', $p->{'nickname'}, 1);
+			} elsif($map_team eq 'right' && game::right($p->{'team'})) {
+				server::send('assignTeam', $p->{'nickname'}, 0);
+			}
+		} elsif($map_team eq 'left' && game::right($p->{'team'})) {
 			server::send('assignTeam', $p->{'nickname'}, 0);
 			return;
 		} elsif($map_team eq 'right' && game::left($p->{'team'})) {
@@ -3713,9 +3885,18 @@ core protecting the flag.
 		my($x1, $y1)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
 		my($x2, $y2)=@$e2{'positionX','positionY'};
 		my($allowed)=game::angle(stash::get("$x2,$y2", 'oneways', game::mapname()));
-		my($direction)=int(atan2($y1-$y2, $x1-$x2)*180/3.14159);
+		my($direction)=game::angle($x1-$x2, $y1-$y2);
+		my($wrong_way)=0;
 
-		if($direction<($allowed-90) || ($allowed+90)<$direction) {
+		if($allowed>90 && $direction<0) {
+			$wrong_way=1 if(game::angle($allowed+90)<$direction);
+		} elsif($allowed<=-90 && $direction>0) {
+			$wrong_way=1 if(game::angle($allowed-90)>$direction);
+		} elsif($direction<($allowed-90) || ($allowed+90)<$direction) {
+			$wrong_way=1;
+		}
+
+		if($wrong_way) {
 			game::bench($p2);
 			game::spawn_here($p2, $x2, $y2, $allowed);
 			server::whisper($p2, 'Wrong way!');
@@ -3747,6 +3928,18 @@ core protecting the flag.
 		return unless($p);
 		return unless($e->{'source'}=~m/plane/);
 		return if($p->{'isBot'});
+
+		if(game::type('mdg')) {
+			if(game::mode('ball')) {
+				if($e->{'player'}==-1) {
+					'crash';
+				} elsif($p->{'team'} == $v->{'team'}) {
+					'friendly fire';
+				} else {
+					game::score($p);
+				}
+			}
+		}
 
 		if(List::Util::max(map(abs, @$e{'victimVelocityX', 'victimVelocityY'})) > 15) {
 			server::snark($v, "$v->{'nickname'} says Ouch!!");
@@ -3810,13 +4003,7 @@ core protecting the flag.
 		}
 
 		if(config::language($e->{'message'})) {
-			$p->{'infractions'}++;
-			if($p->{'infractions'}<10) {
-				server::whisper($p, "language ($p->{'infractions'})");
-			} else {
-				server::msg("kicking '$p->{'nickname'}' for infractions");
-				server::send('kick', $p->{'nickname'});
-			}
+			server::whisper($p, 'language(', player::infraction($p, 1), ')');
 		}
 	},
 

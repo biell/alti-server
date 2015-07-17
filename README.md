@@ -61,6 +61,17 @@ easier. If that is too immidiate, players can spawn at the place of their
 last pickup, or health. Coops can also be made more exciting by the use
 of devices like portals, to teleport players from one area to another.
 
+### Most Dangerous Game
+Asymmetrical game mode mdg plays like Counter Strike.  The map is configured
+to assign players to either the left or right team, just like in coop.
+However, one player (the first one to join a team) is placed by themself
+to fight an entire team of enemy planes.  In this mmode, you can specify
+alternate zones to spawn into.  The server will randomly spawn the single
+player in one of these.  This allows the standard spawn zone for that
+team to be boxed up like a coop game.  Here, any Bots can be seperated
+from the rest of the game.  In 1-life games, this box should have a turret
+to clean up the Bots.
+
 ## Additional Commands
 The below list of commands are available to players to interface with and
 manage Alti+ game maps.
@@ -186,7 +197,7 @@ manage Alti+ game maps.
     persist across server restarts. To set it back, you can
     `/unset planeScale` or `/set planeScale 100`.
 
-  * **/set spawnType [died|powerup|health|zone|near|portal|normal]**<br>
+  * **/set spawnMode [died|powerup|health|zone|near|portal|normal]**<br>
     This specifies the type of respawning when a user dies, or requests
     to spawn. The type can be any of the following:
     *died* (the location of last death),
@@ -199,7 +210,12 @@ manage Alti+ game maps.
     If users get into a bind, they can use `/sz start` to spawn in the
     normal location.
 
-  * **/set gameType [coop|flag|race|zone|std|normal]**<br>
+  * **/set maxPlayers [#]**<br>
+    Set the maximum number of players who can spawn simultaneously on the
+    map.  This allows a game to have a lower number of maximum players
+    than the server does.
+
+  * **/set gameType [coop|flag|race|zone|mdg|std|normal]**<br>
     Normally the type of a game is ascertained by te file name.
     If that cannot be done properly, the game type can be set via this
     mechanism.
