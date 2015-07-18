@@ -23,6 +23,7 @@ my(%OPTIONS)=(
 	aceLevel		=> 8,               #Require 8 for Ace 1 to Ace 10 to play
 	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
 	bullyKick		=> 1,               #Kick repeated aggressive language
+	debug		=> 0,			#Debug is on(1) or off(0)
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	superAdmin	=> 'admin',		#Super Admin command access:
 	                                   # admin: all admins are super admins
@@ -799,6 +800,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	my($Custfile)	="$INSTALL_ROOT/servers/custom_json_commands.txt";
 	my($Filtfile)	="$INSTALL_ROOT/config/filtered_swear_words.txt";
 
+	my(%Admins)=();
 	my(%Commands)=();
 	my(@Maps)=();
 	my(%Mapdb)=();
@@ -862,6 +864,15 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my(@filter)=();
 		my($cmd);
 		local($_);
+
+		foreach my $admin (@{$server->
+							{'servers'}
+							{'AltitudeServerConfig'}
+							{'adminsByVaporID'}
+							{'UUID'}
+						}) {
+			$Admins{$admin->{'UUID'}}=1;
+		}
 
 		$Port=$server->{'servers'}{'AltitudeServerConfig'}{'port'};
 		$Ping=$server->{'servers'}{'AltitudeServerConfig'}{'maxPing'};
@@ -1077,6 +1088,11 @@ has occured.  After too many infractions, the player is kicked by the server.
 		return($candidates[int(rand(@candidates))]);
 	}
 
+	sub admin_vip {
+		my($vaporid)=@_;
+		return(exists($Admins{$vaporid}));
+	}
+
 	sub commands {
 		my($re)=@_;
 		grep(m|^$re|i, keys(%Commands));
@@ -1286,6 +1302,33 @@ directly with it to manage the instance.
 		}
 	}
 
+	sub debug {
+		my($debug)=stash::get('debug', 'server');
+		my($msg);
+		
+		if($debug) {
+			foreach my $stmt (@_) {
+				if(ref($stmt)) {
+					if(ref($stmt) eq 'HASH' && exists($stmt->{'nickname'})) {
+						$msg.=$stmt->{'nickname'};
+					} else {
+						$msg.=json::encode($stmt);
+					}
+				} else {
+					$msg.=$stmt;
+				}
+				$msg.=' ';
+			}
+
+			foreach my $admin (player::admins()) {
+				&send('serverWhisper', $admin->{'nickname'}, $msg);
+			}
+
+			ui::chat_log('debug', 'server', $msg);
+
+		}
+	}
+
 	sub laud {
 		server::msg(@_) if(config::option('snarkChance')>0);
 	}
@@ -1344,6 +1387,7 @@ is updated with them as the games progress.
 {	package player;
 
 	my(@Players)=();
+	my(@Admins)=();
 	my(%Pdb)=();
 
 	sub server {
@@ -1368,6 +1412,10 @@ is updated with them as the games progress.
 		} else {
 			$p->{'isBot'}=0;
 			push(@Players, $p);
+		}
+
+		if(config::admin_vip($p->{'vaporId'})) {
+			push(@Admins, $p);
 		}
 
 		if($sas=~m/(^|;)$p->{'vaporId'}(;|$)/) {
@@ -1401,6 +1449,13 @@ is updated with them as the games progress.
 		for(my $i=0; $i<@Players; $i++) {
 			if($Players[$i]==$p) {
 				splice(@Players, $i, 1);
+				last;
+			}
+		}
+
+		for(my $i=0; $i<@Admins; $i++) {
+			if($Admins[$i]==$p) {
+				splice(@Admins, $i, 1);
 				last;
 			}
 		}
@@ -1469,6 +1524,11 @@ is updated with them as the games progress.
 
 		return(map($_->{$key}, @Players));
 	}
+
+	sub admins {
+		return(@Admins);
+	}
+
 }
 
 =head2 Altitued Plus Games
@@ -1548,12 +1608,15 @@ play though extended interfaces and server support.
 		my($max)=stash::get('maxPlayers', game::mapname()) || $config::Maxp;
 
 		if($Stats{'players'}{'playing'}{$p}) {
+			server::debug('player already registered:', $p->{'nickname'});
 			return(1);
 		} elsif($Stats{'players'}{'count'}<$max) {
+			server::debug('registering player:', $p->{'nickname'});
 			$Stats{'players'}{'playing'}{$p}=1;
 			$Stats{'players'}{'count'}++;
 			return(1);
 		} else {
+			server::debug('no access:', $p->{'nickname'});
 			return(0);
 		}
 	}
@@ -1561,6 +1624,7 @@ play though extended interfaces and server support.
 	sub playing {
 		my($p)=@_;
 
+		server::debug('player access:', $Stats{'players'}{'playing'}{$p});
 		return($Stats{'players'}{'playing'}{$p});
 	}
 
@@ -1568,6 +1632,7 @@ play though extended interfaces and server support.
 		my($p)=@_;
 
 		if($Stats{'players'}{'playing'}{$p}) {
+			server::debug('unregister player:', $p->{'nickname'});
 			delete($Stats{'players'}{'playing'}{$p});
 			if($Stats{'players'}{'count'}>0) {
 				$Stats{'players'}{'count'}--;
@@ -1613,27 +1678,27 @@ play though extended interfaces and server support.
 		return(1);
 	}
 
-	sub hunted {
-		my($p)=@_;
-		my($hunted)=&_value_or_query('hunted', $p);
+	sub hunted	{ &_value_or_query('hunted', @_);		}
 
-		if($p) {
-			if($Map->{'hunted'}==$p) {
-				return(1);
-			} elsif(!$Map->{'hunted'} || !$Map->{'hunted'}{'alive'}) {
-				$Map->{'hunted'}=$p;
-				return(1);
-			} else {
-				return(0);
-			}
+	sub prey		{
+		my($p)=@_;
+
+		server::debug('hunted:', $Map->{'hunted'}{'nickname'}, 'player:', $p->{'nickname'});
+
+		if($Map->{'hunted'}==$p) {
+			return(1);
+		} elsif(!$Map->{'hunted'} || !$Map->{'hunted'}{'alive'}) {
+			$Map->{'hunted'}=$p;
+			return(1);
 		} else {
-			return($Map->{'hunted'});
+			return(0);
 		}
 	}
 
 	sub cower {
 		my($p)=@_;
 
+		server::debug('cowering:', $p);
 		$Map->{'hunted'}=undef;
 	}
 
@@ -1703,6 +1768,11 @@ play though extended interfaces and server support.
 		}
 	}
 
+	sub spawn_reset {
+		my($p)=@_;
+		server::send('overrideSpawnPoint', $p->{'nickname'}, 0, 0, 0);
+	}
+
 	sub spawn_here {
 		my($p, $x, $y, @angle)=@_;
 		my($angle)=&angle(@angle);
@@ -1751,7 +1821,7 @@ play though extended interfaces and server support.
 			}
 			&spawn_here($p, @{$zones->{$near}});
 		} else {
-			&spawn_here($p, 0, 0, 0);
+			&spawn_reset($p);
 		}
 
 	}
@@ -3618,7 +3688,7 @@ core protecting the flag.
 
 		if($zone=~m/^start$/i) {
 			game::bench($p);
-			game::spawn_here($p, 0, 0, 0);
+			game::spawn_reset($p);
 		} elsif($spawn_mode ne 'zone') {
 			server::whisper($p, "Zone spawning not allowed in mode: $spawn_mode");
 		} elsif(ref($coords) eq 'ARRAY') {
@@ -3732,16 +3802,23 @@ core protecting the flag.
 			$p->{'team'}=$e->{'team'};
 			return;
 		} elsif(game::spec($e->{'team'})) {
+			server::debug('specing:', $p->{'nickname'});
 			if(game::spec($p->{'team'})) {
 				$p->{'team'}=$e->{'team'};
 				return;
 			} else {
+				game::spawn_reset($p);
+				server::debug('oldteam:', $p->{'team'}, 'hunted?:', game::hunted($p));
 				$p->{'team'}=$e->{'team'};
 
 				game::leave($p);
 				game::cower($p) if(game::hunted($p));
+				server::debug('newteam:', $p->{'team'}, 'hunted?:', game::hunted($p));
+	
+				return;
 			}
 		} elsif(game::enter($p)) {
+			game::spawn_reset($p);
 			$p->{'team'}=$e->{'team'};
 		} else {
 			server::send('assignTeam', $p->{'nickname'}, -1);
@@ -3751,7 +3828,7 @@ core protecting the flag.
 			return;
 		}
 
-		if(game::type('mdg') && game::hunted($p)) {
+		if(game::type('mdg') && game::prey($p)) {
 			if(ref($zones) eq 'HASH' && %$zones) {
 				game::spawn_here($p, @{utils::random_value($zones)});
 			}
@@ -3761,9 +3838,11 @@ core protecting the flag.
 				server::send('assignTeam', $p->{'nickname'}, 0);
 			}
 		} elsif($map_team eq 'left' && game::right($p->{'team'})) {
+			game::spawn_reset($p);
 			server::send('assignTeam', $p->{'nickname'}, 0);
 			return;
 		} elsif($map_team eq 'right' && game::left($p->{'team'})) {
+			game::spawn_reset($p);
 			server::send('assignTeam', $p->{'nickname'}, 1);
 			return;
 		}
@@ -3799,22 +3878,13 @@ core protecting the flag.
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			return;
-		} elsif(game::spec($e->{'team'})) {
-			if(game::spec($p->{'team'})) {
-				$p->{'team'}=$e->{'team'};
-				return;
-			} else {
-				$p->{'team'}=$e->{'team'};
-
-				game::leave($p);
-				game::cower($p) if(game::hunted($p));
-			}
 		} elsif(game::enter($p)) {
 			$p->{'team'}=$e->{'team'};
 		} else {
 			server::send('assignTeam', $p->{'nickname'}, -1);
 			$p->{'team'}=-1;
 			player::infraction($p, 0.2);
+			game::spawn_reset($p);
 
 			return;
 		}
@@ -3824,7 +3894,7 @@ core protecting the flag.
 			server::whisper($p, "Allowed planes: $planere");
 		}
 
-		if(game::type('mdg') && game::hunted($p)) {
+		if(game::type('mdg') && game::prey($p)) {
 			if(ref($zones) eq 'HASH' && %$zones) {
 				game::spawn_here($p, @{utils::random_value($zones)});
 			}
@@ -3869,7 +3939,7 @@ core protecting the flag.
 
 		if($spawn_mode eq 'near') {
 	 		foreach my $player (player::list()) {
-				game::spawn_here($player, 0, 0, 0);
+				game::spawn_reset($player);
 			}
 		}
 
