@@ -468,6 +468,11 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     0 disables the servers ability to protect players from this
     sort of harrasment.
 
+  * **debug [0|1]**<br>
+    Enable debugging.  Statements in the code which call the debug
+    library will now send messages to console, and to all admins
+    who are playing the game.
+ 
   * **rotationRE [RE]**<br>
     Not all maps need to be in the map rotation, and should only
     be available via an admin */changeMap* or a */vote changeMap*.
