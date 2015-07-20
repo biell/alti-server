@@ -915,7 +915,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		#These work only from console (see %CONSOLE):
 		$Commands{'server'}=[
 				['list', 'set', 'unset', 'add', 'del'],
-				[keys(%OPTIONS)],
+				[sort(keys(%OPTIONS))],
 				'string',
 			];
 		$Commands{'showPlayer'}=['player'];
@@ -3807,7 +3807,8 @@ core protecting the flag.
 				$p->{'team'}=$e->{'team'};
 				return;
 			} else {
-				game::spawn_reset($p);
+				game::spawn_reset($p) unless(game::type('coop'));
+
 				server::debug('oldteam:', $p->{'team'}, 'hunted?:', game::hunted($p));
 				$p->{'team'}=$e->{'team'};
 
