@@ -395,9 +395,11 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     
   * **ulSizeLimit [#]**<br>
     Specify the maximum size of an uploaded map.  This number
-    is an integer which represents Bytes.  Since you may allow
-    other people to upload files to your server, there needs
-    to be some sort of maximum value.  Please note that the
+    is an integer which represents Bytes.  If the integer is
+    followed by the letters `g`, `m`, or `k` then the number
+    is assumed to be in gigabytes, megabytes, and kilobytes (respectively).
+    Since you may allow other people to upload files to your server,
+    there needs to be some sort of maximum value.  Please note that the
     file may need to be fully downloaded before its size can
     be checked.  If the size is above ulSizeLimit, then the
     map file will be promptly deleted.

@@ -814,6 +814,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	$MAPDIR=~s|/*$|/| if($MAPDIR);
 
+	sub option_exists {
+		return(exists($OPTIONS{$_[0]}));
+	}
+
 	sub option {
 		my($key)=@_;
 		my($value)=stash::get($key, 'server') || $OPTIONS{$key};
@@ -4358,9 +4362,22 @@ also only available from the console.
 		if($action eq 'list') {
 			'defer';
 		} elsif($action eq 'set') {
+			unless(config::option_exists($name)) {
+				server::whisper($s, 'Invalid option name', $name);
+				return;
+			}
+
 			if($name=~m/Color/i && $value!~m/black|blue|cyan|green|magenta|red|white|yellow/) {
 				server::whisper($s, 'Invalid color:', $value);
 				return;
+			} elsif($name eq 'ulSizeLimit') {
+				if($value=~m/(\d+)g/i) {
+					$value=$1*(2**30);
+				} elsif($value=~m/(\d+)m/i) {
+					$value=$1*(2**20);
+				} elsif($value~m/(\d+)k/i) {
+					$value=$1*1024;
+				}
 			}
 
 			config::option_set($name, $value);
@@ -4372,6 +4389,11 @@ also only available from the console.
 
 			ui::setup_screen() if($name=~m/^ui|Color$/i);
 		} elsif($action eq 'add') {
+			unless(config::option_exists($name)) {
+				server::whisper($s, 'Invalid option name', $name);
+				return;
+			}
+
 			$current=config::option($name);
 
 			if($name eq 'superAdmins' && $value!~m/^[0-9a-f-]{36}$/) {
