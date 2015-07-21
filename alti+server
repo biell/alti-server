@@ -813,7 +813,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	our($Goals)=6;  #reset from launcher_config.xml
 	our($Maxp)=14;  #reset from launcher_config.xml
 
-	$MAPDIR=~s|/*$|/| if($MAPDIR);
+	$MAPDIR=~s|/*$|| if($MAPDIR);
 
 	sub option_exists {
 		return(exists($OPTIONS{$_[0]}));
@@ -2058,8 +2058,8 @@ with their name.
 	sub name_ok {
 		local($_)=@_;
 
-		s|^$INSTALL_ROOT/maps/$MAPDIR||;
-		s|^$MAPDIR||;
+		s|^$INSTALL_ROOT/maps/$MAPDIR/?||;
+		s|^$MAPDIR/?||;
 
 		return(0) unless(m/^[\w.?!%:=+-]{5,}$/);
 		return(0) unless(m/^(1bd|1de|1dm|ball|ffa|tbd|tdm)_/);
@@ -2482,14 +2482,18 @@ core protecting the flag.
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($mapname, $file);
 
-		$name=~s|^$MAPDIR||;
+		$name=~s|^$MAPDIR/|| if($MAPDIR);
 		$name=~s|\.altx$||;
 		$name=~s|\s+|_|g;
 
 		return(0) unless(file::name_ok($name));
 
-		$mapname="$MAPDIR$name";
-		$file="$maps$mapname.altx";
+		if($MAPDIR) {
+			$mapname="$MAPDIR/$name";
+		} else {
+			$mapname=$name;
+		}
+		$file="$maps/$mapname.altx";
 
 		if(file::altigame_download($file, $name)) {
 			if(-s $file > config::option('ulSizeLimit')) {
@@ -2524,14 +2528,14 @@ core protecting the flag.
 		my($url)="http://altituderank.com/mapdownloads/%s.altx";
 		my($mapname, $file);
 
-		$name=~s|^$MAPDIR||;
+		$name=~s|^$MAPDIR/|| if($MAPDIR);
 		$name=~s|\.altx$||;
 		$name=~s|\s+|_|g;
 
 		return(0) unless(file::name_ok($name));
 
-		$mapname="$MAPDIR$name";
-		$file="$maps$mapname.altx";
+		$mapname="$MAPDIR/$name";
+		$file="$maps/$mapname.altx";
 
 		file::download('-L', '-o', $file, sprintf($url, $name));
 
@@ -2579,8 +2583,8 @@ core protecting the flag.
 		return(0) unless(file::name_ok($name));
 		return(0) unless(file::url_ok("$url$next"));
 
-		$mapname="$MAPDIR$name";
-		$file="$maps$mapname.altx";
+		$mapname="$MAPDIR/$name";
+		$file="$maps/$mapname.altx";
 
 		file::download('-L', '-o', $file, "$url$next");
 
@@ -2616,15 +2620,15 @@ core protecting the flag.
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($mapname, $file);
 
-		$name=~s|^$MAPDIR||;
+		$name=~s|^$MAPDIR/|| if($MAPDIR);
 		$name=~s|\.altx$||;
 		$name=~s|\s+|_|g;
 
 		return(0) unless(file::name_ok($name));
 		return(0) unless(file::url_ok($url));
 
-		$mapname="$MAPDIR$name";
-		$file="$maps$mapname.altx";
+		$mapname="$MAPDIR/$name";
+		$file="$maps/$mapname.altx";
 
 		file::download('-L', '-o', $file, $url);
 
@@ -2658,14 +2662,14 @@ core protecting the flag.
 
 		return(0) unless($e->{'superAdmin'});
 
-		$e->{'arguments'}[0]=~s|^$MAPDIR||;
+		$e->{'arguments'}[0]=~s|^$MAPDIR/|| if($MAPDIR);
 		$e->{'arguments'}[0]=~s|\.altx$||;
 		$e->{'arguments'}[0]=~s|\s+|_|g;
 
 		return(0) unless(file::name_ok($e->{'arguments'}[0]));
 
-		$mapname="$MAPDIR$e->{'arguments'}[0]";
-		$file="$maps$mapname.altx";
+		$mapname="$MAPDIR/$e->{'arguments'}[0]";
+		$file="$maps/$mapname.altx";
 
 		if(-r $file) {
 			if(game::mapname($mapname)) {
