@@ -103,6 +103,10 @@ manage Alti+ game maps.
     still alive, you can run `/restartMap` and his will `/balanceTeams`
     without a vote.
 
+  * **/randomMap**<br>
+    Change to a random map from the mapRotation.  This command requires
+    a vote threshold of 66% or greater.
+
   * **/mesg [status]**<br>
     The server has a private messaging feature designed to aid players in
     meeting goals or to talk privately with the map designer. Howerver, to
