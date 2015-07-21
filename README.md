@@ -19,6 +19,13 @@ Altitude game server wrapper to enable enhanced modes of game play.
   * **small_custom_json_commands.txt**  A smaller version of the custom
     commands which don't help users but allow for more maps to be loaded.
 
+  * **tiny_custom_json_commands.txt**  An even smaller version of the custom
+    commands which don't help users, and put the burden on admins to know what
+    they are doing, but allows for lots and lots of maps to be loaded.
+    See the description of `!` in the
+    [Extended Commands for Admins and Map Makers](#extended-commands-for-admins-and-map-makers)
+    section.
+
 ## Alti+ game types
 
 ### Normal Games
@@ -226,7 +233,7 @@ manage Alti+ game maps.
   * **/add portal [name] [px],[py] [sx],[sy],[sa]**<br>
     When a player auto-uses the health powerup located at `px`,`py`, then
     they are automatically transported to `sx`,`sy` and spawn at the
-    angle `sa`.  See Angles for more information.
+    angle `sa`.  See [Angles](#angles) for more information.
 
   * **/del portal [name]**<br>
     Delete the *portal* named `name` for this map.
@@ -275,7 +282,7 @@ manage Alti+ game maps.
     Players must use `/spawnZone name` to change their spawn zone to this
     location when *spawnMode* is set to `zone`.  Players will automatically
     spawn at the closest zone to their death when *spawnMode* is set to
-    `near`.  See Angles for more information on angle specifications.
+    `near`.  See [Angles](#angles) for more information on angle specifications.
 
   * **/del zone [name] [team]**<br>
     Delete the *zone* named `name` for this map for `team`.  You can specify
@@ -292,6 +299,19 @@ manage Alti+ game maps.
 
   * **/del powerup [name] [team]**<br>
     Delete the special powerup `name` for `team`.
+
+  * **/! [command] [arg1] [arg2] [...]**<br>
+    This special admin command is only availble when using the
+    `tiny_custom_json_commands.txt` file.  All administrative commands
+    are removed from the tiny custom commands file.  Access to these funcions
+    go through this command.  Enter `/!`, then a space, then the admin command
+    as it would otherwise be (e.g. `/! set gravity 3`).  This command can also
+    be used to access super admin funcitonality.  No help is given on this
+    command, or any of the administrative sub-commands, save an error message
+    when an invalid command is entered.  Only use this feature if you need
+    to run more than 100 maps on a server and the
+    `small_custom_json_commands.txt` file is causing your mapList to be
+    trimmed.
 
 ### Extended Commands for Super Admins
 Super admin functionality is set in the `alti+server` code itself.  The
@@ -368,8 +388,9 @@ the server.
     message of the day (motd), or change the maximum size allowed for
     upload files.  These settings are stored in your stash, and read in
     front of the default options listed in the server code.  Which means
-    they persist across software updates.  See Server Options below
-    for a full list of options with descriptions.
+    they persist across software updates.  See
+    [Server Options](#server-options) below for a full list of options
+    with descriptions.
 
   * **/showPlayer [player]**<br>
     Print information on `player`

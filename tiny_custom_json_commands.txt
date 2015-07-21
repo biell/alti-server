@@ -1,0 +1,7 @@
+{"name":"!", "arguments":["string"], "voteThreshold":100}
+{"name":"help", "arguments":["string"], "voteThreshold":0}
+{"name":"list", "arguments":["string"], "voteThreshold":0}
+{"name":"randomMap", "arguments":[], "voteThreshold":66}
+{"name":"spawnZone", "arguments":["string"], "voteThreshold":0}
+{"name":"sz", "arguments":["string"], "voteThreshold":0}
+{"name":"switch", "arguments":[], "voteThreshold":0}

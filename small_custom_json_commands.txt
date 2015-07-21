@@ -1,5 +1,5 @@
 {"name":"help", "arguments":["string"], "voteThreshold":0}
-{"name":"upload", "arguments":["string", "string"], "voteThreshold":0}
+{"name":"upload", "arguments":["string", "string"], "voteThreshold":100}
 {"name":"list", "arguments":["string"], "voteThreshold":0}
 {"name":"set", "arguments":["string", "string"], "voteThreshold":100}
 {"name":"unset", "arguments":["string"], "voteThreshold":100}

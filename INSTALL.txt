@@ -8,12 +8,16 @@ software consists of two necessary files.
   1. alti+server
   2. custom_json_commands.txt
 
-There are two choices for the second file.  If you require your server
+There are three choices for the second file.  If you require your server
 to run more than 75 maps, it is recommended you use the file from GitHub
 named small_custom_json_commands.txt and rename it.  If you can safely
 run with fewer than 75 maps, you should use the original file.  It provides
 help to users on how to use the custom commands, making the server much
-easier to use and administrate.
+easier to use and administrate.  If you really need to run more than 100 maps
+and your map list is getting trimmed with the small_custom_json_commands.txt,
+then you can switch to tiny_custom_json_commands.txt.  This is a bare-bones
+command list which provides little help to admins, but supports the necessary
+functionality for running a server.
 
 
 ======================
@@ -33,7 +37,9 @@ Step 1, the alti+server
 
 Copy this file to wherever you want.  It does not need to be co-located
 with the Altitiude software, the author stores this code in the account
-which runs the software's ~/bin directory.
+which runs the software's ~/bin directory.  If you prefer to keep the code
+up-to-date via GIT, you can also create a symbollic link from this location
+to where you keep the code checked-out.
 
 Find the $INSTALL_ROOT variable and change it to the directory where you
 installed the altitude server.  This defaults to ~/altitude, as that is
@@ -69,7 +75,9 @@ Step 2, the alti+server
 =======================
 Copy the appropriate custom_json_commands.txt file to your ~/altitude/servers/
 directory (or wherever you installed altitude).  This file should be in the
-same location as your launcher_config.xml file.
+same location as your launcher_config.xml file.  If you prefer to keep the code
+up-to-date via GIT, you can also create a symbollic link from this location
+to where you keep the code checked-out.
 
 Choose the standard file first, and only switch to the small version of the
 file (you will have to rename it from small_custom_json_commands.txt to

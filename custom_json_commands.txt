@@ -1,5 +1,5 @@
 {"name":"help", "arguments":[["map", "gravity", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "powerups", "portals", "doors", "keys", "diverters", "oneways", "zones", "altitudegame", "ladder", "url", "intro"]], "voteThreshold":0}
-{"name":"upload", "arguments":[["altitudegame", "ladder", "tinyupload", "url"], "string"], "voteThreshold":0}
+{"name":"upload", "arguments":[["altitudegame", "ladder", "tinyupload", "url"], "string"], "voteThreshold":100}
 {"name":"list", "arguments":[["map", "gravity", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "powerups", "portals", "doors", "keys", "diverters", "oneways", "zones", "intro"]], "voteThreshold":0}
 {"name":"set", "arguments":[["gravity", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "intro"], "string"], "voteThreshold":100}
 {"name":"unset", "arguments":[["gravity", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "intro"]], "voteThreshold":100}

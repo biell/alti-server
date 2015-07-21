@@ -752,6 +752,19 @@ are requested by administrative users.
 		&_write($Stash, $Stashfile);
 		&_write($attic, $Stashattic);
 	}
+
+	sub retrieve {
+		my($attic)=&_read($Stashattic);
+		my($value);
+
+		$value=$attic;
+		while(@_) {
+			$value=$value->{pop(@_)};
+		}
+
+		return($value);
+	}
+
 }
 
 =head2 Configuration
@@ -994,7 +1007,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 		}
 
 		while(length(join('', @Maps))>$packet_space) {
-			pop(@Maps);
+			ui::slog('Excluding map due to packet size constraint:',
+				pop(@Maps));
 		}
 
 		@Maps=List::Util::shuffle(@Maps);
@@ -2339,11 +2353,39 @@ core protecting the flag.
 =cut
 
 %HOOKS=(
+	'!'			=> sub {	#Admin command for tiny_custom_json_commands.txt
+		my($e, $p)=@_;
+		my($args)=@{$e->{'arguments'}};
+
+		unless($e->{'admin'}) {
+			server::whisper($p, 'You are not an admin');
+			return;
+		}
+
+		$e->{'arguments'}=[$args=~m/(".*?"|".*$|[\S,]+)/g];
+		foreach(@{$e->{'arguments'}}) {
+			s/^"//;
+			s/"$//;
+		}
+		$e->{'command'}=shift(@{$e->{'arguments'}});
+
+		if(exists($HOOKS{$e->{'command'}})) {
+			$HOOKS{$e->{'command'}}->($e, $p);
+		} else {
+			server::whisper($p, 'Invalid command:', $e->{'command'});
+		}
+	},
+
 	'help'		=> sub {
 		my($e, $p)=@_;
 		my($type)=@{$e->{'arguments'}};
 
-		$HOOKS{"help $type"}->($e, $p) if(exists($HOOKS{"help $type"}));
+		if(exists($HOOKS{"help $type"})) {
+			$HOOKS{"help $type"}->($e, $p);
+			if(config::commands('!')) {
+				server::whisper($p, 'Admin commands use `/! cmd ...` syntax');
+			}
+		}
 	},
 
 	'list'		=> sub {
@@ -2356,7 +2398,6 @@ core protecting the flag.
 	'set'		=> sub {
 		my($e, $p)=@_;
 		my($type, $args)=@{$e->{'arguments'}};
-		#my(@args)=split(m/[\s,]+/, $args);
 		my(@args)=($args=~m/(".*?"|".*$|[\S,]+)/g);
 
 		return unless($e->{'admin'});
@@ -2480,7 +2521,7 @@ core protecting the flag.
 	'upload altitudegame'	=> sub {
 		my($e, $p, $name)=@_;
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
-		my($mapname, $file);
+		my($mapname, $file, $mapconfig);
 
 		$name=~s|^$MAPDIR/|| if($MAPDIR);
 		$name=~s|\.altx$||;
@@ -2507,6 +2548,10 @@ core protecting the flag.
 				if(config::new_maps($mapname)) {
 					server::whisper($p,
 						"Map added to config, you must /restartServer");
+
+					if($mapconfig=stash::retrieve($mapname)) {
+						stash::set($mapname, $mapconfig);
+					}
 				}
 				server::msg("$mapname updated");
 			}
@@ -2693,6 +2738,7 @@ core protecting the flag.
 	'help map'	=> sub {
 		my($e, $p)=@_;
 		server::whisper($p, '/list map');
+		server::whisper($p, 'List the name and settings for the current map');
 	},
 
 	'list map'	=> sub {
@@ -2908,6 +2954,7 @@ core protecting the flag.
 	'help assignTeam'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Force players to spawn on a specific team');
 		server::whisper($p, '/list assignTeam');
 		server::whisper($p, '/set assignTeam <left|right|none>');
 		server::whisper($p, '/unset assignTeam');
@@ -2965,6 +3012,7 @@ core protecting the flag.
 	'help planes'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Allow only certain planes to join the game');
 		server::whisper($p, '/list planes');
 		server::whisper($p, '/set planes <Loopy|Bomber|Explodet|Biplane|Miranda>');
 		server::whisper($p, '/unset planes');
@@ -3038,6 +3086,7 @@ core protecting the flag.
 	'help ballScore'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'When the map loads, pre-set the initial ball score');
 		server::whisper($p, '/list ballScore');
 		server::whisper($p, '/set ballScore <-#|#> <-#|#>');
 		server::whisper($p, '/unset ballScore');
@@ -3104,6 +3153,7 @@ core protecting the flag.
 	'help maxPlayers'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Set a map specific max player # smaller than the server default');
 		server::whisper($p, '/list maxPlayers');
 		server::whisper($p, '/set maxPlayers #');
 		server::whisper($p, '/unset maxPlayers');
@@ -3135,6 +3185,7 @@ core protecting the flag.
 	'help spawnMode'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Change the behavior of how users spawn when they die, or pickup powerups');
 		server::whisper($p, '/list spawnMode');
 		server::whisper($p, '/set spawnMode <default|died|pickup|health|zone|near|portal>');
 		server::whisper($p, '/unset spawnMode');
@@ -3203,6 +3254,7 @@ core protecting the flag.
 	'help gameType'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'These are Alti+ game times, which are extentions to the mode');
 		server::whisper($p, '/list gameType');
 		server::whisper($p, '/set gameType <mapname|std|coop|race|flag|zone|mdg>');
 		server::whisper($p, '/unset gameType');
@@ -3302,6 +3354,7 @@ core protecting the flag.
 	'help portals'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Portals allow users to be transported from a pickup to another location');
 		server::whisper($p, '/list portals');
 		server::whisper($p, '/add portal <name> <px>,<py> <sx>,<sy>,<sa>');
 		server::whisper($p, '/del portal <name>');
@@ -3354,6 +3407,7 @@ core protecting the flag.
 	'help doors'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Doors disable planes to pass through a pickup until all keys are found');
 		server::whisper($p, '/list doors');
 		server::whisper($p, '/add door <name> <dx>,<dy>');
 		server::whisper($p, '/del door <name>');
@@ -3362,6 +3416,7 @@ core protecting the flag.
 	'help keys'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Keys unlock doors, see /help doors');
 		server::whisper($p, '/list keys');
 		server::whisper($p, '/add key <door_name> <kx>,<ky>');
 		server::whisper($p, '/del key <door_name>');
@@ -3461,6 +3516,7 @@ core protecting the flag.
 	'help diverters'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Diverters alternate access to parts of a map');
 		server::whisper($p, '/list diverters');
 		server::whisper($p, '/add diverter <x1>,<y1> <x2>,<y2>');
 		server::whisper($p, '/del diverter <x1>,<y1>');
@@ -3498,6 +3554,7 @@ core protecting the flag.
 	'help oneways'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Ensure anyone picking up a powerup is traveling in a direction');
 		server::whisper($p, '/list oneways');
 		server::whisper($p, '/add oneway <x>,<y> <direction>');
 		server::whisper($p, '/del oneway <x>,<y>');
@@ -3527,6 +3584,7 @@ core protecting the flag.
 	'help zones'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Zones are used by spawnType zone and near for spawn locations');
 		server::whisper($p, '/list zones');
 		server::whisper($p, '/add zone <name> <team> <x>,<y>,<a>');
 		server::whisper($p, '/del zone <name> <team>');
@@ -3612,6 +3670,7 @@ core protecting the flag.
 	'help powerups'	=> sub {
 		my($e, $p)=@_;
 
+		server::whisper($p, 'Mark a powerup special to the game type (e.g. flag or race)');
 		server::whisper($p, '/list powerups');
 		server::whisper($p, '/add powerup <name> <team> <x> <y>');
 		server::whisper($p, '/del powerup <name> <team>');
