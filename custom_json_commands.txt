@@ -6,7 +6,7 @@
 {"name":"add", "arguments":[["powerup", "portal", "door", "key", "diverter", "oneway", "zone"], "string"], "voteThreshold":100}
 {"name":"del", "arguments":[["powerup", "portal", "door", "key", "diverter", "oneway", "zone"], "string"], "voteThreshold":100}
 {"name":"restartServer", "arguments":[], "voteThreshold":100}
-{"name":"randomMap", "arguments":[], "voteThreshold":100}
+{"name":"randomMap", "arguments":[], "voteThreshold":66}
 {"name":"removeMap", "arguments":["map"], "voteThreshold":100}
 {"name":"spawnZone", "arguments":["string"], "argumentDescriptions":["Zone name"], "voteThreshold":0}
 {"name":"sz", "arguments":["string"], "argumentDescriptions":["Zone name"], "voteThreshold":0}

@@ -2644,12 +2644,12 @@ core protecting the flag.
 		}
 	},
 
-    #
-    ## Change map to random map as requested by players/admin
-    'randomMap' => sub {
-        my ($e, $p) = @_;
-        server::send('changeMap', config::random_map());
-    },
+	#
+	## Change map to random map as requested by players/admin
+	'randomMap' => sub {
+		my ($e, $p) = @_;
+		server::send('changeMap', config::random_map());
+	},
 
 	'removeMap'		=> sub {
 		my($e, $p)=@_;
@@ -4166,6 +4166,7 @@ core protecting the flag.
 		my($laggard);
 
 		return unless(server::snarky());
+		return if($config::Ping<100);
 
 		foreach my $player (List::Util::shuffle(keys(%pings))) {
 			if($pings{$player}>=$config::Ping) {
