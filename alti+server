@@ -2069,6 +2069,13 @@ with their name.
 		return($type);
 	}
 
+	sub update_ctime {
+		my($map)=@_;
+		my(@st)=stat($map);
+
+		chmod($st[2]&0777, $map);
+	}
+
 	sub name_ok {
 		local($_)=@_;
 
@@ -2362,7 +2369,7 @@ core protecting the flag.
 			return;
 		}
 
-		$e->{'arguments'}=[$args=~m/(".*?"|".*$|[\S,]+)/g];
+		$e->{'arguments'}=[$args=~m/(".*?"|".*$|[^\s,]+)/g];
 		foreach(@{$e->{'arguments'}}) {
 			s/^"//;
 			s/"$//;
@@ -2397,8 +2404,9 @@ core protecting the flag.
 
 	'set'		=> sub {
 		my($e, $p)=@_;
-		my($type, $args)=@{$e->{'arguments'}};
-		my(@args)=($args=~m/(".*?"|".*$|[\S,]+)/g);
+		my($type, @args)=@{$e->{'arguments'}};
+
+		@args=($args[0]=~m/(".*?"|".*$|[\S,]+)/g) if(@args==1);
 
 		return unless($e->{'admin'});
 
@@ -2416,8 +2424,9 @@ core protecting the flag.
 
 	'add'		=> sub {
 		my($e, $p)=@_;
-		my($type, $args)=@{$e->{'arguments'}};
-		my(@args)=split(m/[\s,]+/, $args);
+		my($type, @args)=@{$e->{'arguments'}};
+
+		@args=($args[0]=~m/(".*?"|".*$|[\S,]+)/g) if(@args==1);
 
 		return unless($e->{'admin'});
 
@@ -2426,8 +2435,9 @@ core protecting the flag.
 
 	'del'		=> sub {
 		my($e, $p)=@_;
-		my($type, $args)=@{$e->{'arguments'}};
-		my(@args)=split(m/[\s,]+/, $args);
+		my($type, @args)=@{$e->{'arguments'}};
+
+		@args=($args[0]=~m/(".*?"|".*$|[\S,]+)/g) if(@args==1);
 
 		return unless($e->{'admin'});
 
@@ -2436,8 +2446,9 @@ core protecting the flag.
 
 	'upload'		=> sub {
 		my($e, $p)=@_;
-		my($type, $args)=@{$e->{'arguments'}};
-		my(@args)=split(m/\s+/, $args);
+		my($type, @args)=@{$e->{'arguments'}};
+
+		@args=($args[0]=~m/(".*?"|".*$|[\S,]+)/g) if(@args==1);
 
 		return unless($e->{'superAdmin'});
 
@@ -2448,6 +2459,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		server::send('assignTeam', $p->{'nickname'}, -1);
+		server::whisper($p, 'Spectating, press `t` to join a team');
 	},
 
 	'mesg'	=> sub {
@@ -2767,10 +2779,8 @@ core protecting the flag.
 	'mapLoading'	=> sub {
 		my($e, $p)=@_;
 		my($map)="$INSTALL_ROOT/maps/$MAPDIR/$e->{'map'}";
-		my(@st)=stat($map);
 
-		#Update CTIME of map, we use this for sorting map popularity
-		chmod($st[2]&0777, $map);
+		file::update_ctime($map);
 	},
 
 	'mapChange'	=> sub {
@@ -2795,7 +2805,7 @@ core protecting the flag.
 				if(exists($HOOKS{"enable $setting"}));
 		}
 
-		server::msg('Server configured for map:', game::mapname);
+		server::msg('Server configured for map:', $e->{'map'});
 
 		foreach my $player (player::list()) {
 			$player->{'stats'}={};
@@ -3794,8 +3804,7 @@ core protecting the flag.
 		}
 
 		if(-r $map && file::name_ok($map)) {
-			server::whisper($p, game::mapname(), ':',
-				file::sum($sum, $map));
+			server::whisper($p, game::mapname(), ':', file::sum($sum, $map));
 		}
 	},
 
@@ -4485,7 +4494,6 @@ also only available from the console.
 		foreach my $entry (split(m/;/, $current)) {
 			server::whisper($s, "$name:", $entry);
 		}
-
 	},
 
 	'showPlayer'		=> sub {

@@ -72,7 +72,7 @@ of devices like portals, to teleport players from one area to another.
 Asymmetrical game mode mdg plays like Counter Strike.  The map is configured
 to assign players to either the left or right team, just like in coop.
 However, one player (the first one to join a team) is placed by themself
-to fight an entire team of enemy planes.  In this mmode, you can specify
+to fight an entire team of enemy planes.  In this mode, you can specify
 alternate zones to spawn into.  The server will randomly spawn the single
 player in one of these.  This allows the standard spawn zone for that
 team to be boxed up like a coop game.  Here, any Bots can be seperated
