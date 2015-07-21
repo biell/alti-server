@@ -1612,15 +1612,12 @@ play though extended interfaces and server support.
 		my($max)=stash::get('maxPlayers', game::mapname()) || $config::Maxp;
 
 		if($Stats{'players'}{'playing'}{$p}) {
-			server::debug('player already registered:', $p->{'nickname'});
 			return(1);
 		} elsif($Stats{'players'}{'count'}<$max) {
-			server::debug('registering player:', $p->{'nickname'});
 			$Stats{'players'}{'playing'}{$p}=1;
 			$Stats{'players'}{'count'}++;
 			return(1);
 		} else {
-			server::debug('no access:', $p->{'nickname'});
 			return(0);
 		}
 	}
@@ -1628,7 +1625,6 @@ play though extended interfaces and server support.
 	sub playing {
 		my($p)=@_;
 
-		server::debug('player access:', $Stats{'players'}{'playing'}{$p});
 		return($Stats{'players'}{'playing'}{$p});
 	}
 
@@ -1636,7 +1632,6 @@ play though extended interfaces and server support.
 		my($p)=@_;
 
 		if($Stats{'players'}{'playing'}{$p}) {
-			server::debug('unregister player:', $p->{'nickname'});
 			delete($Stats{'players'}{'playing'}{$p});
 			if($Stats{'players'}{'count'}>0) {
 				$Stats{'players'}{'count'}--;
@@ -1687,8 +1682,6 @@ play though extended interfaces and server support.
 	sub prey		{
 		my($p)=@_;
 
-		server::debug('hunted:', $Map->{'hunted'}{'nickname'}, 'player:', $p->{'nickname'});
-
 		if($Map->{'hunted'}==$p) {
 			return(1);
 		} elsif(!$Map->{'hunted'} || !$Map->{'hunted'}{'alive'}) {
@@ -1702,7 +1695,6 @@ play though extended interfaces and server support.
 	sub cower {
 		my($p)=@_;
 
-		server::debug('cowering:', $p);
 		$Map->{'hunted'}=undef;
 	}
 
@@ -3806,19 +3798,16 @@ core protecting the flag.
 			$p->{'team'}=$e->{'team'};
 			return;
 		} elsif(game::spec($e->{'team'})) {
-			server::debug('specing:', $p->{'nickname'});
 			if(game::spec($p->{'team'})) {
 				$p->{'team'}=$e->{'team'};
 				return;
 			} else {
 				game::spawn_reset($p) unless(game::type('coop'));
 
-				server::debug('oldteam:', $p->{'team'}, 'hunted?:', game::hunted($p));
 				$p->{'team'}=$e->{'team'};
 
 				game::leave($p);
 				game::cower($p) if(game::hunted($p));
-				server::debug('newteam:', $p->{'team'}, 'hunted?:', game::hunted($p));
 	
 				return;
 			}
