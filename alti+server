@@ -2643,6 +2643,13 @@ core protecting the flag.
 		}
 	},
 
+    #
+    ## Change map to random map as requested by players/admin
+    'randomMap' => sub {
+        my ($e, $p) = @_;
+        server::send('changeMap', config::random_map());
+    },
+
 	'removeMap'		=> sub {
 		my($e, $p)=@_;
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
@@ -4364,7 +4371,7 @@ also only available from the console.
 					$value=$1*(2**30);
 				} elsif($value=~m/(\d+)m/i) {
 					$value=$1*(2**20);
-				} elsif($value~m/(\d+)k/i) {
+				} elsif($value=~m/(\d+)k/i) {
 					$value=$1*1024;
 				}
 			}
