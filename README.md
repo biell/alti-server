@@ -294,7 +294,7 @@ Super admin functionality is set in the `alti+server` code itself.  The
 `superAdmin` setting can be set to either
 `admin` (all admins can perform super admin functionality),
 `console` (super admin functionality is limited to the console), and
-`list` (where an array `@SUPER_ADMINS` contains a list of vaporIds which
+`list` (where an option array `superAdmins` contains a list of vaporIds which
 are allowed to execute super admin functionality.  The purpose of the
 distinction between normal Altitude admin functionality and Super Admin
 functionality is that super admins can change the maps on a server and restart
