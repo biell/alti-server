@@ -14,6 +14,7 @@ my($MAPDIR)='';                         #Directory under $INSTALL_ROOT/maps
 		                              #to store maps.  (e.g. "download")
 my(%OPTIONS)=(
 	updateMapList	=> 1,               #Let alti+server change the mapList
+	hitchThreshold	=> 0.6,			#Length of serverHitch to report
 	ulSizeLimit	=> 10485760,        #Max allowed download size
 	boxColor		=> 'blue',          #Curses color palet:
 	chatFromColor	=> 'cyan',          # black, blue, cyan, green,
@@ -4319,11 +4320,15 @@ core protecting the flag.
 
 	'serverHitch'	=> sub {
 		my($e)=@_;
+		my($lag);
 
 		return if($e->{'changedMap'});
 		return if(($e->{'time'}-game::start())<10000);	#10 seconds
 
-		server::msg(sprintf('Server lag: %.2f seconds', $e->{'duration'}/1000));
+		$lag=$e->{'duration'}/1000;
+		if($lag > config::option('hitchThreshold')) {
+			server::msg(sprintf('Server lag: %.2f seconds', $lag));
+		}
 	},
 );
 
@@ -4364,7 +4369,7 @@ also only available from the console.
 					$value=$1*(2**30);
 				} elsif($value=~m/(\d+)m/i) {
 					$value=$1*(2**20);
-				} elsif($value~m/(\d+)k/i) {
+				} elsif($value=~m/(\d+)k/i) {
 					$value=$1*1024;
 				}
 			}
