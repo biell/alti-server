@@ -813,7 +813,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	our($Goals)=6;  #reset from launcher_config.xml
 	our($Maxp)=14;  #reset from launcher_config.xml
 
-	$MAPDIR=~s|/*$|| if($MAPDIR);
+	$MAPDIR=~s|/+$|| if($MAPDIR);
 
 	sub option_exists {
 		return(exists($OPTIONS{$_[0]}));
