@@ -3,28 +3,20 @@ Altitude game server wrapper to enable enhanced modes of game play.
 
 ## Files
 
-  * **README.md**  This file
+  * **README.md**  The file you are reading.
 
-  * **INSTALL.txt**   A list of the quick steps to install this software
+  * **INSTALL.txt**   A list of the quick steps to install this software.
  
   * **UNLICENSE.txt**  This software is in the Public Domain, this file
-    states this
+    states so.
 
   * **alti+server**  The perl code which starts the altitude game engine
-    and monitors it for events
+    and monitors it for events.
 
-  * **custom_json_commands.txt**  The custom commands which allow people to
-    interact with the server
-
-  * **small_custom_json_commands.txt**  A smaller version of the custom
-    commands which don't help users but allow for more maps to be loaded.
-
-  * **tiny_custom_json_commands.txt**  An even smaller version of the custom
-    commands which don't help users, and put the burden on admins to know what
-    they are doing, but allows for lots and lots of maps to be loaded.
-    See the description of `!` in the
-    [Extended Commands for Admins and Map Makers](#extended-commands-for-admins-and-map-makers)
-    section.
+  * **alti+commands.txt**  The custom commands which allow people to
+    interact with the server.  The Altitude *custom_json_commands.txt* file
+    is automatically generated from this file, and it's syntax is almost
+    identical.
 
 ## Alti+ game types
 
@@ -309,9 +301,9 @@ manage Alti+ game maps.
     be used to access super admin funcitonality.  No help is given on this
     command, or any of the administrative sub-commands, save an error message
     when an invalid command is entered.  Only use this feature if you need
-    to run more than 100 maps on a server and the
-    `small_custom_json_commands.txt` file is causing your mapList to be
-    trimmed.
+    to run more than 100 maps on a server and you set the `configSize` option
+    to be `tiny`. See [Server Options](#server-options) below for more
+    information on the `configSize` option.
 
 ### Extended Commands for Super Admins
 Super admin functionality is set in the `alti+server` code itself.  The
@@ -510,6 +502,24 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     to keep this from happening.  Conversely, it could also
     be used to make only 1-life games occur.  It is the
     perogative of the server administrator.
+
+  * **configSize [normal|small|tiny]**<br>
+    Set the configuration size to be either
+    `normal` (preferred), 
+    `small` (if you need to serve more than 80 maps), or to
+    `tiny` (if yo uneed to serve more than 100 maps).
+    This configuration parameter changes the way the *custom_json_commands.txt*
+    file is generated, and how users inside altitude interact with the
+    alti+server code.  If the preferred setting of `normal` is used, users
+    on the console and in the game have the same experience.  They both get
+    help on arguments and command expansion when typing.  If set to `small`,
+    then users inside the game no longer get help on arguments and expansions.
+    Where lists of sub-commands used to be, free-form strings must be entered
+    which either match commands, or produce errors.  If set to `tiny`, then
+    administrative commands are pushed under a super command named `!`.  No
+    help is given on this commands, and users inside the game must remember
+    exact syntax.  For any setting here, use of the `/help` command is
+    especially helpful.
 
   * **superAdmin [admin|console|list]**<br>
     Some servers have two levels of admins.  Admins whose job
