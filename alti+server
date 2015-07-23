@@ -2545,7 +2545,6 @@ core protecting the flag.
 		push(@{$e->{'arguments'}}, $args) if($args);
 
 		if(exists($HOOKS{$e->{'command'}})) {
-server::debug('hook:', $e->{'command'});
 			$HOOKS{$e->{'command'}}->($e, $p);
 		} else {
 			server::whisper($p, 'Invalid command:', $e->{'command'});
@@ -2570,7 +2569,6 @@ server::debug('hook:', $e->{'command'});
 		my($e, $p)=@_;
 		my($type)=@{$e->{'arguments'}};
 
-server::debug(join('|', $type));
 		if(exists($HOOKS{"list $type"})) {
 			$HOOKS{"list $type"}->($e, $p);
 		} else {
@@ -2613,7 +2611,6 @@ server::debug(join('|', $type));
 		my(@args);
 
 		@args=($args=~m/(".*?"|".*$|[\S,]+)/g);
-server::debug(join('|', $type, @args));
 
 		return unless($e->{'admin'});
 
