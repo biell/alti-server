@@ -2996,17 +2996,19 @@ core protecting the flag.
 
 		game::new_map($e);
 
+		foreach my $player (player::list()) {
+			$player->{'stats'}={};
+			player::forgive($player);
+		}
+
+		sleep(1);
+
 		foreach my $setting (@settings) {
 			$HOOKS{"enable $setting"}->($e, $p)
 				if(exists($HOOKS{"enable $setting"}));
 		}
 
 		server::msg('Server configured for map:', $e->{'map'});
-
-		foreach my $player (player::list()) {
-			$player->{'stats'}={};
-			player::forgive($player);
-		}
 	},
 
 	'help gravity'	=> sub {
