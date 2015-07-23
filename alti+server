@@ -2581,7 +2581,7 @@ core protecting the flag.
 		my($type, $args)=@{$e->{'arguments'}};
 		my(@args);
 
-		@args=($args=~m/(".*?"|".*$|[\S,]+)/g);
+		@args=($args=~m/(".*?"|".*$|[^\s,]+)/g);
 
 		return unless($e->{'admin'});
 
@@ -2610,7 +2610,7 @@ core protecting the flag.
 		my($type, $args)=@{$e->{'arguments'}};
 		my(@args);
 
-		@args=($args=~m/(".*?"|".*$|[\S,]+)/g);
+		@args=($args=~m/(".*?"|".*$|[^\s,]+)/g);
 
 		return unless($e->{'admin'});
 
@@ -2625,7 +2625,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($type, @args)=@{$e->{'arguments'}};
 
-		@args=($args[0]=~m/(".*?"|".*$|[\S,]+)/g) if(@args==1);
+		@args=($args=~m/(".*?"|".*$|[^\s,]+)/g);
 
 		return unless($e->{'admin'});
 
@@ -2640,7 +2640,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($type, @args)=@{$e->{'arguments'}};
 
-		@args=($args[0]=~m/(".*?"|".*$|[\S,]+)/g) if(@args==1);
+		@args=($args=~m/(".*?"|".*$|\S+)/g);
 
 		return unless($e->{'superAdmin'});
 
@@ -2894,7 +2894,11 @@ core protecting the flag.
 		return(0) unless(file::name_ok($name));
 		return(0) unless(file::url_ok($url));
 
-		$mapname="$MAPDIR/$name";
+		if($MAPDIR) {
+			$mapname="$MAPDIR/$name";
+		} else {
+			$mapname=$name;
+		}
 		$file="$maps/$mapname.altx";
 
 		file::download('-L', '-o', $file, $url);
@@ -3406,7 +3410,7 @@ core protecting the flag.
 		}
 	},
 
-	'del maxPlayers'	=> sub {
+	'unset maxPlayers'	=> sub {
 		my($e, $p)=@_;
 
 		stash::delete('maxPlayers', game::mapname());
