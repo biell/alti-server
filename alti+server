@@ -2623,7 +2623,8 @@ core protecting the flag.
 
 	'del'		=> sub {
 		my($e, $p)=@_;
-		my($type, @args)=@{$e->{'arguments'}};
+		my($type, $args)=@{$e->{'arguments'}};
+		my(@args);
 
 		@args=($args=~m/(".*?"|".*$|[^\s,]+)/g);
 
@@ -2638,7 +2639,8 @@ core protecting the flag.
 
 	'upload'		=> sub {
 		my($e, $p)=@_;
-		my($type, @args)=@{$e->{'arguments'}};
+		my($type, $args)=@{$e->{'arguments'}};
+		my(@args);
 
 		@args=($args=~m/(".*?"|".*$|\S+)/g);
 
