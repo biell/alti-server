@@ -2735,7 +2735,10 @@ core protecting the flag.
 		$name=~s|\.altx$||;
 		$name=~s|\s+|_|g;
 
-		return(0) unless(file::name_ok($name));
+		unless(file::name_ok($name)) {
+			server::whisper($p, "map name $name does not follow standard");
+			return(0);
+		}
 
 		if($MAPDIR) {
 			$mapname="$MAPDIR/$name";
@@ -2785,9 +2788,16 @@ core protecting the flag.
 		$name=~s|\.altx$||;
 		$name=~s|\s+|_|g;
 
-		return(0) unless(file::name_ok($name));
+		unless(file::name_ok($name)) {
+			server::whisper($p, "map name $name does not follow standard");
+			return(0);
+		}
 
-		$mapname="$MAPDIR/$name";
+		if($MAPDIR) {
+			$mapname="$MAPDIR/$name";
+		} else {
+			$mapname=$name;
+		}
 		$file="$maps/$mapname.altx";
 
 		file::download('-L', '-o', $file, sprintf($url, $name));
@@ -2836,7 +2846,11 @@ core protecting the flag.
 		return(0) unless(file::name_ok($name));
 		return(0) unless(file::url_ok("$url$next"));
 
-		$mapname="$MAPDIR/$name";
+		if($MAPDIR) {
+			$mapname="$MAPDIR/$name";
+		} else {
+			$mapname=$name;
+		}
 		$file="$maps/$mapname.altx";
 
 		file::download('-L', '-o', $file, "$url$next");
