@@ -136,6 +136,12 @@ my(%HOOKS, %CONSOLE);
 		return($country);
 	}
 
+	sub distance {
+		my($x1, $y1, $x2, $y2)=@_;
+
+		return(sqrt( ($x2-$x1)**2 + ($y2-$y1)**2 ));
+	}
+
 	sub random_value {
 		my(@values)=values(%{$_[0]});
 
@@ -447,7 +453,7 @@ list.
 		return('/'.join(' ', @cmd, $str)) unless(@args);
 
 		if(@Clist==1) {
-			ui::flash();
+			ui::flash;
 			return('/'.join(' ', @cmd, &expand_clear));
 		} elsif(@Clist) {
 			$Eindex=($Eindex+1)%@Clist;
@@ -455,13 +461,13 @@ list.
 		} else {
 			$str=~s/^"//;
 			if(ref($args[$arg]) eq 'ARRAY') {
-				@Clist=grep(m|^$str|i, @{$args[$arg]});
+				@Clist=grep(m|^\Q$str|i, @{$args[$arg]});
 			} elsif($args[$arg] eq 'map') {
-				@Clist=grep(m|^$str|i, config::maps());
+				@Clist=grep(m|^\Q$str|i, config::maps());
 			} elsif($args[$arg] eq 'player') {
-				@Clist=grep(m|^$str|i, player::values('nickname'));
+				@Clist=grep(m|^\Q$str|i, player::values('nickname'));
 			} elsif($args[$arg] eq 'vaporId') {
-				@Clist=grep(m|^$str|i, player::values('vaporId'));
+				@Clist=grep(m|^\Q$str|i, player::values('vaporId'));
 			} else {
 				return('/'.join(' ', @cmd, $str).'  ');
 			}
@@ -1146,7 +1152,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my(@old)=@Maps;
 
 		foreach my $map (@_) {
-			@Maps=grep(!m/^$map$/, @old);
+			@Maps=grep(!m/^\Q$map\E$/, @old);
 		}
 
 		if(@old==@Maps) { #Same size?
@@ -1173,7 +1179,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	sub commands {
 		my($re)=@_;
-		grep(m|^$re|i, keys(%Commands));
+		grep(m|^\Q$re|i, keys(%Commands));
 	}
 
 	sub arguments {
@@ -1677,7 +1683,7 @@ play though extended interfaces and server support.
 
 		%Stats=();
 
-		foreach my $player (player::list()) {
+		foreach my $player (player::list) {
 			delete($player->{'team'});
 		}
 	}
@@ -1924,21 +1930,15 @@ play though extended interfaces and server support.
 		server::send('overrideSpawnPoint', $p->{'nickname'}, $x, $y, $angle);
 	}
 
-	sub distance {
-		my($x1, $y1, $x2, $y2)=@_;
-
-		return(sqrt( ($x2-$x1)**2 + ($y2-$y1)**2 ));
-	}
-
 	sub spawn_near {
 		my($p, $x, $y)=@_;
-		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname());
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 		my($near, $delta, $try)=('far', 2**20, 0);
 
 		if($spawn_mode eq 'near' && ref($zones) eq 'HASH' && %$zones) {
 			foreach my $zone (sort(keys(%$zones))) {
-				$try=&distance($x, $y, @{$zones->{$zone}}[0,1]);
+				$try=utils::distance($x, $y, @{$zones->{$zone}}[0,1]);
 				if($try<$delta) {
 					$near=$zone;
 					$delta=$try;
@@ -1973,7 +1973,7 @@ play though extended interfaces and server support.
 		if($time<$p->{'stats'}{'timer'}{$pickup}) {
 			return(0);
 		} else {
-			$p->{'stats'}{'timer'}{$pickup}=$time+900;
+			$p->{'stats'}{'timer'}{$pickup}=$time+800;
 			return(1);
 		}
 	}
@@ -1985,7 +1985,7 @@ play though extended interfaces and server support.
 
 		if($flag && no_repeats($e, $p)) {
 			unless(game::mode('ffa')) {
-				foreach my $player (player::list()) {
+				foreach my $player (player::list) {
 					game::bench($player);
 				}
 			}
@@ -2043,7 +2043,7 @@ play though extended interfaces and server support.
 
 	sub knock {
 		my($e, $p)=@_;
-		my($door)=stash::get('door', game::mapname());
+		my($door)=stash::get('door', game::mapname);
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($keys, $color);
 
@@ -2067,7 +2067,7 @@ play though extended interfaces and server support.
 				$p->{'stats'}{'keys'}++;
 			}
 
-			$keys=utils::invert(stash::get('keys', 'door', game::mapname()));
+			$keys=utils::invert(stash::get('keys', 'door', game::mapname));
 
 			foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
 				unless($Stats{$p->{'team'}}{'key'}{$key}) {
@@ -2093,7 +2093,7 @@ play though extended interfaces and server support.
 
 	sub divert {
 		my($e, $p)=@_;
-		my($divs)=stash::get('diverters', game::mapname());
+		my($divs)=stash::get('diverters', game::mapname);
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 
 		if($divs->{$pickup}) {
@@ -2109,7 +2109,7 @@ play though extended interfaces and server support.
 
 	sub teleport {
 		my($e, $p)=@_;
-		my($portals)=stash::get('portals', game::mapname());
+		my($portals)=stash::get('portals', game::mapname);
 		my($px, $py)=($e->{'positionX'}, $e->{'positionY'});
 
 		foreach my $portal (values(%$portals)) {
@@ -2257,7 +2257,7 @@ with their name.
 		foreach my $i (0 .. 25) {
 			&download("$url$i");
 
-			if(m|<a +href=".*?" *>$name</a>.*?<a +href="(.*?)" *>download</a>|) {
+			if(m|<a +href=".*?" *>\Q$name\E</a>.*?<a +href="(.*?)" *>download</a>|) {
 				&download('-L', '-o', $file, $1);
 
 				if(-s $file) {
@@ -2287,7 +2287,7 @@ sub event {
 	my($player)=undef;
 	
 	if($event->{'group'} eq 'server') {
-		$player=player::server();
+		$player=player::server;
 	} else {
 		$player=player::event_search($event);
 	}
@@ -2925,7 +2925,7 @@ core protecting the flag.
 	## Change map to random map as requested by players/admin
 	'randomMap' => sub {
 		my ($e, $p) = @_;
-		server::send('changeMap', config::random_map());
+		server::send('changeMap', config::random_map);
 	},
 
 	'removeMap'		=> sub {
@@ -2946,7 +2946,7 @@ core protecting the flag.
 
 		if(-r $file) {
 			if(game::mapname($mapname)) {
-				server::send('changeMap', config::random_map())
+				server::send('changeMap', config::random_map)
 			}
 
 			stash::archive($mapname);
@@ -2984,7 +2984,7 @@ core protecting the flag.
 			intro
 		);
 
-		server::whisper($p, 'Name:', game::mapname());
+		server::whisper($p, 'Name:', game::mapname);
 
 		foreach my $setting (@settings) {
 			$HOOKS{"list $setting"}->($e, $p)
@@ -2997,6 +2997,7 @@ core protecting the flag.
 		my($map)="$INSTALL_ROOT/maps/$MAPDIR/$e->{'map'}";
 
 		file::update_ctime($map);
+		game::busy;
 	},
 
 	'mapChange'	=> sub {
@@ -3011,17 +3012,14 @@ core protecting the flag.
 			spawnMode
 			maxPlayers
 			gameType
-			intro
 		);
 
 		game::new_map($e);
 
-		foreach my $player (player::list()) {
+		foreach my $player (player::list) {
 			$player->{'stats'}={};
 			player::forgive($player);
 		}
-
-		sleep(1);
 
 		foreach my $setting (@settings) {
 			$HOOKS{"enable $setting"}->($e, $p)
@@ -3041,14 +3039,14 @@ core protecting the flag.
 
 	'list gravity'	=> sub {
 		my($e, $p)=@_;
-		my($gravity)=stash::get('gravity', game::mapname());
+		my($gravity)=stash::get('gravity', game::mapname);
 
 		server::whisper($p, 'gravity:', $gravity || 'default');
 	},
 
 	'enable gravity'	=> sub {
 		my($e, $p)=@_;
-		my($gravity)=stash::get('gravity', game::mapname());
+		my($gravity)=stash::get('gravity', game::mapname);
 
 		if(defined($gravity)) {
 			server::send('testGravityMode', $gravity);
@@ -3061,11 +3059,11 @@ core protecting the flag.
 		my($e, $p, $grav)=@_;
 
 		if($grav==0) {
-			stash::delete('gravity', game::mapname());
+			stash::delete('gravity', game::mapname);
 			server::msg('Returning gravity to normal');
 			server::send('testGravityMode', 0);
 		} elsif($grav<=3) {
-			stash::set('gravity', game::mapname(), $grav);
+			stash::set('gravity', game::mapname, $grav);
 			server::send('testGravityMode', $grav);
 		} else {
 			server::whisper($p, "Invalid gravity value: $grav");
@@ -3075,7 +3073,7 @@ core protecting the flag.
 	'unset gravity'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('gravity', game::mapname());
+		stash::delete('gravity', game::mapname);
 		server::send('testGravityMode', 0);
 
 		server::msg('Returning gravity to normal');
@@ -3091,14 +3089,14 @@ core protecting the flag.
 
 	'list cameraScale'	=> sub {
 		my($e, $p)=@_;
-		my($scale)=stash::get('cameraScale', game::mapname());
+		my($scale)=stash::get('cameraScale', game::mapname);
 
 		server::whisper($p, 'cameraScale:', $scale || '100');
 	},
 
 	'enable cameraScale'	=> sub {
 		my($e, $p)=@_;
-		my($scale)=stash::get('cameraScale', game::mapname());
+		my($scale)=stash::get('cameraScale', game::mapname);
 
 		server::send('testCameraViewScale', $scale || 100);
 	},
@@ -3110,11 +3108,11 @@ core protecting the flag.
 		$zoom=100 if($zoom=~m/default|normal/i);
 
 		if($zoom==100) {
-			stash::delete('cameraScale', game::mapname());
+			stash::delete('cameraScale', game::mapname);
 			server::msg('Returning camera zoom to normal');
 			server::send('testCameraViewScale', 100);
 		} elsif(40<=$zoom && $zoom<=300) {
-			stash::set('cameraScale', game::mapname(), $zoom);
+			stash::set('cameraScale', game::mapname, $zoom);
 			server::send('testCameraViewScale', $zoom);
 		} else {
 			server::whisper($p, "Invalid camera scale value: $zoom");
@@ -3124,7 +3122,7 @@ core protecting the flag.
 	'unset cameraScale'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('cameraScale', game::mapname());
+		stash::delete('cameraScale', game::mapname);
 		server::send('testCameraViewScale', 100);
 
 		server::msg('Returning camera zoom to normal');
@@ -3140,14 +3138,14 @@ core protecting the flag.
 
 	'list planeScale'	=> sub {
 		my($e, $p)=@_;
-		my($scale)=stash::get('planeScale', game::mapname());
+		my($scale)=stash::get('planeScale', game::mapname);
 
 		server::whisper($p, 'planeScale:', $scale || 100);
 	},
 
 	'enable planeScale'	=> sub {
 		my($e, $p)=@_;
-		my($scale)=stash::get('planeScale', game::mapname());
+		my($scale)=stash::get('planeScale', game::mapname);
 
 		server::send('testPlaneScale', $scale || 100);
 	},
@@ -3159,11 +3157,11 @@ core protecting the flag.
 		$zoom=100 if($zoom=~m/default|normal/i);
 
 		if($zoom==100) {
-			stash::delete('planeScale', game::mapname());
+			stash::delete('planeScale', game::mapname);
 			server::msg('Returning plane zoom to normal');
 			server::send('testPlaneScale', 100);
 		} elsif(40<=$zoom && $zoom<=300) {
-			stash::set('planeScale', game::mapname(), $zoom);
+			stash::set('planeScale', game::mapname, $zoom);
 			server::send('testPlaneScale', $zoom);
 		} else {
 			server::whisper($p, "Invalid plane scale value: $zoom");
@@ -3173,7 +3171,7 @@ core protecting the flag.
 	'unset planeScale'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('planeScale', game::mapname());
+		stash::delete('planeScale', game::mapname);
 		server::send('testPlaneScale', 100);
 
 		server::msg('Returning plane zoom to normal');
@@ -3190,7 +3188,7 @@ core protecting the flag.
 
 	'list assignTeam'	=> sub {
 		my($e, $p)=@_;
-		my($team)=stash::get('assignTeam', game::mapname());
+		my($team)=stash::get('assignTeam', game::mapname);
 		my($color);
 
 		if($team) {
@@ -3203,7 +3201,7 @@ core protecting the flag.
 
 	'enable assignTeam'	=> sub {
 		my($e, $p)=@_;
-		my($team)=stash::get('assignTeam', game::mapname());
+		my($team)=stash::get('assignTeam', game::mapname);
 		my($color);
 
 		if(defined($team)) {
@@ -3216,31 +3214,31 @@ core protecting the flag.
 		my($e, $p, $side)=@_;
 
 		if(game::left($side)) {
-			stash::set('assignTeam', game::mapname(), 'left');
-			server::msg(game::mapname(), 'is configured to force players left');
+			stash::set('assignTeam', game::mapname, 'left');
+			server::msg(game::mapname, 'is configured to force players left');
 
-			foreach my $m (player::list()) {
+			foreach my $m (player::list) {
 				server::send('assignTeam', $m->{'nickname'}, 0)
 					if(game::right($m->{'team'}));
 			}
 		} elsif(game::right($side)) {
-			stash::set('assignTeam', game::mapname(), 'right');
-			server::msg(game::mapname(), 'is configured to force players right');
+			stash::set('assignTeam', game::mapname, 'right');
+			server::msg(game::mapname, 'is configured to force players right');
 
-			foreach my $m (player::list()) {
+			foreach my $m (player::list) {
 				server::send('assignTeam', $m->{'nickname'}, 0)
 					if(game::left($m->{'team'}));
 			}
 		} elsif($side=~m/none/i) {
-			stash::delete('assignTeam', game::mapname());
-			server::msg('Side enforcement for', game::mapname(), 'is disabled');
+			stash::delete('assignTeam', game::mapname);
+			server::msg('Side enforcement for', game::mapname, 'is disabled');
 		}
 	},
 
 	'unset assignTeam'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('assignTeam', game::mapname());
+		stash::delete('assignTeam', game::mapname);
 
 		server::msg('Deleted team assignment');
 	},
@@ -3256,14 +3254,14 @@ core protecting the flag.
 
 	'list planes'	=> sub {
 		my($e, $p)=@_;
-		my($planes)=stash::get('planes', game::mapname());
+		my($planes)=stash::get('planes', game::mapname);
 
 		server::whisper($p, 'planes:', $planes || 'all');
 	},
 
 	'enable planes'	=> sub {
 		my($e, $p)=@_;
-		my($planes)=stash::get('planes', game::mapname());
+		my($planes)=stash::get('planes', game::mapname);
 
 		if(defined($planes)) {
 			server::msg('planes:', $planes);
@@ -3292,8 +3290,8 @@ core protecting the flag.
 			s/mir.*/Miranda/i;
 
 			if(m/all|none/) {
-				stash::delete('planes', game::mapname());
-				server::msg('Plane enforcement for', game::mapname(), 'is disabled');
+				stash::delete('planes', game::mapname);
+				server::msg('Plane enforcement for', game::mapname, 'is disabled');
 				return;
 			} elsif(m/Loopy|Bomber|Explodet|Biplane|Miranda/) {
 				$planes{$_}=1;
@@ -3301,10 +3299,10 @@ core protecting the flag.
 		}
 
 		$planere=join('|', keys(%planes));
-		stash::set('planes', game::mapname(), $planere);
-		server::msg(game::mapname(), 'only allows planes:', $planere);
+		stash::set('planes', game::mapname, $planere);
+		server::msg(game::mapname, 'only allows planes:', $planere);
 
-		foreach my $m (player::list()) {
+		foreach my $m (player::list) {
 			game::bench($m) unless($m->{'plane'}=~m/$planere/);
 		}
 	},
@@ -3312,7 +3310,7 @@ core protecting the flag.
 	'unset planes'	=> sub {
 		my($e, $p)=@_;
 
-		if(stash::delete('planes', game::mapname())) {
+		if(stash::delete('planes', game::mapname)) {
 			server::msg('Deleted plane requirements');
 		} else {
 			server::whisper($p, 'No plane requirements exist');
@@ -3331,7 +3329,7 @@ core protecting the flag.
 
 	'list ballScore'	=> sub {
 		my($e, $p)=@_;
-		my($scores)=stash::get('ballScore', game::mapname());
+		my($scores)=stash::get('ballScore', game::mapname);
 
 		return unless(game::mode('ball'));
 
@@ -3344,7 +3342,7 @@ core protecting the flag.
 
 	'enable ballScore'	=> sub {
 		my($e, $p)=@_;
-		my($scores)=stash::get('ballScore', game::mapname());
+		my($scores)=stash::get('ballScore', game::mapname);
 		my($goals)=$config::Goals;
 
 		if($scores) {
@@ -3364,10 +3362,10 @@ core protecting the flag.
 			server::whisper($p, "Invalid goal #, must be between -$goals and $goals");
 		} elsif($l==0 && $r==0) {
 			server::whisper($p, "Initial score returned to normal for next round");
-			stash::delete('ballScore', game::mapname());
+			stash::delete('ballScore', game::mapname);
 		} else {
 			server::msg("Initial score set to [$l, $r]");
-			stash::set('ballScore', game::mapname(), [$l, $r]);
+			stash::set('ballScore', game::mapname, [$l, $r]);
 
 			$l=$goals+$l if($l<0);
 			$r=$goals+$r if($r<0);
@@ -3379,7 +3377,7 @@ core protecting the flag.
 	'unset ballScore'	=> sub {
 		my($e, $p)=@_;
 
-		if(stash::delete('ballScore', game::mapname())) {
+		if(stash::delete('ballScore', game::mapname)) {
 			server::whisper($p, 'Removed initial ballScore');
 		} else {
 			server::whisper($p, 'Initial ballScore not set');
@@ -3397,7 +3395,7 @@ core protecting the flag.
 
 	'list maxPlayers'	=> sub {
 		my($e, $p)=@_;
-		my($count)=stash::get('maxPlayers', game::mapname());
+		my($count)=stash::get('maxPlayers', game::mapname);
 
 		server::whisper($p, 'maxPlayers:', $count || $config::Maxp);
 	},
@@ -3406,16 +3404,16 @@ core protecting the flag.
 		my($e, $p, $count)=@_;
 
 		if($count>0) {
-			stash::set('maxPlayers', game::mapname(), $count);
+			stash::set('maxPlayers', game::mapname, $count);
 		} else {
-			stash::delete('maxPlayers', game::mapname());
+			stash::delete('maxPlayers', game::mapname);
 		}
 	},
 
 	'unset maxPlayers'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('maxPlayers', game::mapname());
+		stash::delete('maxPlayers', game::mapname);
 	},
 
 	'help spawnMode'	=> sub {
@@ -3429,7 +3427,7 @@ core protecting the flag.
 
 	'list spawnMode'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 
 		if($spawn_mode) {
 			server::whisper($p, 'spawnMode:', $spawn_mode);
@@ -3438,7 +3436,7 @@ core protecting the flag.
 
 	'enable spawnMode'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 
 		if($spawn_mode) {
 			server::msg('spawnMode:', $spawn_mode);
@@ -3450,22 +3448,22 @@ core protecting the flag.
 
 		if($spawn=~m/default|normal|start/i) {
 			server::msg("Player spawn returned to normal");
-			stash::delete('spawnMode', game::mapname());
+			stash::delete('spawnMode', game::mapname);
 		} elsif($spawn=~m/die/i) {
 			server::msg("Players spawn where died, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname(), 'died');
+			stash::set('spawnMode', game::mapname, 'died');
 		} elsif($spawn=~m/power|pick/i) {
 			server::msg("Players spawn at last powerup, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname(), 'powerup');
+			stash::set('spawnMode', game::mapname, 'powerup');
 		} elsif($spawn=~m/health/i) {
 			server::msg("Players spawn at last health powerup, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname(), 'health');
+			stash::set('spawnMode', game::mapname, 'health');
 		} elsif($spawn=~m/zone/i) {
 			server::msg("Spawn zones enabled, use /spawnZone to use them");
-			stash::set('spawnMode', game::mapname(), 'zone');
+			stash::set('spawnMode', game::mapname, 'zone');
 		} elsif($spawn=~m/near/i) {
 			server::msg("Spawn in closest zone enabled, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname(), 'near');
+			stash::set('spawnMode', game::mapname, 'near');
 		} elsif($spawn=~m/portal/i) {
 			if(game::mode('ffa')) {
 				server::whisper($p, 'Portals do not work in FFA');
@@ -3473,14 +3471,14 @@ core protecting the flag.
 			}
 
 			server::msg("Spawn portals enabled, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname(), 'portal');
+			stash::set('spawnMode', game::mapname, 'portal');
 		}
 	},
 
 	'unset spawnMode'	=> sub {
 		my($e, $p)=@_;
 
-		if(stash::delete('spawnMode', game::mapname())) {
+		if(stash::delete('spawnMode', game::mapname)) {
 			server::msg('Disabled enhanced spawn locations');
 		} else {
 			server::whisper($p, 'Enhanced spawn locations not set');
@@ -3500,17 +3498,17 @@ core protecting the flag.
 	'list gameType'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'gameType:', game::type());
+		server::whisper($p, 'gameType:', game::type);
 	},
 
 	'enable gameType'	=> sub {
 		my($e, $p)=@_;
-		my($type)=stash::get('gameType', game::mapname());
+		my($type)=stash::get('gameType', game::mapname);
 
 		if($type) {
 			server::msg('gameType:', game::set_type($type));
 		} else {
-			server::msg('gameType:', game::set_type(game::mapname()));
+			server::msg('gameType:', game::set_type(game::mapname));
 		}
 	},
 
@@ -3518,22 +3516,22 @@ core protecting the flag.
 		my($e, $p, $type)=@_;
 
 		if($type=~m/normal|file/i) {
-			stash::delete('gameType', game::mapname());
-			game::set_type(game::mapname());
+			stash::delete('gameType', game::mapname);
+			game::set_type(game::mapname);
 		} else {
-			stash::set('gameType', game::mapname(), $type);
+			stash::set('gameType', game::mapname, $type);
 			game::set_type($type);
 		}
 
-		server::msg('gameType:', game::type());
+		server::msg('gameType:', game::type);
 	},
 
 	'unset gameType'		=> sub {
 		my($e, $p)=@_;
 
-		if(stash::delete('gameType', game::mapname())) {
+		if(stash::delete('gameType', game::mapname)) {
 			server::whisper($p, 'Removed gameType override');
-			server::msg('gameType:', game::set_type(game::mapname()));
+			server::msg('gameType:', game::set_type(game::mapname));
 		} else {
 			server::whisper($p, 'gameType not set');
 		}
@@ -3550,7 +3548,7 @@ core protecting the flag.
 
 	'list intro'	=> sub {
 		my($e, $p)=@_;
-		my($intro)=stash::get('intro', game::mapname());
+		my($intro)=stash::get('intro', game::mapname);
 
 		if($intro) {
 			server::whisper($p, $intro);
@@ -3561,7 +3559,7 @@ core protecting the flag.
 
 	'enable intro'	=> sub {
 		my($e, $p)=@_;
-		my($intro)=stash::get('intro', game::mapname());
+		my($intro)=stash::get('intro', game::mapname);
 
 		server::msg($intro) if($intro);
 	},
@@ -3571,10 +3569,10 @@ core protecting the flag.
 		my($text)=join(' ', @text);
 
 		if($text) {
-			stash::set('intro', game::mapname(), $text);
+			stash::set('intro', game::mapname, $text);
 			server::msg($text);
 		} else {
-			stash::delete('intro', game::mapname());
+			stash::delete('intro', game::mapname);
 			server::whisper($p, 'Removed map introduction');
 		}
 
@@ -3583,7 +3581,7 @@ core protecting the flag.
 	'unset intro'		=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('intro', game::mapname());
+		stash::delete('intro', game::mapname);
 		server::whisper($p, 'Removed map introduction');
 	},
 
@@ -3598,8 +3596,8 @@ core protecting the flag.
 
 	'list portals'	=> sub {
 		my($e, $p)=@_;
-		my($portals)=stash::get('portals', game::mapname());
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($portals)=stash::get('portals', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 		my($any)=0;
 
 		foreach my $portal (sort(keys(%$portals))) {
@@ -3625,7 +3623,7 @@ core protecting the flag.
 
 		$sa=game::angle($sa);
 
-		stash::set($portal, 'portals', game::mapname(),
+		stash::set($portal, 'portals', game::mapname,
 			[$px, $py => $sx, $sy, $sa]);
 		server::msg('Added portal:', $portal);
 	},
@@ -3633,7 +3631,7 @@ core protecting the flag.
 	'del portal'	=> sub {
 		my($e, $p, $portal)=@_;
 
-		if(stash::delete($portal, 'portals', game::mapname())) {
+		if(stash::delete($portal, 'portals', game::mapname)) {
 			server::msg('Deleted portal:', $portal);
 		} else {
 			server::whisper($p, 'No portal named:', $portal);
@@ -3660,8 +3658,8 @@ core protecting the flag.
 
 	'list doors'	=> sub {
 		my($e, $p)=@_;
-		my($doors)=utils::invert(stash::get('doors', 'door', game::mapname()));
-		my($keys)=utils::invert(stash::get('keys', 'door', game::mapname()));
+		my($doors)=utils::invert(stash::get('doors', 'door', game::mapname));
+		my($keys)=utils::invert(stash::get('keys', 'door', game::mapname));
 		my($any)=0;
 		my($status);
 
@@ -3697,7 +3695,7 @@ core protecting the flag.
 			return;
 		}
 
-		stash::set("$dx,$dy", 'doors', 'door', game::mapname(), $name);
+		stash::set("$dx,$dy", 'doors', 'door', game::mapname, $name);
 		server::msg('Added door:', $name, "($dx,$dy)");
 	},
 
@@ -3709,18 +3707,18 @@ core protecting the flag.
 			return;
 		}
 
-		stash::set("$kx,$ky", 'keys', 'door', game::mapname(), $name);
+		stash::set("$kx,$ky", 'keys', 'door', game::mapname, $name);
 		server::msg('Added key for door:', $name, "($kx,$ky)");
 	},
 
 	'del door'	=> sub {
 		my($e, $p, $name)=@_;
-		my($doors)=stash::get('doors', 'door', game::mapname());
+		my($doors)=stash::get('doors', 'door', game::mapname);
 		my($any)=0;
 
 		foreach my $door (keys(%$doors)) {
 			if($doors->{$door} eq $name) {
-				stash::delete($door, 'doors', 'door', game::mapname());
+				stash::delete($door, 'doors', 'door', game::mapname);
 				server::msg('Deleted door:', $name, "($door)");
 				$any=1;
 			}
@@ -3733,12 +3731,12 @@ core protecting the flag.
 
 	'del key'	=> sub {
 		my($e, $p, $name)=@_;
-		my($keys)=stash::get('keys', 'door', game::mapname());
+		my($keys)=stash::get('keys', 'door', game::mapname);
 		my($any)=0;
 
 		foreach my $key (keys(%$keys)) {
 			if($keys->{$key} eq $name) {
-				stash::delete($key, 'keys', 'door', game::mapname());
+				stash::delete($key, 'keys', 'door', game::mapname);
 				server::msg('Deleted key for door:', $name, "($key)");
 				$any=1;
 			}
@@ -3761,7 +3759,7 @@ core protecting the flag.
 
 	'list diverters'	=> sub {
 		my($e, $p)=@_;
-		my($divs)=stash::get('diverters', game::mapname());
+		my($divs)=stash::get('diverters', game::mapname);
 		my(%seen)=();
 
 		foreach my $diverter (keys(%$divs)) {
@@ -3775,16 +3773,16 @@ core protecting the flag.
 	'add diverter'	=> sub {
 		my($e, $p, $x1, $y1, $x2, $y2)=@_;
 
-		stash::set("$x1,$y1", 'diverters', game::mapname(), "$x2,$y2");
-		stash::set("$x2,$y2", 'diverters', game::mapname(), "$x1,$y1");
+		stash::set("$x1,$y1", 'diverters', game::mapname, "$x2,$y2");
+		stash::set("$x2,$y2", 'diverters', game::mapname, "$x1,$y1");
 	},
 
 	'del diverter'	=> sub {
 		my($e, $p, $x1, $y1)=@_;
-		my($divs)=stash::get('diverters', game::mapname());
+		my($divs)=stash::get('diverters', game::mapname);
 
-		stash::delete($divs->{"$x1,$y1"}, 'diverters', game::mapname());
-		stash::delete("$x1,$y1", 'diverters', game::mapname());
+		stash::delete($divs->{"$x1,$y1"}, 'diverters', game::mapname);
+		stash::delete("$x1,$y1", 'diverters', game::mapname);
 	},
 
 	'help oneways'	=> sub {
@@ -3798,7 +3796,7 @@ core protecting the flag.
 
 	'list oneways'	=> sub {
 		my($e, $p)=@_;
-		my($oneway)=stash::get('oneways', game::mapname());
+		my($oneway)=stash::get('oneways', game::mapname);
 
 		foreach my $powerup (keys(%$oneway)) {
 			server::whisper($p, $powerup, ':', $oneway->{$powerup});
@@ -3808,13 +3806,13 @@ core protecting the flag.
 	'add oneway'	=> sub {
 		my($e, $p, $x, $y, $direction)=@_;
 
-		stash::set("$x,$y", 'oneways', game::mapname(), lc($direction));
+		stash::set("$x,$y", 'oneways', game::mapname, lc($direction));
 	},
 
 	'del oneway'	=> sub {
 		my($e, $p, $x, $y)=@_;
 
-		stash::delete("$x,$y", 'oneways', game::mapname());
+		stash::delete("$x,$y", 'oneways', game::mapname);
 	},
 
 	'help zones'	=> sub {
@@ -3828,28 +3826,28 @@ core protecting the flag.
 
 	'list zones'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 		my($any)=0;
 		my($zones);
 
 		server::whisper($p, 'start: default spawn zone for this map');
 
 		if($e->{'admin'}) {
-			$zones=stash::get(game::left, 'zones', game::mapname());
+			$zones=stash::get(game::left, 'zones', game::mapname);
 			foreach my $zone (sort(keys(%$zones))) {
 				server::whisper($p,
 					sprintf('%s < %d,%d @%d', $zone, @{$zones->{$zone}}));
 				$any=1;
 			}
 
-			$zones=stash::get(game::right, 'zones', game::mapname());
+			$zones=stash::get(game::right, 'zones', game::mapname);
 			foreach my $zone (sort(keys(%$zones))) {
 				server::whisper($p,
 					sprintf('%s > %d,%d @%d', $zone, @{$zones->{$zone}}));
 				$any=1;
 			}
 		} else {
-			$zones=stash::get($p->{'team'}, 'zones', game::mapname());
+			$zones=stash::get($p->{'team'}, 'zones', game::mapname);
 			foreach my $zone (sort(keys(%$zones))) {
 				server::whisper($p,
 					sprintf('%s: %d,%d @%d', $zone, @{$zones->{$zone}}));
@@ -3871,12 +3869,12 @@ core protecting the flag.
 		$team='*' unless($team);
 
 		if(game::left($team)) {
-			stash::set($zone, game::left(), 'zones', game::mapname(), [$sx, $sy, $sa]);
+			stash::set($zone, game::left, 'zones', game::mapname, [$sx, $sy, $sa]);
 			server::msg('Added left zone:', $zone, "($sx,$sy)");
 		}
 
 		if(game::right($team)) {
-			stash::set($zone, game::right(), 'zones', game::mapname(), [$sx, $sy, $sa]);
+			stash::set($zone, game::right, 'zones', game::mapname, [$sx, $sy, $sa]);
 			server::msg('Added right zone:', $zone, "($sx,$sy)");
 		}
 	},
@@ -3887,7 +3885,7 @@ core protecting the flag.
 		$team='*' unless($team);
 
 		if(game::left($team)) {
-			if(stash::delete($zone, game::left(), 'zones', game::mapname())) {
+			if(stash::delete($zone, game::left, 'zones', game::mapname)) {
 				server::msg('Deleted left zone:', $zone);
 			} else {
 				server::whisper($p, 'No left zone', $zone);
@@ -3895,7 +3893,7 @@ core protecting the flag.
 		}
 
 		if(game::right($team)) {
-			if(stash::delete($zone, game::right(), 'zones', game::mapname())) {
+			if(stash::delete($zone, game::right, 'zones', game::mapname)) {
 				server::msg('Deleted right zone:', $zone);
 			} else {
 				server::whisper($p, 'No right zone', $zone);
@@ -3914,18 +3912,18 @@ core protecting the flag.
 
 	'list powerups'	=> sub {
 		my($e, $p)=@_;
-		my($powerups)=stash::get('powerups', game::mapname());
+		my($powerups)=stash::get('powerups', game::mapname);
 		my($any)=0;
 		my($groups);
 
 		if($e->{'admin'}) {
-			$groups=utils::invert(%{$powerups->{game::left()}});
+			$groups=utils::invert(%{$powerups->{game::left}});
 			foreach my $key (sort(keys(%$groups))) {
 				server::whisper($p, '<', $key, ':', @{$groups->{$key}});
 				$any=1;
 			}
 
-			$groups=utils::invert(%{$powerups->{game::right()}});
+			$groups=utils::invert(%{$powerups->{game::right}});
 			foreach my $key (sort(keys(%$groups))) {
 				server::whisper($p, '>', $key, ':', @{$groups->{$key}});
 				$any=1;
@@ -3950,13 +3948,13 @@ core protecting the flag.
 
 		if(game::left($team)) {
 			$color=game::team_color('left');
-			stash::set("$px,$py", game::left(), 'powerups', game::mapname(), $powerup);
+			stash::set("$px,$py", game::left, 'powerups', game::mapname, $powerup);
 			server::msg("Added left ($color) powerup:", $powerup, "($px,$py)");
 		}
 
 		if(game::right($team)) {
 			$color=game::team_color('right');
-			stash::set("$px,$py", game::right(), 'powerups', game::mapname(), $powerup);
+			stash::set("$px,$py", game::right, 'powerups', game::mapname, $powerup);
 			server::msg("Added right ($color) powerup:", $powerup, "($px,$py)");
 		}
 	},
@@ -3970,8 +3968,8 @@ core protecting the flag.
 
 		if(game::left($team)) {
 			$color=game::team_color('left');
-			$powerup=stash::get("$px,$py", game::left(), 'powerups', game::mapname());
-			if(stash::delete("$px,$py", game::left(), 'powerups', game::mapname())) {
+			$powerup=stash::get("$px,$py", game::left, 'powerups', game::mapname);
+			if(stash::delete("$px,$py", game::left, 'powerups', game::mapname)) {
 				server::msg("Deleted left ($color) powerup:", $powerup, "($px,$py)");
 			} else {
 				server::whisper($p, 'No left powerup at', "$px,$py");
@@ -3980,8 +3978,8 @@ core protecting the flag.
 
 		if(game::right($team)) {
 			$color=game::team_color('right');
-			$powerup=stash::get("$px,$py", game::right(), 'powerups', game::mapname());
-			if(stash::delete("$px,$py", game::right(), 'powerups', game::mapname())) {
+			$powerup=stash::get("$px,$py", game::right, 'powerups', game::mapname);
+			if(stash::delete("$px,$py", game::right, 'powerups', game::mapname)) {
 				server::msg("Deleted right ($color) powerup:", $powerup, "($px,$py)");
 			} else {
 				server::whisper($p, 'No right powerup at', "$px,$py");
@@ -3992,8 +3990,8 @@ core protecting the flag.
 	'spawnZone'	=> sub {
 		my($e, $p)=@_;
 		my($zone)=@{$e->{'arguments'}};
-		my($coords)=stash::get($zone, $p->{'team'}, 'zones', game::mapname());
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($coords)=stash::get($zone, $p->{'team'}, 'zones', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 
 		if($zone=~m/^start$/i) {
 			game::bench($p);
@@ -4020,7 +4018,7 @@ core protecting the flag.
 	'sum'		=> sub {
 		my($e, $p)=@_;
 		my($name)=@{$e->{'arguments'}};
-		my($map)=game::mapfile();
+		my($map)=game::mapfile;
 		my(%sums)=(
 			'crc32'	=> 'cksum',
 			'md5'	=> 'md5sum',
@@ -4036,17 +4034,20 @@ core protecting the flag.
 		}
 
 		if(-r $map && file::name_ok($map)) {
-			server::whisper($p, game::mapname(), ':', file::sum($sum, $map));
+			server::whisper($p, game::mapname, ':', file::sum($sum, $map));
 		}
 	},
 
 	'clientAdd'		=> sub {
 		my($e, $p)=@_;
-		my($planes)=stash::get('planes', game::mapname());
-		my($intro)=stash::get('intro', game::mapname());
 
-		if($p->{'nickname'}=~m/^\d{1,2}$/) {
-			server::whisper($e, "Invalid nickname for this server.");
+		#                       PlayerId|VaporID
+		if($p->{'nickname'}=~m/^(\d{1,2}|[0-9a-f-]{36})$/) {
+			server::whisper($e, 'Invalid nickname for this server.');
+			server::send('kick', $e->{'nickname'});
+			return(undef);
+		} elsif($p->{'vaporId'}=~m/[^0-]/ && $p->{'nickname'}=~m/^Bot \d\d?/) {
+			server::whisper($e, 'Invalid nickname for this server.');
 			server::send('kick', $e->{'nickname'});
 			return(undef);
 		}
@@ -4068,9 +4069,6 @@ core protecting the flag.
 		foreach my $statement (split(m/;/, config::option('motd'))) {
 			server::whisper($p, $statement);
 		}
-
-		server::whisper($p, 'Allowed Planes:', $planes) if($planes);
-		server::whisper($p, $intro) if($intro);
 	},
 
 	'clientNicknameChange'	=> sub {
@@ -4078,7 +4076,7 @@ core protecting the flag.
 
 		player::rename($e->{'oldNickname'}, $e->{'newNickname'});
 
-		if(server::snarky()) {
+		if(server::snarky) {
 			server::whisper($p, 'Oh', $p->{'nickname'},
 				', you will always be', $p->{'vaporId'}, 'to me.');
 		}
@@ -4091,7 +4089,7 @@ core protecting the flag.
 
 		return if($p->{'isBot'});
 
-		game::busy();
+		game::busy;
 
 		ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
 
@@ -4103,16 +4101,18 @@ core protecting the flag.
 
 	'teamChange'		=> sub {
 		my($e, $p)=@_;
-		my($map_team)=stash::get('assignTeam', game::mapname());
-		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname());
+		my($map_team)=stash::get('assignTeam', game::mapname);
+		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname);
 		my($minlvl)=0;
 		my(@badge)=();
-
+		my($planes, $intro);
+		
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			return;
 		}
 
+		#Make sure players are the correct level for their aceRank:
 		if($p->{'aceRank'}==0) {
 			$minlvl=config::option('noviceLevel');
 			@badge=('on this server');
@@ -4139,6 +4139,18 @@ core protecting the flag.
 			return;
 		}
 
+		#Display the intro after users join (first teamChange to spec):
+		unless($p->{'stats'}{'intro'}) {
+			$planes=stash::get('planes', game::mapname);
+			$intro=stash::get('intro', game::mapname);
+
+			server::whisper($p, 'Allowed Planes:', $planes) if($planes);
+			server::whisper($p, $intro) if($intro);
+
+			$p->{'stats'}{'intro'}=1;
+		}
+
+		#Keep track of players and allow access only as necessary:
 		if(game::spec($e->{'team'})) {
 			if(game::spec($p->{'team'})) {
 				$p->{'team'}=$e->{'team'};
@@ -4154,7 +4166,7 @@ core protecting the flag.
 				return;
 			}
 		} elsif(game::enter($p)) {
-			game::spawn_reset($p);
+			#Non needed/causes problems?#game::spawn_reset($p);
 			$p->{'team'}=$e->{'team'};
 		} else {
 			server::send('assignTeam', $p->{'nickname'}, -1);
@@ -4164,6 +4176,7 @@ core protecting the flag.
 			return;
 		}
 
+		#Ensure players are on the correct team:
 		if(game::type('mdg') && game::prey($p)) {
 			if(ref($zones) eq 'HASH' && %$zones) {
 				game::spawn_here($p, @{utils::random_value($zones)});
@@ -4186,9 +4199,9 @@ core protecting the flag.
 
 	'spawn'	=> sub {
 		my($e, $p)=@_;
-		my($planere)=stash::get('planes', game::mapname());
-		my($map_team)=stash::get('assignTeam', game::mapname());
-		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname());
+		my($planere)=stash::get('planes', game::mapname);
+		my($map_team)=stash::get('assignTeam', game::mapname);
+		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname);
 		my($match);
 
 		$p->{'plane'}=$e->{'plane'};
@@ -4231,11 +4244,11 @@ core protecting the flag.
 			return;
 		}
 
-		if(server::snarky()) {
+		if(server::snarky) {
 			foreach my $snark (List::Util::shuffle(keys(%SNARKS))) {
 				$match=1;
 				foreach my $test (keys(%{$SNARKS{$snark}})) {
-					$match&=($e->{$test}=~m/$SNARKS{$snark}{$test}/);
+					$match&=($e->{$test}=~m/\Q$SNARKS{$snark}{$test}/);
 				}
 				if($match) {
 					server::snark($p, sprintf($snark, $p->{'nickname'}));
@@ -4249,7 +4262,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($a)=player::lookup($e->{'assister'});
 		my($a2)=player::lookup($e->{'secondaryAssister'});
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 
 		if(game::left($p->{'team'})) {
 			game::update_score('left');
@@ -4258,7 +4271,7 @@ core protecting the flag.
 		}
 
 		if($spawn_mode eq 'near') {
-	 		foreach my $player (player::list()) {
+	 		foreach my $player (player::list) {
 				game::spawn_reset($player);
 			}
 		}
@@ -4315,7 +4328,7 @@ core protecting the flag.
 
 	'powerupPickup'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 		my(@x)=POSIX::modf($e->{'positionX'});
 		my(@y)=POSIX::modf($e->{'positionY'});
 
@@ -4329,7 +4342,7 @@ core protecting the flag.
 		if($e->{'powerup'} eq 'Ball') {
 			$p->{$e->{'powerup'}}{'time'}=0;
 		} elsif($e->{'powerup'} eq 'Bomb') {
-			if($e->{'velocityX'} && $e->{'velocityY'} && server::snarky()) {
+			if($e->{'velocityX'} && $e->{'velocityY'} && server::snarky) {
 				server::snark($p, 'Nice catch', $p->{'nickname'});
 			}
 		}
@@ -4338,7 +4351,7 @@ core protecting the flag.
 
 		return if(game::knock($e, $p));
 
-		if(stash::get("$x[1],$y[1]", 'oneways', game::mapname())) {
+		if(stash::get("$x[1],$y[1]", 'oneways', game::mapname)) {
 			server::trigger('logPlanePositions', 'oneway', $e, $p);
 		} elsif($spawn_mode eq 'powerup') {
 			unless($x[0] || $y[0] || $e->{'velocityX'} || $e->{'velocityY'}) {
@@ -4351,7 +4364,7 @@ core protecting the flag.
 
 	'powerupAutoUse'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 		my(@x)=POSIX::modf($e->{'positionX'});
 		my(@y)=POSIX::modf($e->{'positionY'});
 
@@ -4366,7 +4379,7 @@ core protecting the flag.
 
 		return if(game::knock($e, $p));
 
-		if(stash::get("$x[1],$y[1]", 'oneways', game::mapname())) {
+		if(stash::get("$x[1],$y[1]", 'oneways', game::mapname)) {
 			server::trigger('logPlanePositions', 'oneway', $e, $p);
 		} elsif($spawn_mode eq 'health' || $spawn_mode eq 'powerup') {
 			unless($x[0] || $y[0]) {
@@ -4391,7 +4404,7 @@ core protecting the flag.
 		my($e1, $p1, $e2, $p2)=@_;
 		my($x1, $y1)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
 		my($x2, $y2)=@$e2{'positionX','positionY'};
-		my($allowed)=game::angle(stash::get("$x2,$y2", 'oneways', game::mapname()));
+		my($allowed)=game::angle(stash::get("$x2,$y2", 'oneways', game::mapname));
 		my($direction)=game::angle($x1-$x2, $y1-$y2);
 		my($wrong_way)=0;
 
@@ -4413,7 +4426,7 @@ core protecting the flag.
 	'kill'	=> sub {
 		my($e, $p)=@_;
 		my($v)=player::lookup($e->{'victim'});
-		my($spawn_mode)=stash::get('spawnMode', game::mapname());
+		my($spawn_mode)=stash::get('spawnMode', game::mapname);
 		my($angle);
 
 		return unless($v);
@@ -4461,7 +4474,7 @@ core protecting the flag.
 			server::snark($p, "$p->{'nickname'} says Booyah!!");
 		} elsif($e->{'streak'}>10) {
 			server::snark($p, "$p->{'nickname'}: $e->{'streak'}");
-		} elsif(($v->{'stats'}{'died'}%15)==0 && player::count()>4) {
+		} elsif(($v->{'stats'}{'died'}%15)==0 && player::count>4) {
 			if($p->{'stats'}{'kill'}{$v->{'nickname'}} > $v->{'stats'}{'died'}/(player::count()/4)) {
 				server::snark($v, "$p->{'nickname'} must really like killing $v->{'nickname'}");
 			}
@@ -4483,7 +4496,7 @@ core protecting the flag.
 		my(%pings)=%{$e->{'pingByPlayer'}};
 		my($laggard);
 
-		return unless(server::snarky());
+		return unless(server::snarky);
 		return if($config::Ping<100);
 
 		foreach my $player (List::Util::shuffle(keys(%pings))) {
@@ -4626,22 +4639,22 @@ core protecting the flag.
 		sleep(1);
 
 		if(config::option('updateMapList')) {
-			config::find_maps();
+			config::find_maps;
 		} else {
-			config::read_maps();
+			config::read_maps;
 		}
 
-		server::start();
-		server::reopen_log();
+		server::start;
+		server::reopen_log;
 	},
 
 	'updatePrepareRestart'	=> sub {
 		sleep(5);
-		server::reopen_log();
+		server::reopen_log;
 	},
 
 	'serverShutdown'	=> sub {
-		server::shutdown();
+		server::shutdown;
 	},
 
 	'serverHitch'	=> sub {
@@ -4649,7 +4662,7 @@ core protecting the flag.
 		my($lag);
 
 		return if($e->{'changedMap'});
-		return if(($e->{'time'}-game::start())<10000);	#10 seconds
+		return if(($e->{'time'}-game::start)<10000);	#10 seconds
 
 		$lag=$e->{'duration'}/1000;
 		if($lag > config::option('hitchThreshold')) {
@@ -4676,7 +4689,7 @@ also only available from the console.
 	'server'			=> sub {
 		my($action, $name, @args)=@_;
 		my($value)=join(' ', @args);
-		my($s)=player::server();
+		my($s)=player::server;
 		my($current);
 
 		if($action eq 'list') {
@@ -4702,12 +4715,12 @@ also only available from the console.
 
 			config::option_set($name, $value);
 
-			ui::setup_screen() if($name=~m/^ui|Color$/i);
+			ui::setup_screen if($name=~m/^ui|Color$/i);
 		} elsif($action eq 'unset') {
 			config::option_del($name);
 			server::whisper($s, $name, 'restored to default');
 
-			ui::setup_screen() if($name=~m/^ui|Color$/i);
+			ui::setup_screen if($name=~m/^ui|Color$/i);
 		} elsif($action eq 'add') {
 			unless(config::option_exists($name)) {
 				server::whisper($s, 'Invalid option name', $name);
@@ -4743,7 +4756,7 @@ also only available from the console.
 	},
 
 	'showPlayer'		=> sub {
-		my($p)=player::server();
+		my($p)=player::server;
 		my($player)=player::lookup(@_);
 		my(@keys)=qw(
 			nickname
@@ -4764,8 +4777,8 @@ also only available from the console.
 	},
 
 	'shutdown'		=> sub {
-		server::shutdown();
-		ui::shutdown();
+		server::shutdown;
+		ui::shutdown;
 		exit(0);
 	},
 );
@@ -4784,8 +4797,8 @@ local(%SIG)=(
 		ui::slog(@_);
 	},
 	'__DIE__'		=> sub {
-		&server::shutdown();
-		&ui::shutdown();
+		server::shutdown;
+		ui::shutdown;
 		print @_, "\n";
 		exit(1);
 	},
@@ -4806,22 +4819,22 @@ knowledge of ports, players, log files, standard output, etc.
 
 my($REQ, $SOUT, $TRIGGER);
 
-ui::setup_screen();
+ui::setup_screen;
 
-config::launcher();
+config::launcher;
 
 if(config::option('updateMapList')) {
-	config::find_maps();
+	config::find_maps;
 } else {
-	config::read_maps();
+	config::read_maps;
 }
 
-server::start();
+server::start;
 
 while(1) {
-	foreach my $fh (server::data()) {
+	foreach my $fh (server::data) {
 		if(server::is_log($fh)) {
-			next unless($REQ=server::event());
+			next unless($REQ=server::event);
 		
 			if($TRIGGER=server::triggers($REQ->{'type'})) {
 				my($trigger)=shift(@$TRIGGER);
@@ -4832,49 +4845,49 @@ while(1) {
 				$HOOKS{$REQ->{'command'}}->(&event($REQ));
 			}
 		} elsif(server::is_output($fh)) {
-			$SOUT=server::output();
+			$SOUT=server::output;
 
 			if($SOUT=~m/Starting server on port $config::Port/) {
-				server::reopen_log();
+				server::reopen_log;
 			} elsif($SOUT=~m/$FATAL_SERVER_ERRORS/) {
-				server::interrupt();
-				server::shutdown();
+				server::interrupt;
+				server::shutdown;
 
 				if($SOUT=~m/config size \((\d+) bytes\) exceeds max/) {
 					config::resize($1);
 
 					if(config::option('updateMapList')) {
-						config::find_maps();
+						config::find_maps;
 					} else {
-						ui::shutdown();
+						ui::shutdown;
 						print "Config size too big, remove maps from mapList\n";
 						exit(1);
 					}
 				}
 
-				server::start();
-				server::reopen_log();
+				server::start;
+				server::reopen_log;
 			} elsif($SOUT=~m/Data Transfer Since Launch/) {
 				ui::slog('INFO  : CPU Totals (user system):', (times)[0,1]);
 
-				if(	player::count() == 0	&&
-					game::mapname()		&&
-					game::elapsed() > config::option('timeIdleChange')
+				if(	player::count == 0	&&
+					game::mapname		&&
+					game::elapsed > config::option('timeIdleChange')
 				) {
-					server::send('changeMap', config::random_map())
+					server::send('changeMap', config::random_map)
 				}
 			}
 
 			ui::slog($SOUT);
 		} else {
-			input::stdin();
+			input::stdin;
 		}
 	}
 }
 
 END {
-	server::shutdown();
-	ui::shutdown();
+	server::shutdown;
+	ui::shutdown;
 	exit(0);
 }
 

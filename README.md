@@ -210,7 +210,10 @@ manage Alti+ game maps.
   * **/set maxPlayers [#]**<br>
     Set the maximum number of players who can spawn simultaneously on the
     map.  This allows a game to have a lower number of maximum players
-    than the server does.
+    than the server does.  This setting is not intelligent like a ladder
+    server.  It is a first come, first serve setting.  If overused, it is
+    likely to cause players to leave the game.  However, it is useful for
+    MDG games, where 13 against 1 seems a little too asymmetric.
 
   * **/set gameType [coop|flag|race|zone|mdg|std|normal]**<br>
     Normally the type of a game is ascertained by te file name.
