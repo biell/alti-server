@@ -2515,7 +2515,7 @@ core protecting the flag.
 	'!'			=> sub {	#Admin command for tiny_custom_json_commands.txt
 		my($e, $p)=@_;
 		my($args)=@{$e->{'arguments'}};
-		my($params);
+		my(@params);
 
 		unless($e->{'admin'}) {
 			server::whisper($p, 'You are not an admin');
@@ -2524,18 +2524,19 @@ core protecting the flag.
 
 		if($args=~s/^\s*(\S+)\s*//) {
 			$e->{'command'}=$1;
-			$params=config::arguments($e->{'command'});
+			$e->{'arguments'}=[];
+			@params=config::arguments($e->{'command'});
 		} else {
 			server::whisper($p, 'Empty command ignored');
 			return;
 		}
 
-		while(ref($params) && @$params>1) {
+		while(@params>1) {
 			if($args=~s/^\s*(".*?"|".*$|\S+)\s*//) {
 				push(@{$e->{'arguments'}}, $1);
 				$e->{'arguments'}[-1]=~s/^"//;
 				$e->{'arguments'}[-1]=~s/"$//;
-				shift(@$params);
+				shift(@params);
 			} else {
 				server::whisper($p, 'Missing arguments:', $e->{'command'});
 				return;
@@ -2544,6 +2545,7 @@ core protecting the flag.
 		push(@{$e->{'arguments'}}, $args) if($args);
 
 		if(exists($HOOKS{$e->{'command'}})) {
+server::debug('hook:', $e->{'command'});
 			$HOOKS{$e->{'command'}}->($e, $p);
 		} else {
 			server::whisper($p, 'Invalid command:', $e->{'command'});
@@ -2568,6 +2570,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($type)=@{$e->{'arguments'}};
 
+server::debug(join('|', $type));
 		if(exists($HOOKS{"list $type"})) {
 			$HOOKS{"list $type"}->($e, $p);
 		} else {
@@ -2610,6 +2613,7 @@ core protecting the flag.
 		my(@args);
 
 		@args=($args=~m/(".*?"|".*$|[\S,]+)/g);
+server::debug(join('|', $type, @args));
 
 		return unless($e->{'admin'});
 
