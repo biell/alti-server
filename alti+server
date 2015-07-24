@@ -147,6 +147,25 @@ my(%HOOKS, %CONSOLE);
 
 		return($values[int(rand(@values))]);
 	}
+
+	sub proc_time {
+		my($pid)=@_;
+		my($stat)=IO::Handle->new;
+		my($file)="/proc/$pid/stat";
+		my($user, $sys)=(0, 0);
+		my(@proc);
+
+		if(-r $file) {
+			open($stat, '<', $file);
+			@proc=split(m/\s+/, $stat->getline);
+			close($stat);
+
+			$user=$proc[13]+$proc[15];
+			$sys=$proc[14]+$proc[16];
+		}
+
+		return($user, $sys);
+	}
 }
 
 =head2 Interface
@@ -1267,13 +1286,21 @@ directly with it to manage the instance.
 	my($Streams)=IO::Select->new(\*STDIN);
 	my($Server_pid, $Tail_pid);
 
+	my($Cu, $Cs)=(0, 0);
+
 	our($Start)=time();
 
 	sub start {
+		my(@times);
+
 		if($Server_pid && kill('HUP', $Server_pid)) {
+			@times=utils::proc_time($Server_pid);
+			$Cu+=$times[0];
+			$Cs+=$times[1];
+
+			waitpid($Server_pid, 0);
 			close($Server);
 			$Streams->remove($Server);
-			waitpid($Server_pid, 0);
 			$Server_pid=undef;
 		}
 
@@ -1289,10 +1316,15 @@ directly with it to manage the instance.
 	sub reopen_log {
 		my($pid)=IO::Handle->new;
 		my($in)=IO::Handle->new;
+		my(@times);
 
 		$Start=time();
 
 		if($Tail_pid && kill('HUP', $Tail_pid)) {
+			@times=utils::proc_time($Tail_pid);
+			$Cu+=$times[0];
+			$Cs+=$times[1];
+
 			close($Log);
 			$Streams->remove($Log);
 			$Tail_pid=undef;
@@ -1347,6 +1379,19 @@ directly with it to manage the instance.
 
 		$Server_pid=undef;
 		$Tail_pid=undef;
+	}
+
+	sub time {
+		my($pu, $ps, $cu, $cs)=times;
+		my(@times);
+
+		foreach my $pid ($Server_pid, $Tail_pid) {
+			@times=utils::proc_time($pid);
+			$cu+=$times[0];
+			$cs+=$times[1];
+		}
+
+		return(int($pu+$cu+$Cu), int($ps+$cs+$Cs));
 	}
 
 	sub send {
@@ -4868,7 +4913,8 @@ while(1) {
 				server::start;
 				server::reopen_log;
 			} elsif($SOUT=~m/Data Transfer Since Launch/) {
-				ui::slog('INFO  : CPU Totals (user system):', (times)[0,1]);
+				ui::slog('INFO  : CPU Second Totals (user system):',
+					server::time);
 
 				if(	player::count == 0	&&
 					game::mapname		&&
