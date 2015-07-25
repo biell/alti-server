@@ -168,6 +168,17 @@ my(%HOOKS, %CONSOLE);
 
 		return($user/$Ticks, $sys/$Ticks);
 	}
+
+	sub secs2time {
+		my($time)=@_;
+		my($hrs, $mins, $secs);
+
+		$secs=$time%60;
+		$mins=($time/60)%60;
+		$hrs=$time/3600;
+
+		return(sprintf('%02d:%02d:%02d', $hrs, $mins, $secs));
+	}
 }
 
 =head2 Interface
@@ -1384,7 +1395,7 @@ directly with it to manage the instance.
 	}
 
 	sub uptime {
-		return(sprintf('%.02f', (time()-$^T)/3600));
+		return(utils::secs2time(time()-$^T));
 	}
 
 	sub cpu_hrs {
@@ -1398,8 +1409,8 @@ directly with it to manage the instance.
 		}
 
 		return(
-			sprintf('%.02f', ($pu+$cu+$Cu)/3600),
-			sprintf('%.02f', ($ps+$cs+$Cs)/3600)
+			utils::secs2time($pu+$cu+$Cu),
+			utils::secs2time($ps+$cs+$Cs),
 		);
 	}
 
@@ -4922,10 +4933,10 @@ while(1) {
 				server::start;
 				server::reopen_log;
 			} elsif($SOUT=~m/Data Transfer Since Launch/) {
-				ui::slog('INFO  : alti+server uptime Hours:',
+				ui::slog('INFO  : alti+server uptime:',
 					server::uptime);
 
-				ui::slog('INFO  : CPU Hour Totals (user system):',
+				ui::slog('INFO  : CPU Totals (user system):',
 					server::cpu_hrs);
 
 				if(	player::count == 0	&&
