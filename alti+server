@@ -1381,7 +1381,7 @@ directly with it to manage the instance.
 		$Tail_pid=undef;
 	}
 
-	sub time {
+	sub cpu_hrs {
 		my($pu, $ps, $cu, $cs)=times;
 		my(@times);
 
@@ -1391,7 +1391,10 @@ directly with it to manage the instance.
 			$cs+=$times[1];
 		}
 
-		return(int($pu+$cu+$Cu), int($ps+$cs+$Cs));
+		return(
+			sprintf('%.01f', ($pu+$cu+$Cu)/3600),
+			sprintf('%.01f', ($ps+$cs+$Cs)/3600)
+		);
 	}
 
 	sub send {
@@ -4913,8 +4916,8 @@ while(1) {
 				server::start;
 				server::reopen_log;
 			} elsif($SOUT=~m/Data Transfer Since Launch/) {
-				ui::slog('INFO  : CPU Second Totals (user system):',
-					server::time);
+				ui::slog('INFO  : CPU Hour Totals (user system):',
+					server::cpu_hrs);
 
 				if(	player::count == 0	&&
 					game::mapname		&&
