@@ -89,6 +89,8 @@ my(%HOOKS, %CONSOLE);
 			"$ENV{'HOME'}/bin/geoiplookup",
 		));
 
+	my($Ticks)=POSIX::sysconf(&POSIX::_SC_CLK_TCK);
+
 	sub minmax {
 		my($pair);
 		
@@ -164,7 +166,7 @@ my(%HOOKS, %CONSOLE);
 			$sys=$proc[14]+$proc[16];
 		}
 
-		return($user, $sys);
+		return($user/$Ticks, $sys/$Ticks);
 	}
 }
 
@@ -1381,6 +1383,10 @@ directly with it to manage the instance.
 		$Tail_pid=undef;
 	}
 
+	sub uptime {
+		return(sprintf('%.02f', (time()-$^T)/3600));
+	}
+
 	sub cpu_hrs {
 		my($pu, $ps, $cu, $cs)=times;
 		my(@times);
@@ -1392,8 +1398,8 @@ directly with it to manage the instance.
 		}
 
 		return(
-			sprintf('%.01f', ($pu+$cu+$Cu)/3600),
-			sprintf('%.01f', ($ps+$cs+$Cs)/3600)
+			sprintf('%.02f', ($pu+$cu+$Cu)/3600),
+			sprintf('%.02f', ($ps+$cs+$Cs)/3600)
 		);
 	}
 
@@ -4916,6 +4922,9 @@ while(1) {
 				server::start;
 				server::reopen_log;
 			} elsif($SOUT=~m/Data Transfer Since Launch/) {
+				ui::slog('INFO  : alti+server uptime Hours:',
+					server::uptime);
+
 				ui::slog('INFO  : CPU Hour Totals (user system):',
 					server::cpu_hrs);
 
