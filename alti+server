@@ -67,6 +67,7 @@ which allows management of the server to be easier.
 
 use POSIX;
 use IO::Handle;
+use IPC::Open3;
 use List::Util;
 
 my($FATAL_SERVER_ERRORS)=join('|',
@@ -810,6 +811,93 @@ are requested by administrative users.
 
 }
 
+{	package compress;
+
+	my($Compress)=grep(-x $_, (
+			'/bin/lzma',
+			'/usr/bin/lzma',
+			'/sbin/lzma',
+			'/usr/sbin/lzma',
+			'/usr/local/bin/lzma',
+			'/opt/bin/lzma',
+			"$ENV{'HOME'}/bin/lzma",
+			'/bin/gzip',
+			'/usr/bin/gzip',
+			'/sbin/gzip',
+			'/usr/sbin/gzip',
+			'/usr/local/bin/gzip',
+			'/opt/bin/gzip',
+			"$ENV{'HOME'}/bin/gzip",
+			'/bin/bzip2',
+			'/usr/bin/bzip2',
+			'/sbin/bzip2',
+			'/usr/sbin/bzip2',
+			'/usr/local/bin/bzip2',
+			'/opt/bin/bzip2',
+			"$ENV{'HOME'}/bin/bzip2",
+		));
+
+	if($Compress) {
+		ui::slog("using $Compress (good)");
+	} else {
+		ui::slog('No Compress found (guessing), consider installing lzma (its more accurate)');
+	}
+
+	sub guess {
+		my($input)=join('', @_);
+		my(%tokens)=();
+		my($total)=0;
+
+		foreach my $tok (split(m/\W+/, $input)) {
+			$tokens{$tok}++;
+			$total++;
+		}
+
+		return(int(length(join('', keys(%tokens)))/2+$total*1.6));
+	}
+
+	sub deflate {
+		my($in, $out, $err)=(IO::Handle->new, IO::Handle->new, IO::Handle->new);
+		my($output)='';
+		
+		#6 tends to be the default, and Altitude seems not to be that good:
+		IPC::Open3::open3($in, $out, $err, $Compress, '-4', '-c');
+
+		print $in @_;
+		close($in);
+
+		$output=join('', <$out>);
+		close($out);
+		close($err);
+	
+		return($output);
+	}
+
+	sub size_data {
+		if($Compress) {
+			return(length(&deflate(@_)));
+		} else {
+			return(&guess(@_));
+		}
+	}
+
+	sub size_file {
+		my($file)=@_;
+		my($fh)=IO::Handle->new;
+		my(@input);
+
+		open($fh, '<', $file);
+		@input=<$fh>;
+		close($fh);
+
+		if($Compress) {
+			return(length(&deflate(@input)));
+		} else {
+			return(&guess(@input));
+		}
+	}
+}
+
 =head2 Configuration
 
 B<alti+server> gets it's configuration information from a
@@ -866,7 +954,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	my(@Maps)=();
 	my(%Mapdb)=();
 	my($Language);
-	my($Size)=0;
+	my($Reserve)=0;
 
 	our($Port)=0;
 	our($Ping)=500; #reset from launcher_config.xml
@@ -949,8 +1037,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 		open($fh, '>>', $Custfile);
 		print $fh $json, "\n";
 		close($fh);
-
-		return(&_packet_length($json));
 	}
 
 	sub launcher {
@@ -1022,10 +1108,12 @@ has occured.  After too many infractions, the player is kicked by the server.
 					$Commands{$cmd->{'name'}}=undef;
 				}
 
-				$Size+=&_write_custom_commands($cmd);
+				&_write_custom_commands($cmd);
 			}
 		}
 		close($fh);
+
+		$Reserve=compress::size_file($Custfile);
 
 		#These work only from console (see %CONSOLE):
 		$Commands{'server'}=[
@@ -1090,11 +1178,11 @@ has occured.  After too many infractions, the player is kicked by the server.
 	sub find_maps {
 		my($lconfig)=IO::Handle->new;
 		my($maplist)=0;
-		my($packet_space)=(1450-50-240-$Size/2)*2+length($MAPDIR)*50;
+		my($packet_space)=1450-220-21*$Maxp-$Reserve;
 		my($rotation)=config::option('rotationRE');
 		my(@xml);
 
-		ui::slog('uncompressed space reserved for maps:', $packet_space);
+		ui::slog('Space reserved for maps:', $packet_space);
 
 		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$MAPDIR/*_*.altx>);
 
@@ -1103,7 +1191,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 			s|\.altx$||;
 		}
 
-		while(length(join('', @Maps))>$packet_space) {
+		while(@Maps && compress::size_data(@Maps)>$packet_space) {
 			ui::slog('Excluding map due to packet size constraint:',
 				pop(@Maps));
 		}
@@ -1152,7 +1240,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($diff)=@_;
 		$diff-=1450;
 
-		$Size+=$diff*2;
+		$Reserve+=$diff;
 	}
 
 	sub new_maps {
@@ -2224,8 +2312,6 @@ with their name.
 
 {	package file;
 
-	use IPC::Open3;
-
 	sub sum {
 		my($sum, $file)=@_;
 		my($cmd)=IO::Handle->new;
@@ -2294,7 +2380,7 @@ with their name.
 
 		return(0) unless(&url_ok($_[-1]));
 
-		$pid=open3($in, $out, $err,
+		$pid=IPC::Open3::open3($in, $out, $err,
 			'curl', '-s', '--max-filesize', config::option('ulSizeLimit'), @_);
 
 		$_=join('', <$out>);
@@ -4914,6 +5000,13 @@ while(1) {
 
 			if($SOUT=~m/Starting server on port $config::Port/) {
 				server::reopen_log;
+			} elsif($SOUT=~m/BindException: Address already in use/) {
+				ui::slog('Another instance is already running');
+
+				server::interrupt;
+				server::shutdown;
+				ui::shutdown;
+				exit(1);
 			} elsif($SOUT=~m/$FATAL_SERVER_ERRORS/) {
 				server::interrupt;
 				server::shutdown;
