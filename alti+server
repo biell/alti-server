@@ -14,6 +14,7 @@ my($MAPDIR)='';                         #Directory under $INSTALL_ROOT/maps
 		                              #to store maps.  (e.g. "download")
 my(%OPTIONS)=(
 	updateMapList	=> 1,               #Let alti+server change the mapList
+	enableTalk	=> 0,			#Enable server aided direct player chat
 	hitchThreshold	=> 0.6,			#Length of serverHitch to report
 	timeIdleChange	=> 7200,			#changeMap when server is idle for 2hrs
 	ulSizeLimit	=> 10485760,        #Max allowed download size
@@ -1016,6 +1017,11 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($fh)=IO::Handle->new;
 		my($json);
 
+		unless(&option('enableTalk')) {
+			return if($cmd->{'name'} eq 'talk');
+			return if($cmd->{'name'} eq 'mesg');
+		}
+
 		if(&option('configSize')=~m/tiny/i) {
 			return unless($cmd->{'required'});
 			return if($cmd->{'voteThreshold'}==100 && $cmd->{'name'} ne '!');
@@ -1389,6 +1395,8 @@ directly with it to manage the instance.
 
 	my($Cu, $Cs)=(0, 0);
 
+	my($Delay)=0;
+
 	our($Start)=time();
 
 	sub start {
@@ -1584,12 +1592,14 @@ directly with it to manage the instance.
 
 	sub snarky {
 		my($multiplier)=config::option('snarkChance');
+		my($time)=time();
 
-		if($multiplier>0 && int(rand($multiplier*player::count()))==0) {
-			return(1);
-		} else {
-			return(0);
-		}
+		return(0) unless($multiplier>0);
+		return(0) unless(int(rand($multiplier*player::count()))==0);
+		return(0) unless($time>$Delay);
+
+		$Delay=$time+3;
+		return(1);
 	}
 
 	sub trigger {
@@ -4675,6 +4685,8 @@ core protecting the flag.
 				ui::chat_log('<', $p->{'nickname'}, $e->{'message'});
 			} elsif(game::right($p->{'team'})) {
 				ui::chat_log('>', $p->{'nickname'}, $e->{'message'});
+			} elsif(game::spec($p->{'team'})) {
+				ui::chat_log('^', $p->{'nickname'}, $e->{'message'});
 			} else {
 				ui::chat_log('?', $p->{'nickname'}, $e->{'message'});
 			}
@@ -5015,6 +5027,8 @@ while(1) {
 				server::shutdown;
 				ui::shutdown;
 				exit(1);
+			} elsif($SOUT=~m/Error processing packet .*, playerId=(\d+)/) {
+				player::infraction(player::lookup($1), 1);
 			} elsif($SOUT=~m/$FATAL_SERVER_ERRORS/) {
 				server::interrupt;
 				server::shutdown;

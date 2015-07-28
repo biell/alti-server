@@ -413,6 +413,21 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     add new maps.
     Set to 1 to enable this feature, set to 0 to disable.
     
+  * **enableTalk [0|1]**<br>
+    Server aided direct chats with other players are supported when
+    `enableTalk` is set to `1`.  They are disabled when it is set to `0`.
+    Server aided direct chats allow any player to communicate only with
+    one other player, regardless of if they are friends.  This feature
+    is increadibly useful when developing new maps.  Map makers can
+    discuss issues and provide tips to individual players without spamming
+    all players.  Most servers do not require this kind of interaction, and
+    server administrators may be concerned the commands will result in
+    abuse.  As such, `enableTalk` is off by default.  Additionally, these
+    commands take up space in the Altitude initialization packet, thus
+    limiting the number of maps the server can load.  Not enabling this feature
+    results in enough space for an additional couple maps to be run by
+    the server.
+
   * **ulSizeLimit [#]**<br>
     Specify the maximum size of an uploaded map.  This number
     is an integer which represents Bytes.  If the integer is
