@@ -2277,14 +2277,22 @@ play though extended interfaces and server support.
 	sub most {
 		my($text, $stats, $players)=@_;
 		my($most)=0;
+		my($start)=0;
 		my($p);
 
 		for(my $i=0; $i<@$players; $i++) {
+			$p=player::lookup($players->[$i]);
+			last unless($p->{'isBot'});
+			$start++;
+		}
+
+		for(my $i=$start; $i<@$players; $i++) {
 			if($stats->[$i]>=$stats->[$most]) {
 				$p=player::lookup($players->[$i]);
 				$most=$i unless($p->{'isBot'});
 			}
 		}
+
 		if($stats->[$most]>0) {
 			$p=player::lookup($players->[$most]);
 			server::msg($text, $p->{'nickname'}) unless($p->{'isBot'});
