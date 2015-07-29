@@ -175,6 +175,20 @@ manage Alti+ game maps.
     used to update the current map in-use. The numeric arguments correspond
     to the argument for the `/testGravityMode`.
 
+  * **/set weapons [0|1|2|3]**<br>
+    Set the weapons mode for this map.  This will ensure each time this
+    map is loaded that the `/testDisableWeaponMode` command is run.
+    Values are:
+    `0` - default weapons mode,
+    `1` - disable primary weapons only,
+    `2` - disable secondary weapons only,
+    `3` - disable all weapons.
+
+  * **/set spawnHealth [1-999]**<br>
+    Set the full health for a plane to be a percentage of the default.
+    100 is the default, lower is less than default.  And the maximum
+    value allowed is 999% of normal.
+
   * **/set cameraScale [40-300]**<br>
     Set the camera scale (zoom) level from anywhere between `40` and `300`.
     The default is `100`%, scale up or down from there.
