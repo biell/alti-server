@@ -4801,23 +4801,28 @@ core protecting the flag.
 
 	'chat'		=> sub {
 		my($e, $p)=@_;
+		my($to)='*';
 
 		if($e->{'team'}) {
-			if(game::left($p->{'team'})) {
-				ui::chat_log('<', $p->{'nickname'}, $e->{'message'});
+			if($e->{'blocked'}) {
+				$to='!';
+			} elsif(game::left($p->{'team'})) {
+				$to='<';
 			} elsif(game::right($p->{'team'})) {
-				ui::chat_log('>', $p->{'nickname'}, $e->{'message'});
+				$to='>';
 			} elsif(game::spec($p->{'team'})) {
-				ui::chat_log('^', $p->{'nickname'}, $e->{'message'});
+				$to='^';
 			} else {
-				ui::chat_log('?', $p->{'nickname'}, $e->{'message'});
+				$to='?';
 			}
-		} else {
-			ui::chat_log('*', $p->{'nickname'}, $e->{'message'});
 		}
+
+		ui::chat_log($to, $p->{'nickname'}, $e->{'message'});
 
 		if(config::language($e->{'message'})) {
 			server::whisper($p, 'language(', player::infraction($p, 1), ')');
+		} elsif($e->{'blocked'}) {
+			server::whisper($p, 'Message blocked(', player::infraction($p, 1), ')');
 		}
 	},
 
