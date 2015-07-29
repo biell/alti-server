@@ -1860,7 +1860,7 @@ play though extended interfaces and server support.
 	}
 
 	sub teams {
-		my($left, $right);
+		my($left, $right)=@_;
 		($Map->{'leftTeam'}, $Map->{'rightTeam'})=($left, $right);
 	}
 
