@@ -2082,14 +2082,6 @@ play though extended interfaces and server support.
 			$y=POSIX::floor($y);
 		}
 
-		#Spawn and /overrideSpawnPoint have different angle systems,
-		#will be fixed in next patch, per lamster.
-		if($angle<-90) {
-			$angle=180;
-		} elsif($angle<0) {
-			$angle=0;
-		}
-
 		server::send('overrideSpawnPoint', $p->{'nickname'}, $x, $y, $angle);
 	}
 
@@ -3143,6 +3135,8 @@ core protecting the flag.
 		my(@settings)=qw(
 			ballScore
 			gravity
+			weapons
+			spawnHealth
 			cameraScale
 			planeScale
 			assignTeam
@@ -3174,6 +3168,8 @@ core protecting the flag.
 		my(@settings)=qw(
 			ballScore
 			gravity
+			weapons
+			spawnHealth
 			cameraScale
 			planeScale
 			assignTeam
@@ -3246,6 +3242,106 @@ core protecting the flag.
 		server::send('testGravityMode', 0);
 
 		server::msg('Returning gravity to normal');
+	},
+
+	'help weapons'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list weapons');
+		server::whisper($p, '/set weapons <0|1|2|3>');
+		server::whisper($p, '/unset weapons');
+	},
+
+	'list weapons'	=> sub {
+		my($e, $p)=@_;
+		my($weapons)=stash::get('weapons', game::mapname);
+
+		server::whisper($p, 'weapons:', $weapons || 'default');
+	},
+
+	'enable weapons'	=> sub {
+		my($e, $p)=@_;
+		my($weapons)=stash::get('weapons', game::mapname);
+
+		if(defined($weapons)) {
+			server::send('testDisableWeaponMode', $weapons);
+		} else {
+			server::send('testDisableWeaponMode', 0);
+		}
+	},
+
+	'set weapons'	=> sub {
+		my($e, $p, $weapons)=@_;
+
+		if($weapons==0) {
+			stash::delete('weapons', game::mapname);
+			server::msg('Returning weapons to normal');
+			server::send('testDisableWeaponMode', 0);
+		} elsif($weapons<=3) {
+			stash::set('weapons', game::mapname, $weapons);
+			server::send('testDisableWeaponMode', $weapons);
+		} else {
+			server::whisper($p, "Invalid weapons value: $weapons");
+		}
+	},
+
+	'unset weapons'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('weapons', game::mapname);
+		server::send('testDisableWeaponMode', 0);
+
+		server::msg('Returning weapons to normal');
+	},
+
+	'help spawnHealth'	=> sub {
+		my($e, $p)=@_;
+
+		server::whisper($p, '/list spawnHealth');
+		server::whisper($p, '/set spawnHealth <1-999>');
+		server::whisper($p, '/unset spawnHealth');
+	},
+
+	'list spawnHealth'	=> sub {
+		my($e, $p)=@_;
+		my($health)=stash::get('spawnHealth', game::mapname);
+
+		server::whisper($p, 'spawnHealth:', $health || 'default');
+	},
+
+	'enable spawnHealth'	=> sub {
+		my($e, $p)=@_;
+		my($health)=stash::get('spawnHealth', game::mapname);
+
+		if(defined($health)) {
+			server::send('testHealthModifier', $health);
+		} else {
+			server::send('testHealthModifier', 100);
+		}
+	},
+
+	'set spawnHealth'	=> sub {
+		my($e, $p, $health)=@_;
+
+		if($health==100) {
+			stash::delete('spawnHealth', game::mapname);
+			server::msg('Returning spawnHealth to normal');
+			server::send('testHealthModifier', 100);
+		} elsif(0<$health && $health<1000) {
+			stash::set('spawnHealth', game::mapname, $health);
+			server::send('testHealthModifier', $health);
+		} else {
+			server::whisper($p, "Invalid spawnHealth value: $health");
+		}
+	},
+
+	'unset spawnHealth'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('spawnHealth', game::mapname);
+		server::send('testHealthModifier', 100);
+
+		server::msg('Returning spawnHealth to normal');
 	},
 
 	'help cameraScale'	=> sub {
