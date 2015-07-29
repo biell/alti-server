@@ -173,7 +173,11 @@ manage Alti+ game maps.
     be kept between server restarts for this map. If this map is removed
     from the server, the setting will be lost. This command can only be
     used to update the current map in-use. The numeric arguments correspond
-    to the argument for the `/testGravityMode`.
+    to the argument for the `/testGravityMode`. Values are:
+    `0` - default gravity,
+    `1` - disable gravity for planes/weapons/powerups,
+    `2` - disable ball gravity only, or
+    `3` - disable all gravity.
 
   * **/set weapons [0|1|2|3]**<br>
     Set the weapons mode for this map.  This will ensure each time this
@@ -181,7 +185,7 @@ manage Alti+ game maps.
     Values are:
     `0` - default weapons mode,
     `1` - disable primary weapons only,
-    `2` - disable secondary weapons only,
+    `2` - disable secondary weapons only, or
     `3` - disable all weapons.
 
   * **/set spawnHealth [1-999]**<br>

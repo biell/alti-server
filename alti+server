@@ -628,8 +628,7 @@ list.
 B<alti+server> keeps state from one invocation to another.  It stores
 user preferences for certain extensions, and map preferences.  These are
 used to ensure games are playable as designed for different types of maps.
-This file is read from at startup, and written to when settings changes
-are requested by administrative users.
+The format for this data is JSON.
 
 =cut
 
@@ -680,6 +679,15 @@ are requested by administrative users.
 	}
 
 }
+
+=pod
+
+This file is read from at startup, and written to when settings changes
+are requested by administrative users.  When written to, the previous
+version is stored as F<json_attic.txt>.  All settings changes to this
+stash are automatically saved to disk.
+
+=cut
 
 {	package stash;
 
@@ -811,6 +819,19 @@ are requested by administrative users.
 	}
 
 }
+
+=head2 Alti+ overhead
+
+The commands used to interract between users and the server must be supplied
+to each new user when they join the server.  These commands are sent in the
+same packet which contains the server map list.  This packet is of fixed
+lenght, and as such the number of maps must shrink to accomdate the added
+commands.  This, however, is more of an art than a science, as the data in
+this packet is compressed.  Different choices in map names will compress
+differently.  It does this by compressing data which will go in this packet
+to see if it looks like it will be sufficient.
+
+=cut
 
 {	package compress;
 
@@ -3200,6 +3221,7 @@ core protecting the flag.
 		server::whisper($p, '/list gravity');
 		server::whisper($p, '/set gravity <0|1|2|3>');
 		server::whisper($p, '/unset gravity');
+		server::whisper($p, '0=default, 1=disable planes/weapons, 2=disable ball, 3=none');
 	},
 
 	'list gravity'	=> sub {
@@ -3250,6 +3272,7 @@ core protecting the flag.
 		server::whisper($p, '/list weapons');
 		server::whisper($p, '/set weapons <0|1|2|3>');
 		server::whisper($p, '/unset weapons');
+		server::whisper($p, '0=default, 1=disable primary, 2=disable secondary, 3=no weapons');
 	},
 
 	'list weapons'	=> sub {
@@ -3300,6 +3323,7 @@ core protecting the flag.
 		server::whisper($p, '/list spawnHealth');
 		server::whisper($p, '/set spawnHealth <1-999>');
 		server::whisper($p, '/unset spawnHealth');
+		server::whisper($p, '50=half normal health, 200=double normal health');
 	},
 
 	'list spawnHealth'	=> sub {
@@ -3350,6 +3374,7 @@ core protecting the flag.
 		server::whisper($p, '/list cameraScale');
 		server::whisper($p, '/set cameraScale <40-300>');
 		server::whisper($p, '/unset cameraScale');
+		server::whisper($p, '50=Zoom in(half normal viewable) 200=Zoom out(twice normal viewable)');
 	},
 
 	'list cameraScale'	=> sub {
@@ -3399,6 +3424,7 @@ core protecting the flag.
 		server::whisper($p, '/list planeScale');
 		server::whisper($p, '/set planeScale <40-300>');
 		server::whisper($p, '/unset planeScale');
+		server::whisper($p, '50=planes are half size, 200=planes are double size');
 	},
 
 	'list planeScale'	=> sub {
