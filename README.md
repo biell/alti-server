@@ -162,6 +162,16 @@ manage Alti+ game maps.
     the setting will be removed and the server returned to its default
     behaviour.
 
+  * **/set nextMap [map]**<br>
+    This command is usefull for map makers.  When you want the next map
+    to be a specific map, regardless of what players vote; then use this
+    command.  It ensures that the next map loaded is `[map]`.  It even
+    works across server restarts.  So, if you upload a new map and need
+    to `/restartServer`, use this command first to ensure the server comes
+    up on the new map.  Before the map is loaded it can be undone with the
+    `/unset` command.  Once the map is loaded, the value of `nextMap` is
+    erased automatically.
+
   * **/set planes [Loopy|Bomber|Explodet|Biplane|Miranda] [...]**<br>
     Specify that only the list of planes provided here are allowed on this
     map.  When players attempt to spawn with the wrong plane, they will
@@ -408,6 +418,18 @@ the server.
   * **/showPlayer [player]**<br>
     Print information on `player`
 
+  * **/showTeams**<br>
+    Print a list of teams and the players who are on them.
+
+  * **/chatLeft [message]**<br>
+    Send `message` to all members of the left team.
+
+  * **/chatRight [message]**<br>
+    Send `message` to all members of the right team.
+
+  * **/chatSpec [message]**<br>
+    Send `message` to all spectators.
+
   * **/shutdown**<br>
     Shutdown the Altitude game engine, then `alti+server` itself
 
@@ -522,6 +544,19 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     support of a positive gamming experience.  Setting this to
     0 disables the servers ability to protect players from this
     sort of harrasment.
+
+  * **infractions #**<br>
+    The number of infractions (defaults to `10`) before a player is kicked.
+    An infraction could be language related if the `bullyKick` option is
+    enabled, but there are also other infractions.  For example, continually
+    trying to join a game that you cannot join is an infraction b/c it is
+    seen as a way to try to break the server.  Spamming chat even after
+    a player is chat blocked is seen as overly aggressive behavior when
+    `bullyKick` is enabled, and so is also an infractions.  Normally,
+    infraction count is incremented by 1.  However, some infractions will
+    increase the count by more or less depending on their likelihood to
+    be the cause of normal behavior vs a willfull attempt to break the
+    system.  Each time the map changes 1 infraction is forgiven.
 
   * **debug [0|1]**<br>
     Enable debugging.  Statements in the code which call the debug

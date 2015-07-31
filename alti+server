@@ -26,6 +26,7 @@ my(%OPTIONS)=(
 	aceLevel		=> 3,               #Require level 3 for Ace 1-10 to play
 	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
 	bullyKick		=> 1,               #Kick repeated aggressive language
+	infractions	=> 10,			#10 infractions gets players kicked
 	debug		=> 0,			#Debug is on(1) or off(0)
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
@@ -396,6 +397,10 @@ delete($ENV{'COLUMNS'});
 			return('left');
 		} elsif($input == KEY_RIGHT) {
 			return('right');
+		} elsif($input == KEY_PPAGE) {
+			return('prev');
+		} elsif($input == KEY_NPAGE) {
+			return('next');
 		} elsif($input == KEY_BACKSPACE || $ord==127) {
 			return('bs');
 		} elsif($input eq "\025") {
@@ -566,10 +571,6 @@ list.
 			$Input=&hist_up;
 		} elsif($key eq 'down') {
 			$Input=&hist_down;
-		} elsif($key eq 'left') {
-			ui::slog('left');
-		} elsif($key eq 'right') {
-			ui::slog('right');
 		} elsif($key eq 'bs') {
 			$Input=~s/.$//;
 		} elsif($key eq 'clear') {
@@ -610,7 +611,7 @@ list.
 
 				$Input='';
 			} else {
-				server::msg($Input);
+				chat::all($Input);
 				$Input='';
 			}
 		} else {
@@ -1149,6 +1150,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 				'string',
 			];
 		$Commands{'showPlayer'}=['player'];
+		$Commands{'showTeams'}=undef;
+		$Commands{'chatLeft'}=['string'];
+		$Commands{'chatRight'}=['string'];
+		$Commands{'chatSpec'}=['string'];
 		$Commands{'shutdown'}=undef;
 
 		open($fh, '<', $Filtfile);
@@ -1372,9 +1377,9 @@ has occured.  After too many infractions, the player is kicked by the server.
 					$msg.=" <...>";
 				}
 			}
-			server::whisper($p, $msg);
+			chat::whisper($p, $msg);
 			foreach my $arg (@args) {
-				server::whisper($p, ' ', $arg);
+				chat::whisper($p, ' ', $arg);
 			}
 		}
 	}
@@ -1415,8 +1420,6 @@ directly with it to manage the instance.
 	my($Server_pid, $Tail_pid);
 
 	my($Cu, $Cs)=(0, 0);
-
-	my($Delay)=0;
 
 	our($Start)=time();
 
@@ -1551,82 +1554,16 @@ directly with it to manage the instance.
 		close($msg);
 	}
 
-	sub msg {
-		my($msg)=join(' ', @_);
-		&send('serverMessage', $msg);
-	}
-
-	sub whisper {
-		my($p)=shift;
-		my($msg)=join(' ', @_);
-
-		if($p->{'isBot'}) {
-			ui::slog('|', $msg);
-		} else {
-			ui::chat_log($p->{'nickname'}, 'server', $msg);
-			&send('serverWhisper', $p->{'nickname'}, $msg);
-		}
-	}
-
-	sub debug {
-		my($debug)=stash::get('debug', 'server');
-		my($msg);
-		
-		if($debug) {
-			foreach my $stmt (@_) {
-				if(ref($stmt)) {
-					if(ref($stmt) eq 'HASH' && exists($stmt->{'nickname'})) {
-						$msg.=$stmt->{'nickname'};
-					} else {
-						$msg.=json::encode($stmt);
-					}
-				} else {
-					$msg.=$stmt;
-				}
-				$msg.=' ';
-			}
-
-			foreach my $admin (player::admins()) {
-				&send('serverWhisper', $admin->{'nickname'}, $msg);
-			}
-
-			ui::chat_log('debug', 'server', $msg);
-
-		}
-	}
-
-	sub laud {
-		server::msg(@_) if(config::option('snarkChance')>0);
-	}
-
-	sub snark {
-		my($p)=shift;
-		my($time)=time();
-
-		return if($p->{'isBot'});
-
-		if( config::option('snarkChance')>0 && ($time-$p->{'snark'}) > 10) {
-			$p->{'snark'}=$time;
-			server::msg(@_);
-		}
-	}
-
-	sub snarky {
-		my($multiplier)=config::option('snarkChance');
-		my($time)=time();
-
-		return(0) unless($multiplier>0);
-		return(0) unless(int(rand($multiplier*player::count()))==0);
-		return(0) unless($time>$Delay);
-
-		$Delay=$time+3;
-		return(1);
-	}
-
 	sub trigger {
 		my($command, $key, @data)=@_;
 
 		&send($command);
+		push(@{$Trigger{$command}}, ["$command:$key", @data]);
+	}
+
+	sub override {
+		my($command, $key, @data)=@_;
+
 		push(@{$Trigger{$command}}, ["$command:$key", @data]);
 	}
 
@@ -1637,6 +1574,181 @@ directly with it to manage the instance.
 			return(shift(@{$Trigger{$command}}));
 		} else {
 			return();
+		}
+	}
+}
+
+=head1 Maps
+
+Altitude maps are the playing surfaces for each game.  Each one has
+different modes, characteristics, and design.  Beyond what is supported
+by default with Altitude, Alti+ maps can have additional characterstic
+types which alter the normal behavior.
+
+=cut
+
+{	package map;
+
+	my($Map)=undef;
+	my($Type)=undef;
+
+	my(%Teams)=(
+		2	=> 'spec',	'spec'	=> 2,
+		3	=> 'red',		'red'	=> 3,
+		4	=> 'blue',	'blue'	=> 4,
+		5	=> 'green',	'green'	=> 5,
+		6	=> 'yellow',	'yellow'	=> 6,
+		7	=> 'orange',	'orange'	=> 7,
+		8	=> 'purple',	'purple'	=> 8,
+		9	=> 'azure',	'azure'	=> 9,
+		10	=> 'pink',	'pink'	=> 10,
+		11	=> 'brown',	'brown'	=> 11,
+	);
+	my($Color_re)=join('|', grep(length>2, keys(%Teams)));
+
+	sub file {
+		return("$INSTALL_ROOT/maps/$Map->{'map'}.altx");
+	}
+
+	sub set_type {
+		local($_)=@_;
+
+		if(m/(^|_)flag(_|$)/) {
+			$Type='flag';
+		} elsif(m/(^|_)zone(_|$)/) {
+			$Type='zone';
+		} elsif(m/(^|_)race(_|$)/) {
+			$Type='race';
+		} elsif(m/(^|_)coop(_|$)/) {
+			$Type='coop';
+		} elsif(m/(^|_)mdg(_|$)/) {
+			$Type='mdg';
+		} else {
+			$Type='std';
+		}
+
+		return($Type);
+	}
+
+	sub type {
+		if(@_) {
+			return(grep(m/^$Type$/, @_)>0);
+		} else { 
+			return($Type);
+		}
+	}
+
+	sub new {
+		my($mapref)=@_;
+
+		$Map=$mapref;
+		&set_type($Map->{'map'});
+		$Map->{'idle'}=time();
+	}
+
+	sub start	{
+		return($Map->{'time'});
+	}
+
+	sub busy {
+		$Map->{'idle'}=time();
+	}
+
+	sub elapsed {
+		return(time()-$Map->{'idle'});
+	}
+
+	sub teams {
+		($Map->{'leftTeam'}, $Map->{'rightTeam'})=@_;
+	}
+
+	sub _value_or_query {
+		my($key)=shift;
+
+		if(@_) {
+			return(grep($Map->{$key} eq $_, @_)>0);
+		} else {
+			return($Map->{$key});
+		}
+	}
+
+	sub name		{ &_value_or_query('map', @_);		}
+	sub mode		{ &_value_or_query('mode', @_);		}
+
+	sub left		{
+		foreach(@_) {
+			return(1) if(m/^$Teams{$Map->{'leftTeam'}}$/i);
+			return(1) if(m/^(left|<|all|both|\*|0)$/i);
+		}
+		&_value_or_query('leftTeam', @_);
+	}
+
+	sub right		{
+		foreach(@_) {
+			return(1) if(m/^$Teams{$Map->{'rightTeam'}}$/i);
+			return(1) if(m/^(right|>|all|both|\*|1)$/i);
+		}
+		&_value_or_query('rightTeam', @_);
+	}
+
+	sub spec		{
+		if(@_) {
+			foreach(@_) {
+				return(1) if(m/^(spec.*|\^|all|\*|-1|$Teams{'spec'})$/i);
+			}
+			return(0);
+		} else {
+			return($Teams{'spec'});
+		}
+	}
+
+	sub team_color {
+		my($team)=@_;
+
+		if($team=~m/$Color_re/i) {
+			return($team);
+		} elsif(&left($team)) {
+			return($Teams{$Map->{'leftTeam'}});
+		} elsif(&right($team)) {
+			return($Teams{$Map->{'rightTeam'}});
+		} elsif(&spec($team)) {
+			return('spec');
+		} elsif($team=~m/^\d+$/) {
+			return($Teams{$team});
+		} else {
+			return('unknown');
+		}
+	}
+
+	sub team_number {
+		my($team)=@_;
+
+		if($team=~m/$Color_re/i) {
+			return($Teams{$team});
+		} elsif(&left($team)) {
+			return($Map->{'leftTeam'});
+		} elsif(&right($team)) {
+			return($Map->{'rightTeam'});
+		} elsif(&spec($team)) {
+			return(2);
+		} elsif($team=~m/^\d+$/) {
+			return($team);
+		} else {
+			return(undef);
+		}
+	}
+
+	sub team_symbol {
+		my($team)=@_;
+
+		if(&left($team)) {
+			return('<');
+		} elsif(&right($team)) {
+			return('>');
+		} elsif(&spec($team)) {
+			return('^');
+		} else {
+			return('?');
 		}
 	}
 }
@@ -1671,7 +1783,7 @@ is updated with them as the games progress.
 
 	sub add {
 		my($p)=@_;
-		my($sas)=config::option{'superAdmins'};
+		my($sas)=config::option('superAdmins');
 
 		$p->{'alive'}=1;
 
@@ -1746,9 +1858,10 @@ is updated with them as the games progress.
 
 	sub infraction {
 		my($p, $value)=@_;
+		my($count)=config::option('infractions');
 
 		$p->{'infractions'}+=$value;
-		if($p->{'infractions'}>10) {
+		if($p->{'infractions'}>$count) {
 			server::send('kick', $p->{'nickname'});
 			return(0);
 		} else {
@@ -1780,11 +1893,21 @@ is updated with them as the games progress.
 	}
 
 	sub list {
-		return(@Players);
+		my($filter)=@_;
+
+		if(map::left($filter)) {
+			return(grep(map::left($_), @Players));
+		} elsif(map::right($filter)) {
+			return(grep(map::right($_), @Players));
+		} elsif(map::spec($filter)) {
+			return(grep(map::spec($_), @Players));
+		} else {
+			return(@Players);
+		}
 	}
 
 	sub count {
-		return(scalar(@Players));
+		return(scalar(&list(@_)));
 	}
 
 	sub values {
@@ -1799,6 +1922,109 @@ is updated with them as the games progress.
 
 }
 
+=head2 Server to Player communication
+
+The server will periodically communicate with users about settings, events,
+and enhanced game related features.  Communication can be to all users,
+teams, or to individual users.  The communication can also be for
+debugging or to make funny comments.
+
+=cut
+
+{	package chat;
+
+	my($Delay)=0;
+
+	sub all {
+		my($msg)=join(' ', @_);
+		server::send('serverMessage', $msg);
+	}
+
+	sub team {
+		my($team)=shift;
+		my($msg)=join(' ', @_);
+		my($any)=0;
+
+		if(ref($team) eq 'HASH' && exists($team->{'team'})) {
+			$team=$team->{'team'};
+		}
+
+		foreach my $player (player::list($team)) {
+			server::send('serverWhisper', $player->{'nickname'}, $msg);
+			$any=1;
+		}
+
+		ui::chat_log(map::team_symbol($team), 'server', $msg) if($any);
+	}
+
+	sub whisper {
+		my($p)=shift;
+		my($msg)=join(' ', @_);
+
+		if($p->{'isBot'}) {
+			ui::slog('|', $msg);
+		} else {
+			ui::chat_log($p->{'nickname'}, 'server', $msg);
+			server::send('serverWhisper', $p->{'nickname'}, $msg);
+		}
+	}
+
+	sub debug {
+		my($debug)=stash::get('debug', 'server');
+		my($msg);
+		
+		if($debug) {
+			foreach my $stmt (@_) {
+				if(ref($stmt)) {
+					if(ref($stmt) eq 'HASH' && exists($stmt->{'nickname'})) {
+						$msg.=$stmt->{'nickname'};
+					} else {
+						$msg.=json::encode($stmt);
+					}
+				} else {
+					$msg.=$stmt;
+				}
+				$msg.=' ';
+			}
+
+			foreach my $admin (player::admins) {
+				server::send('serverWhisper', $admin->{'nickname'}, $msg);
+			}
+
+			ui::chat_log('debug', 'server', $msg);
+
+		}
+	}
+
+	sub laud {
+		&all(@_) if(config::option('snarkChance')>0);
+	}
+
+	sub snark {
+		my($p)=shift;
+		my($time)=time();
+
+		return if($p->{'isBot'});
+
+		if( config::option('snarkChance')>0 && $time>$p->{'snarkGrace'} ) {
+			$p->{'snarkGrace'}=$time+10;
+			&all(@_);
+		}
+	}
+
+	sub snarky {
+		my($multiplier)=config::option('snarkChance');
+		my($time)=time();
+
+		return(0) unless($multiplier>0);
+		return(0) unless(int(rand($multiplier*player::count))==0);
+		return(0) unless($time>$Delay);
+
+		$Delay=$time+3;
+		return(1);
+	}
+}
+
 =head2 Altitued Plus Games
 
 An alti+ game requires a lot of extra management.  The B<alti+server> wrapper
@@ -1811,83 +2037,28 @@ play though extended interfaces and server support.
 
 {	package game;
 
-	my($Map)=undef;
-	my($Type)=undef;
 	my(@Score)=(0, 0);
 	my(%Stats)=();
+	my($Hunted)=undef;
 
-	my(%Teams)=(
-		2	=> 'spec',	'spec'	=> 2,
-		3	=> 'red',		'red'	=> 3,
-		4	=> 'blue',	'blue'	=> 4,
-		5	=> 'green',	'green'	=> 5,
-		6	=> 'yellow',	'yellow'	=> 6,
-		7	=> 'orange',	'orange'	=> 7,
-		8	=> 'purple',	'purple'	=> 8,
-		9	=> 'azure',	'azure'	=> 9,
-		10	=> 'pink',	'pink'	=> 10,
-		11	=> 'brown',	'brown'	=> 11,
-	);
-	my($Color_re)=join('|', grep(length>2, keys(%Teams)));
-
-	sub set_type {
-		local($_)=@_;
-
-		if(m/(^|_)flag(_|$)/) {
-			$Type='flag';
-		} elsif(m/(^|_)zone(_|$)/) {
-			$Type='zone';
-		} elsif(m/(^|_)race(_|$)/) {
-			$Type='race';
-		} elsif(m/(^|_)coop(_|$)/) {
-			$Type='coop';
-		} elsif(m/(^|_)mdg(_|$)/) {
-			$Type='mdg';
-		} else {
-			$Type='std';
-		}
-
-		return($Type);
-	}
-
-	sub type {
-		if(@_) {
-			return(grep(m/^$Type$/, @_)>0);
-		} else { 
-			return($Type);
-		}
-	}
-
-	sub new_map {
-		my($mapref)=@_;
-
-		$Map=$mapref;
-		&set_type($Map->{'map'});
-		$Map->{'idle'}=time();
-
+	sub new {
+		@Score=(0, 0);
 		%Stats=();
+		$Hunted=undef;
 
 		foreach my $player (player::list) {
 			delete($player->{'team'});
 		}
 	}
 
-	sub busy {
-		$Map->{'idle'}=time();
-	}
-
-	sub elapsed {
-		return(time()-$Map->{'idle'});
-	}
-
-	sub teams {
-		my($left, $right)=@_;
-		($Map->{'leftTeam'}, $Map->{'rightTeam'})=($left, $right);
+	sub round {
+		@Score=(0, 0);		#Can ball have multiple rounds?
+		#$Hunted=undef;	#Should hunted change per round?
 	}
 
 	sub enter {
 		my($p)=@_;
-		my($max)=stash::get('maxPlayers', game::mapname()) || $config::Maxp;
+		my($max)=stash::get('maxPlayers', map::name) || $config::Maxp;
 
 		if($Stats{'players'}{'playing'}{$p}) {
 			return(1);
@@ -1920,91 +2091,21 @@ play though extended interfaces and server support.
 		}
 	}
 
-	sub _value_or_query {
-		my($key)=shift;
-
+	sub hunted {
 		if(@_) {
-			return(grep($Map->{$key} eq $_, @_)>0);
+			return($_[0] eq $Hunted);
 		} else {
-			return($Map->{$key});
+			return($Hunted);
 		}
 	}
 
-	sub mapname	{ &_value_or_query('map', @_);		}
-	sub mode		{ &_value_or_query('mode', @_);		}
-
-	sub left		{
-		foreach(@_) {
-			return(1) if(m/^$Teams{$Map->{'leftTeam'}}$/i);
-			return(1) if(m/^(left|<|all|both|\*|0)$/i);
-		}
-		&_value_or_query('leftTeam', @_);
-	}
-
-	sub right		{
-		foreach(@_) {
-			return(1) if(m/^$Teams{$Map->{'rightTeam'}}$/i);
-			return(1) if(m/^(right|>|all|both|\*|1)$/i);
-		}
-		&_value_or_query('rightTeam', @_);
-	}
-
-	sub spec		{
-		if(@_) {
-			foreach my $team (@_) {
-				return(0) unless($team==$Teams{'spec'} || $team==-1);
-			}
-			return(1);
-		} else {
-			return($Teams{'spec'});
-		}
-	}
-
-	sub team_color {
-		my($team)=@_;
-
-		if($team=~m/$Color_re/i) {
-			return($team);
-		} elsif(&left($team)) {
-			return($Teams{$Map->{'leftTeam'}});
-		} elsif(&right($team)) {
-			return($Teams{$Map->{'rightTeam'}});
-		} elsif(&spec($team)) {
-			return('spec');
-		} elsif($team=~m/^\d+$/) {
-			return($Teams{$team});
-		} else {
-			return('unknown');
-		}
-	}
-
-	sub team_number {
-		my($team)=@_;
-
-		if($team=~m/$Color_re/i) {
-			return($Teams{$team});
-		} elsif(&left($team)) {
-			return($Map->{'leftTeam'});
-		} elsif(&right($team)) {
-			return($Map->{'rightTeam'});
-		} elsif(&spec($team)) {
-			return(2);
-		} elsif($team=~m/^\d+$/) {
-			return($team);
-		} else {
-			return(undef);
-		}
-	}
-
-	sub hunted	{ &_value_or_query('hunted', @_);		}
-
-	sub prey		{
+	sub prey {
 		my($p)=@_;
 
-		if($Map->{'hunted'}==$p) {
+		if($Hunted==$p) {
 			return(1);
-		} elsif(!$Map->{'hunted'} || !$Map->{'hunted'}{'alive'}) {
-			$Map->{'hunted'}=$p;
+		} elsif(!$Hunted || !$Hunted->{'alive'}) {
+			$Hunted=$p;
 			return(1);
 		} else {
 			return(0);
@@ -2014,15 +2115,7 @@ play though extended interfaces and server support.
 	sub cower {
 		my($p)=@_;
 
-		$Map->{'hunted'}=undef;
-	}
-
-	sub start	{
-		return($Map->{'time'});
-	}
-
-	sub mapfile {
-		return("$INSTALL_ROOT/maps/$Map->{'map'}.altx");
+		$Hunted=undef;
 	}
 
 	sub update_score {
@@ -2030,9 +2123,9 @@ play though extended interfaces and server support.
 
 		if(@_==2) {
 			@Score=@_;
-		} elsif(&left($team)) {
+		} elsif(map::left($team)) {
 			$Score[0]++;
-		} elsif(&right($team)) {
+		} elsif(map::right($team)) {
 			$Score[1]++;
 		}
 	}
@@ -2044,7 +2137,7 @@ play though extended interfaces and server support.
 	sub score {
 		my($p)=@_;
 
-		&update_score(&left($p->{'team'})?'left':'right');
+		&update_score(map::left($p->{'team'})?'left':'right');
 		&set_score(@Score);
 	}
 
@@ -2108,8 +2201,8 @@ play though extended interfaces and server support.
 
 	sub spawn_near {
 		my($p, $x, $y)=@_;
-		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname);
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($zones)=stash::get($p->{'team'}, 'zones', map::name);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 		my($near, $delta, $try)=('far', 2**20, 0);
 
 		if($spawn_mode eq 'near' && ref($zones) eq 'HASH' && %$zones) {
@@ -2130,11 +2223,11 @@ play though extended interfaces and server support.
 	sub bench {
 		my($p)=@_;
 
-		if(game::mode('ffa')) {
-			server::whisper($p, 'Players cannot be forced to respawn in FFA');
-		} elsif(game::left($p->{'team'})) {
+		if(map::mode('ffa')) {
+			chat::whisper($p, 'Players cannot be forced to respawn in FFA');
+		} elsif(map::left($p->{'team'})) {
 			server::send('assignTeam', $p->{'nickname'}, 0);
-		} elsif(game::right($p->{'team'})) {
+		} elsif(map::right($p->{'team'})) {
 			server::send('assignTeam', $p->{'nickname'}, 1);
 		} else {
 			server::send('assignTeam', $p->{'nickname'}, -1);
@@ -2157,15 +2250,15 @@ play though extended interfaces and server support.
 	sub capture {
 		my($e, $p)=@_;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
-		my($flag)=stash::get($pickup, $p->{'team'}, 'powerups', $Map->{'map'});
+		my($flag)=stash::get($pickup, $p->{'team'}, 'powerups', map::name);
 
 		if($flag && no_repeats($e, $p)) {
-			unless(game::mode('ffa')) {
+			unless(map::mode('ffa')) {
 				foreach my $player (player::list) {
 					game::bench($player);
 				}
 			}
-			server::msg($p->{'nickname'}, 'captured the flag!');
+			chat::all($p->{'nickname'}, 'captured the flag!');
 			$p->{'stats'}{'capture'}++;
 			game::score($p);
 		}
@@ -2174,7 +2267,7 @@ play though extended interfaces and server support.
 	sub checkpoint {
 		my($e, $p)=@_;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
-		my($checkpoints)=stash::get($p->{'team'}, 'powerups', $Map->{'map'});
+		my($checkpoints)=stash::get($p->{'team'}, 'powerups', map::name);
 		my($cp)=$checkpoints->{$pickup};
 		my($teamstats, $t_all, $t_lap, $p_all, $p_lap);
 
@@ -2204,7 +2297,7 @@ play though extended interfaces and server support.
 
 		if(&no_repeats($e, $p) && $p_lap==$t_lap &&
 		  ($teamstats->{$cp}<$t_lap || $t_all==$t_lap)) {
-			server::msg($p->{'nickname'}, 'reached checkpoint', $cp);
+			chat::all($p->{'nickname'}, 'reached checkpoint', $cp);
 			game::score($p);
 			$teamstats->{$cp}++;
 			$p->{'stats'}{'checkpoint'}++;
@@ -2219,14 +2312,14 @@ play though extended interfaces and server support.
 
 	sub knock {
 		my($e, $p)=@_;
-		my($door)=stash::get('door', game::mapname);
+		my($door)=stash::get('door', map::name);
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($keys, $color);
 
 		if($door->{'doors'}{$pickup} && &no_repeats($e, $p)) {
 			unless(&door_open($p->{'team'}, $door->{'doors'}{$pickup})) {
 				game::bench($p);
-				server::whisper($p, $door->{'doors'}{$pickup}, 'is locked');
+				chat::whisper($p, $door->{'doors'}{$pickup}, 'is locked');
 			}
 
 			return(1);
@@ -2238,12 +2331,12 @@ play though extended interfaces and server support.
 			if($Stats{$p->{'team'}}{'key'}{$pickup}) {
 				return(0);
 			} else {
-				server::whisper($p, 'Found a key to door:', $door->{'keys'}{$pickup});
+				chat::team($p, $p->{'nickname'}, 'found a key to door:', $door->{'keys'}{$pickup});
 				$Stats{$p->{'team'}}{'key'}{$pickup}=1;
 				$p->{'stats'}{'keys'}++;
 			}
 
-			$keys=utils::invert(stash::get('keys', 'door', game::mapname));
+			$keys=utils::invert(stash::get('keys', 'door', map::name));
 
 			foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
 				unless($Stats{$p->{'team'}}{'key'}{$key}) {
@@ -2253,15 +2346,7 @@ play though extended interfaces and server support.
 
 			$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
 
-			if(game::left($p->{'team'})) {
-				$color=game::team_color('left');
-				server::msg("Left ($color) team unlocked door:",
-					$door->{'keys'}{$pickup});
-			} elsif(game::right($p->{'team'})) {
-				$color=game::team_color('right');
-				server::msg("Right ($color) team unlocked door:",
-					$door->{'keys'}{$pickup});
-			}
+			chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
 		}
 
 		return(0);
@@ -2269,12 +2354,12 @@ play though extended interfaces and server support.
 
 	sub divert {
 		my($e, $p)=@_;
-		my($divs)=stash::get('diverters', game::mapname);
+		my($divs)=stash::get('diverters', map::name);
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 
 		if($divs->{$pickup}) {
 			if($Stats{'diverters'}{$pickup}) {
-				server::whisper($p, 'Wrong diverter');
+				chat::whisper($p, 'Wrong diverter');
 				game::bench($p);
 			} else {
 				$Stats{'diverters'}{$pickup}=1;
@@ -2285,13 +2370,16 @@ play though extended interfaces and server support.
 
 	sub teleport {
 		my($e, $p)=@_;
-		my($portals)=stash::get('portals', game::mapname);
+		my($portals)=stash::get('portals', map::name);
 		my($px, $py)=($e->{'positionX'}, $e->{'positionY'});
+		my($name, $portal);
 
-		foreach my $portal (values(%$portals)) {
+		while( ($name, $portal)=each(%$portals) ) {
 			if($px==$portal->[0] && $py==$portal->[1]) {
 				game::bench($p);
 				game::spawn_here($p, @$portal[2,3,4]);
+
+				chat::whisper($p, 'Teleporting you to:', $name);
 				last;
 			}
 		}
@@ -2318,7 +2406,7 @@ play though extended interfaces and server support.
 
 		if($stats->[$most]>0) {
 			$p=player::lookup($players->[$most]);
-			server::msg($text, $p->{'nickname'}) unless($p->{'isBot'});
+			chat::all($text, $p->{'nickname'}) unless($p->{'isBot'});
 		}
 	}
 }
@@ -2700,7 +2788,7 @@ core protecting the flag.
 		my(@params);
 
 		unless($e->{'admin'}) {
-			server::whisper($p, 'You are not an admin');
+			chat::whisper($p, 'You are not an admin');
 			return;
 		}
 
@@ -2709,7 +2797,7 @@ core protecting the flag.
 			$e->{'arguments'}=[];
 			@params=config::arguments($e->{'command'});
 		} else {
-			server::whisper($p, 'Empty command ignored');
+			chat::whisper($p, 'Empty command ignored');
 			return;
 		}
 
@@ -2720,7 +2808,7 @@ core protecting the flag.
 				$e->{'arguments'}[-1]=~s/"$//;
 				shift(@params);
 			} else {
-				server::whisper($p, 'Missing arguments:', $e->{'command'});
+				chat::whisper($p, 'Missing arguments:', $e->{'command'});
 				return;
 			}
 		}
@@ -2729,7 +2817,7 @@ core protecting the flag.
 		if(exists($HOOKS{$e->{'command'}})) {
 			$HOOKS{$e->{'command'}}->($e, $p);
 		} else {
-			server::whisper($p, 'Invalid command:', $e->{'command'});
+			chat::whisper($p, 'Invalid command:', $e->{'command'});
 		}
 	},
 
@@ -2740,7 +2828,7 @@ core protecting the flag.
 		if(exists($HOOKS{"help $type"})) {
 			$HOOKS{"help $type"}->($e, $p);
 			if(config::commands('!')) {
-				server::whisper($p, 'Admin commands use `/! cmd ...` syntax');
+				chat::whisper($p, 'Admin commands use `/! cmd ...` syntax');
 			}
 		} else {
 			config::command_help($p, 'help');
@@ -2839,7 +2927,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		server::send('assignTeam', $p->{'nickname'}, -1);
-		server::whisper($p, 'Spectating, press `t` to join a team');
+		chat::whisper($p, 'Spectating, press `t` to join a team');
 	},
 
 	'mesg'	=> sub {
@@ -2848,15 +2936,15 @@ core protecting the flag.
 
 		if(m/y(es)?/i) {
 			stash::delete('block', $p->{'nickname'});
-			server::whisper($p, "Private on-server messaging enabled");
+			chat::whisper($p, "Private on-server messaging enabled");
 		} elsif(m/no?/i) {
 			stash::set('block', $p->{'nickname'}, 1);
-			server::whisper($p, "Private on-server messaging disabled");
+			chat::whisper($p, "Private on-server messaging disabled");
 		} else {
 			if(stash::get('block', $p->{'nickname'})) {
-				server::whisper($p, "Private on-server messaging disabled");
+				chat::whisper($p, "Private on-server messaging disabled");
 			} else {
-				server::whisper($p, "Private on-server messaging enabled");
+				chat::whisper($p, "Private on-server messaging enabled");
 			}
 		}
 	},
@@ -2890,24 +2978,24 @@ core protecting the flag.
 		my($msg)=join(' ', @{$e->{'arguments'}});
 
 		if(config::language($msg)) {
-			server::whisper($p, "message not sent");
-			server::whisper($p, 'language(', player::infraction($p, 1), ')');
+			chat::whisper($p, "message not sent");
+			chat::whisper($p, 'language(', player::infraction($p, 1), ')');
 		} elsif($p->{'nickname'} eq 'server') {
-			server::whisper($to, $msg);
+			chat::whisper($to, $msg);
 		} elsif(!stash::get('block', $to->{'nickname'})) {
 			ui::chat_log($to->{'nickname'}, $p->{'nickname'}, $msg);
 			server::send('serverWhisper', $to->{'nickname'}, "$p->{'nickname'}> $msg");
 		} else {
-			server::whisper($p, "private messaging is disabled for $to->{'nickname'}");
+			chat::whisper($p, "private messaging is disabled for $to->{'nickname'}");
 		}
 		
 	},
 
 	'help altitudegame'	=> sub {
 		my($e, $p)=@_;
-		server::whisper($p, '/upload altitudegame <map>');
-		server::whisper($p, ' map: name is exactly as it appears on the website');
-		server::whisper($p, ' Upload maps FROM http://altitudegame.com/map/');
+		chat::whisper($p, '/upload altitudegame <map>');
+		chat::whisper($p, ' map: name is exactly as it appears on the website');
+		chat::whisper($p, ' Upload maps FROM http://altitudegame.com/map/');
 	},
 
 	'upload altitudegame'	=> sub {
@@ -2920,7 +3008,7 @@ core protecting the flag.
 		$name=~s|\s+|_|g;
 
 		unless(file::name_ok($name)) {
-			server::whisper($p, "map name $name does not follow standard");
+			chat::whisper($p, "map name $name does not follow standard");
 			return(0);
 		}
 
@@ -2934,32 +3022,32 @@ core protecting the flag.
 		if(file::altigame_download($file, $name)) {
 			if(-s $file > config::option('ulSizeLimit')) {
 				unlink($file);
-				server::whisper($p, "$mapname too big");
+				chat::whisper($p, "$mapname too big");
 			} elsif(file::type($file)!~m/LZMA compressed data/) {
 				unlink($file);
-				server::whisper($p, "$mapname is not the right type");
-				server::whisper($p, "maybe redirect failure, or a javascript enabled download");
+				chat::whisper($p, "$mapname is not the right type");
+				chat::whisper($p, "maybe redirect failure, or a javascript enabled download");
 			} else {
 				if(config::new_maps($mapname)) {
-					server::whisper($p,
+					chat::whisper($p,
 						"Map added to config, you must /restartServer");
 
 					if($mapconfig=stash::retrieve($mapname)) {
 						stash::set($mapname, $mapconfig);
 					}
 				}
-				server::msg("$mapname updated");
+				chat::all("$mapname updated");
 			}
 		} else {
-			server::whisper($p, "Could not download $name from altitudegame.com/map/");
+			chat::whisper($p, "Could not download $name from altitudegame.com/map/");
 		}
 	},
 
 	'help ladder'	=> sub {
 		my($e, $p)=@_;
-		server::whisper($p, '/upload ladder <map>');
-		server::whisper($p, ' map: name is exactly as it when running in ladder');
-		server::whisper($p, ' Upload maps FROM http://altituderank.com/mapdownloads/');
+		chat::whisper($p, '/upload ladder <map>');
+		chat::whisper($p, ' map: name is exactly as it when running in ladder');
+		chat::whisper($p, ' Upload maps FROM http://altituderank.com/mapdownloads/');
 	},
 
 	'upload ladder'	=> sub {
@@ -2973,7 +3061,7 @@ core protecting the flag.
 		$name=~s|\s+|_|g;
 
 		unless(file::name_ok($name)) {
-			server::whisper($p, "map name $name does not follow standard");
+			chat::whisper($p, "map name $name does not follow standard");
 			return(0);
 		}
 
@@ -2988,28 +3076,28 @@ core protecting the flag.
 
 		if(-s $file < 1024) {
 			unlink($file);
-			server::whisper($p, "Could not find $name on altituderank.com/mapdownloads/");
+			chat::whisper($p, "Could not find $name on altituderank.com/mapdownloads/");
 		} elsif(-s $file > config::option('ulSizeLimit')) {
 			unlink($file);
-			server::whisper($p, "$mapname too big");
+			chat::whisper($p, "$mapname too big");
 		} elsif(file::type($file)!~m/LZMA compressed data/) {
 			unlink($file);
-			server::whisper($p, "$mapname is not the right type");
-			server::whisper($p, "maybe redirect failure, or a javascript enabled download");
+			chat::whisper($p, "$mapname is not the right type");
+			chat::whisper($p, "maybe redirect failure, or a javascript enabled download");
 		} else {
 			if(config::new_maps($mapname)) {
-				server::whisper($p,
+				chat::whisper($p,
 					"Map added to config, you must /restartServer");
 			}
-			server::msg("$mapname updated");
+			chat::all("$mapname updated");
 		}
 	},
 
 	'help tinyupload'		=> sub {
 		my($e, $p)=@_;
-		server::whisper($p, '/upload tinyupload <key>');
-		server::whisper($p, ' key: 20 digit file_id decimal key');
-		server::whisper($p, ' You only need to enter key after "file_id"');
+		chat::whisper($p, '/upload tinyupload <key>');
+		chat::whisper($p, ' key: 20 digit file_id decimal key');
+		chat::whisper($p, ' You only need to enter key after "file_id"');
 	},
 
 	'upload tinyupload'		=> sub {
@@ -3042,28 +3130,28 @@ core protecting the flag.
 		if($name) {
 			if(-s $file > config::option('ulSizeLimit')) {
 				unlink($file);
-				server::whisper($p, "$mapname too big");
+				chat::whisper($p, "$mapname too big");
 			} elsif(file::type($file)!~m/LZMA compressed data/) {
 				unlink($file);
-				server::whisper($p, "$mapname is not the right type");
-				server::whisper($p, "maybe redirect failure, or a javascript enabled download");
+				chat::whisper($p, "$mapname is not the right type");
+				chat::whisper($p, "maybe redirect failure, or a javascript enabled download");
 			} else {
 				if(config::new_maps($mapname)) {
-					server::whisper($p,
+					chat::whisper($p,
 						"Map added to config, you must /restartServer");
 				}
-				server::msg("$mapname updated");
+				chat::all("$mapname updated");
 			}
 		} else {
-			server::whisper($p, "Could not download $name from tinyupload.com");
+			chat::whisper($p, "Could not download $name from tinyupload.com");
 		}
 	},
 
 	'help url'		=> sub {
 		my($e, $p)=@_;
-		server::whisper($p, '/upload url <map> <url>');
-		server::whisper($p, ' map: name exactly as you want it to appear in the game');
-		server::whisper($p, ' url: the full URL (incld http://) of the map. Javascript enabled downloads do not work.');
+		chat::whisper($p, '/upload url <map> <url>');
+		chat::whisper($p, ' map: name exactly as you want it to appear in the game');
+		chat::whisper($p, ' url: the full URL (incld http://) of the map. Javascript enabled downloads do not work.');
 	},
 
 	'upload url'		=> sub {
@@ -3089,17 +3177,17 @@ core protecting the flag.
 
 		if(-s $file > config::option('ulSizeLimit')) {
 			unlink($file);
-			server::whisper($p, "$mapname too big");
+			chat::whisper($p, "$mapname too big");
 		} elsif(file::type($file)!~m/LZMA compressed data/) {
 			unlink($file);
-			server::whisper($p, "$mapname is not the right type");
-			server::whisper($p, "maybe redirect failure, or a javascript enabled download");
+			chat::whisper($p, "$mapname is not the right type");
+			chat::whisper($p, "maybe redirect failure, or a javascript enabled download");
 		} else {
 			if(config::new_maps($mapname)) {
-				server::whisper($p,
+				chat::whisper($p,
 					"Map added to config, you must /restartServer");
 			}
-			server::msg("$mapname updated");
+			chat::all("$mapname updated");
 		}
 	},
 
@@ -3127,7 +3215,7 @@ core protecting the flag.
 		$file="$maps/$mapname.altx";
 
 		if(-r $file) {
-			if(game::mapname($mapname)) {
+			if(map::name($mapname)) {
 				server::send('changeMap', config::random_map)
 			}
 
@@ -3138,17 +3226,17 @@ core protecting the flag.
 			#Should we be cleaning up the cache and server-unpacked-maps.xml?
 
 			if(config::remove_maps($mapname)) {
-				server::whisper($p,
+				chat::whisper($p,
 					"Map removed from config, you must /restartServer");
 			}
-			server::msg("$mapname deleted");
+			chat::all("$mapname deleted");
 		}
 	},
 
 	'help map'	=> sub {
 		my($e, $p)=@_;
-		server::whisper($p, '/list map');
-		server::whisper($p, 'List the name and settings for the current map');
+		chat::whisper($p, '/list map');
+		chat::whisper($p, 'List the name and settings for the current map');
 	},
 
 	'list map'	=> sub {
@@ -3168,7 +3256,7 @@ core protecting the flag.
 			intro
 		);
 
-		server::whisper($p, 'Name:', game::mapname);
+		chat::whisper($p, 'Name:', map::name);
 
 		foreach my $setting (@settings) {
 			$HOOKS{"list $setting"}->($e, $p)
@@ -3176,12 +3264,66 @@ core protecting the flag.
 		}
 	},
 
+	'help nextMap'	=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, '/list nextMap');
+		chat::whisper($p, '/nextMap');
+		chat::whisper($p, '/set nextMap <map>');
+		chat::whisper($p, '/unset nextMap');
+		chat::whisper($p, 'Overrride map votes and default nextMap with <map>');
+	},
+
+	'list nextMap'	=> sub {
+		my($e, $p)=@_;
+		my($force)=stash::get('nextMap', 'admin');
+
+		if($force) {
+			chat::whisper($p, 'Next map is', $force);
+		} else {
+			chat::whisper($p, 'Run /nextMap to see next map');
+		}
+	},
+
+	'nextMap'	=> sub {
+		my($e, $p)=@_;
+		my($force)=stash::get('nextMap', 'admin');
+
+		chat::whisper($p, 'Next map override is', $force) if($force);
+	},
+
+	'set nextMap'	=> sub {
+		my($e, $p, $force)=@_;
+
+		stash::set('nextMap', 'admin', $force);
+		chat::whisper($p, 'Next map is now', $force);
+	},
+
+	'unset nextMap'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('nextMap', 'admin');
+		chat::whisper($p, 'Next map is now left to server');
+	},
+
 	'mapLoading'	=> sub {
 		my($e, $p)=@_;
 		my($map)="$INSTALL_ROOT/maps/$MAPDIR/$e->{'map'}";
+		my($force)=stash::get('nextMap', 'admin');
 
-		file::update_ctime($map);
-		game::busy;
+
+		if($force) {
+			server::send('changeMap', $force) unless($e->{'map'} eq $force);
+			stash::delete('nextMap', 'admin');
+			server::override('mapChange', 'skip');
+		} else {
+			file::update_ctime($map);
+			map::busy;
+		}
+	},
+
+	'mapChange:skip'		=> sub {
+		1; #Skip, this map won't last long
 	},
 
 	'mapChange'	=> sub {
@@ -3200,7 +3342,8 @@ core protecting the flag.
 			gameType
 		);
 
-		game::new_map($e);
+		map::new($e);
+		game::new;
 
 		foreach my $player (player::list) {
 			$player->{'stats'}={};
@@ -3212,28 +3355,28 @@ core protecting the flag.
 				if(exists($HOOKS{"enable $setting"}));
 		}
 
-		server::msg('Server configured for map:', $e->{'map'});
+		chat::all('Server configured for map:', $e->{'map'});
 	},
 
 	'help gravity'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, '/list gravity');
-		server::whisper($p, '/set gravity <0|1|2|3>');
-		server::whisper($p, '/unset gravity');
-		server::whisper($p, '0=default, 1=disable planes/weapons, 2=disable ball, 3=none');
+		chat::whisper($p, '/list gravity');
+		chat::whisper($p, '/set gravity <0|1|2|3>');
+		chat::whisper($p, '/unset gravity');
+		chat::whisper($p, '0=default, 1=disable planes/weapons, 2=disable ball, 3=none');
 	},
 
 	'list gravity'	=> sub {
 		my($e, $p)=@_;
-		my($gravity)=stash::get('gravity', game::mapname);
+		my($gravity)=stash::get('gravity', map::name);
 
-		server::whisper($p, 'gravity:', $gravity || 'default');
+		chat::whisper($p, 'gravity:', $gravity || 'default');
 	},
 
 	'enable gravity'	=> sub {
 		my($e, $p)=@_;
-		my($gravity)=stash::get('gravity', game::mapname);
+		my($gravity)=stash::get('gravity', map::name);
 
 		if(defined($gravity)) {
 			server::send('testGravityMode', $gravity);
@@ -3246,45 +3389,45 @@ core protecting the flag.
 		my($e, $p, $grav)=@_;
 
 		if($grav==0) {
-			stash::delete('gravity', game::mapname);
-			server::msg('Returning gravity to normal');
+			stash::delete('gravity', map::name);
+			chat::all('Returning gravity to normal');
 			server::send('testGravityMode', 0);
 		} elsif($grav<=3) {
-			stash::set('gravity', game::mapname, $grav);
+			stash::set('gravity', map::name, $grav);
 			server::send('testGravityMode', $grav);
 		} else {
-			server::whisper($p, "Invalid gravity value: $grav");
+			chat::whisper($p, "Invalid gravity value: $grav");
 		}
 	},
 
 	'unset gravity'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('gravity', game::mapname);
+		stash::delete('gravity', map::name);
 		server::send('testGravityMode', 0);
 
-		server::msg('Returning gravity to normal');
+		chat::all('Returning gravity to normal');
 	},
 
 	'help weapons'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, '/list weapons');
-		server::whisper($p, '/set weapons <0|1|2|3>');
-		server::whisper($p, '/unset weapons');
-		server::whisper($p, '0=default, 1=disable primary, 2=disable secondary, 3=no weapons');
+		chat::whisper($p, '/list weapons');
+		chat::whisper($p, '/set weapons <0|1|2|3>');
+		chat::whisper($p, '/unset weapons');
+		chat::whisper($p, '0=default, 1=disable primary, 2=disable secondary, 3=no weapons');
 	},
 
 	'list weapons'	=> sub {
 		my($e, $p)=@_;
-		my($weapons)=stash::get('weapons', game::mapname);
+		my($weapons)=stash::get('weapons', map::name);
 
-		server::whisper($p, 'weapons:', $weapons || 'default');
+		chat::whisper($p, 'weapons:', $weapons || 'default');
 	},
 
 	'enable weapons'	=> sub {
 		my($e, $p)=@_;
-		my($weapons)=stash::get('weapons', game::mapname);
+		my($weapons)=stash::get('weapons', map::name);
 
 		if(defined($weapons)) {
 			server::send('testDisableWeaponMode', $weapons);
@@ -3297,45 +3440,45 @@ core protecting the flag.
 		my($e, $p, $weapons)=@_;
 
 		if($weapons==0) {
-			stash::delete('weapons', game::mapname);
-			server::msg('Returning weapons to normal');
+			stash::delete('weapons', map::name);
+			chat::all('Returning weapons to normal');
 			server::send('testDisableWeaponMode', 0);
 		} elsif($weapons<=3) {
-			stash::set('weapons', game::mapname, $weapons);
+			stash::set('weapons', map::name, $weapons);
 			server::send('testDisableWeaponMode', $weapons);
 		} else {
-			server::whisper($p, "Invalid weapons value: $weapons");
+			chat::whisper($p, "Invalid weapons value: $weapons");
 		}
 	},
 
 	'unset weapons'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('weapons', game::mapname);
+		stash::delete('weapons', map::name);
 		server::send('testDisableWeaponMode', 0);
 
-		server::msg('Returning weapons to normal');
+		chat::all('Returning weapons to normal');
 	},
 
 	'help spawnHealth'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, '/list spawnHealth');
-		server::whisper($p, '/set spawnHealth <1-999>');
-		server::whisper($p, '/unset spawnHealth');
-		server::whisper($p, '50=half normal health, 200=double normal health');
+		chat::whisper($p, '/list spawnHealth');
+		chat::whisper($p, '/set spawnHealth <1-999>');
+		chat::whisper($p, '/unset spawnHealth');
+		chat::whisper($p, '50=half normal health, 200=double normal health');
 	},
 
 	'list spawnHealth'	=> sub {
 		my($e, $p)=@_;
-		my($health)=stash::get('spawnHealth', game::mapname);
+		my($health)=stash::get('spawnHealth', map::name);
 
-		server::whisper($p, 'spawnHealth:', $health || 'default');
+		chat::whisper($p, 'spawnHealth:', $health || 'default');
 	},
 
 	'enable spawnHealth'	=> sub {
 		my($e, $p)=@_;
-		my($health)=stash::get('spawnHealth', game::mapname);
+		my($health)=stash::get('spawnHealth', map::name);
 
 		if(defined($health)) {
 			server::send('testHealthModifier', $health);
@@ -3348,45 +3491,45 @@ core protecting the flag.
 		my($e, $p, $health)=@_;
 
 		if($health==100) {
-			stash::delete('spawnHealth', game::mapname);
-			server::msg('Returning spawnHealth to normal');
+			stash::delete('spawnHealth', map::name);
+			chat::all('Returning spawnHealth to normal');
 			server::send('testHealthModifier', 100);
 		} elsif(0<$health && $health<1000) {
-			stash::set('spawnHealth', game::mapname, $health);
+			stash::set('spawnHealth', map::name, $health);
 			server::send('testHealthModifier', $health);
 		} else {
-			server::whisper($p, "Invalid spawnHealth value: $health");
+			chat::whisper($p, "Invalid spawnHealth value: $health");
 		}
 	},
 
 	'unset spawnHealth'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('spawnHealth', game::mapname);
+		stash::delete('spawnHealth', map::name);
 		server::send('testHealthModifier', 100);
 
-		server::msg('Returning spawnHealth to normal');
+		chat::all('Returning spawnHealth to normal');
 	},
 
 	'help cameraScale'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, '/list cameraScale');
-		server::whisper($p, '/set cameraScale <40-300>');
-		server::whisper($p, '/unset cameraScale');
-		server::whisper($p, '50=Zoom in(half normal viewable) 200=Zoom out(twice normal viewable)');
+		chat::whisper($p, '/list cameraScale');
+		chat::whisper($p, '/set cameraScale <40-300>');
+		chat::whisper($p, '/unset cameraScale');
+		chat::whisper($p, '50=Zoom in(half normal viewable) 200=Zoom out(twice normal viewable)');
 	},
 
 	'list cameraScale'	=> sub {
 		my($e, $p)=@_;
-		my($scale)=stash::get('cameraScale', game::mapname);
+		my($scale)=stash::get('cameraScale', map::name);
 
-		server::whisper($p, 'cameraScale:', $scale || '100');
+		chat::whisper($p, 'cameraScale:', $scale || '100');
 	},
 
 	'enable cameraScale'	=> sub {
 		my($e, $p)=@_;
-		my($scale)=stash::get('cameraScale', game::mapname);
+		my($scale)=stash::get('cameraScale', map::name);
 
 		server::send('testCameraViewScale', $scale || 100);
 	},
@@ -3398,45 +3541,45 @@ core protecting the flag.
 		$zoom=100 if($zoom=~m/default|normal/i);
 
 		if($zoom==100) {
-			stash::delete('cameraScale', game::mapname);
-			server::msg('Returning camera zoom to normal');
+			stash::delete('cameraScale', map::name);
+			chat::all('Returning camera zoom to normal');
 			server::send('testCameraViewScale', 100);
 		} elsif(40<=$zoom && $zoom<=300) {
-			stash::set('cameraScale', game::mapname, $zoom);
+			stash::set('cameraScale', map::name, $zoom);
 			server::send('testCameraViewScale', $zoom);
 		} else {
-			server::whisper($p, "Invalid camera scale value: $zoom");
+			chat::whisper($p, "Invalid camera scale value: $zoom");
 		}
 	},
 
 	'unset cameraScale'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('cameraScale', game::mapname);
+		stash::delete('cameraScale', map::name);
 		server::send('testCameraViewScale', 100);
 
-		server::msg('Returning camera zoom to normal');
+		chat::all('Returning camera zoom to normal');
 	},
 
 	'help planeScale'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, '/list planeScale');
-		server::whisper($p, '/set planeScale <40-300>');
-		server::whisper($p, '/unset planeScale');
-		server::whisper($p, '50=planes are half size, 200=planes are double size');
+		chat::whisper($p, '/list planeScale');
+		chat::whisper($p, '/set planeScale <40-300>');
+		chat::whisper($p, '/unset planeScale');
+		chat::whisper($p, '50=planes are half size, 200=planes are double size');
 	},
 
 	'list planeScale'	=> sub {
 		my($e, $p)=@_;
-		my($scale)=stash::get('planeScale', game::mapname);
+		my($scale)=stash::get('planeScale', map::name);
 
-		server::whisper($p, 'planeScale:', $scale || 100);
+		chat::whisper($p, 'planeScale:', $scale || 100);
 	},
 
 	'enable planeScale'	=> sub {
 		my($e, $p)=@_;
-		my($scale)=stash::get('planeScale', game::mapname);
+		my($scale)=stash::get('planeScale', map::name);
 
 		server::send('testPlaneScale', $scale || 100);
 	},
@@ -3448,114 +3591,114 @@ core protecting the flag.
 		$zoom=100 if($zoom=~m/default|normal/i);
 
 		if($zoom==100) {
-			stash::delete('planeScale', game::mapname);
-			server::msg('Returning plane zoom to normal');
+			stash::delete('planeScale', map::name);
+			chat::all('Returning plane zoom to normal');
 			server::send('testPlaneScale', 100);
 		} elsif(40<=$zoom && $zoom<=300) {
-			stash::set('planeScale', game::mapname, $zoom);
+			stash::set('planeScale', map::name, $zoom);
 			server::send('testPlaneScale', $zoom);
 		} else {
-			server::whisper($p, "Invalid plane scale value: $zoom");
+			chat::whisper($p, "Invalid plane scale value: $zoom");
 		}
 	},
 
 	'unset planeScale'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('planeScale', game::mapname);
+		stash::delete('planeScale', map::name);
 		server::send('testPlaneScale', 100);
 
-		server::msg('Returning plane zoom to normal');
+		chat::all('Returning plane zoom to normal');
 	},
 
 	'help assignTeam'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Force players to spawn on a specific team');
-		server::whisper($p, '/list assignTeam');
-		server::whisper($p, '/set assignTeam <left|right|none>');
-		server::whisper($p, '/unset assignTeam');
+		chat::whisper($p, 'Force players to spawn on a specific team');
+		chat::whisper($p, '/list assignTeam');
+		chat::whisper($p, '/set assignTeam <left|right|none>');
+		chat::whisper($p, '/unset assignTeam');
 	},
 
 	'list assignTeam'	=> sub {
 		my($e, $p)=@_;
-		my($team)=stash::get('assignTeam', game::mapname);
+		my($team)=stash::get('assignTeam', map::name);
 		my($color);
 
 		if($team) {
-			$color=game::team_color($team);
-			server::whisper($p, 'assignTeam:', $team, "($color)");
+			$color=map::team_color($team);
+			chat::whisper($p, 'assignTeam:', $team, "($color)");
 		} else {
-			server::whisper($p, 'assignTeam:', 'none');
+			chat::whisper($p, 'assignTeam:', 'none');
 		}
 	},
 
 	'enable assignTeam'	=> sub {
 		my($e, $p)=@_;
-		my($team)=stash::get('assignTeam', game::mapname);
+		my($team)=stash::get('assignTeam', map::name);
 		my($color);
 
 		if(defined($team)) {
-			$color=game::team_color($team);
-			server::msg('assignTeam:', $team, "($color)");
+			$color=map::team_color($team);
+			chat::all('assignTeam:', $team, "($color)");
 		}
 	},
 
 	'set assignTeam'	=> sub {
 		my($e, $p, $side)=@_;
 
-		if(game::left($side)) {
-			stash::set('assignTeam', game::mapname, 'left');
-			server::msg(game::mapname, 'is configured to force players left');
+		if(map::left($side)) {
+			stash::set('assignTeam', map::name, 'left');
+			chat::all(map::name, 'is configured to force players left');
 
 			foreach my $m (player::list) {
 				server::send('assignTeam', $m->{'nickname'}, 0)
-					if(game::right($m->{'team'}));
+					if(map::right($m->{'team'}));
 			}
-		} elsif(game::right($side)) {
-			stash::set('assignTeam', game::mapname, 'right');
-			server::msg(game::mapname, 'is configured to force players right');
+		} elsif(map::right($side)) {
+			stash::set('assignTeam', map::name, 'right');
+			chat::all(map::name, 'is configured to force players right');
 
 			foreach my $m (player::list) {
 				server::send('assignTeam', $m->{'nickname'}, 0)
-					if(game::left($m->{'team'}));
+					if(map::left($m->{'team'}));
 			}
 		} elsif($side=~m/none/i) {
-			stash::delete('assignTeam', game::mapname);
-			server::msg('Side enforcement for', game::mapname, 'is disabled');
+			stash::delete('assignTeam', map::name);
+			chat::all('Side enforcement for', map::name, 'is disabled');
 		}
 	},
 
 	'unset assignTeam'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('assignTeam', game::mapname);
+		stash::delete('assignTeam', map::name);
 
-		server::msg('Deleted team assignment');
+		chat::all('Deleted team assignment');
 	},
 
 	'help planes'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Allow only certain planes to join the game');
-		server::whisper($p, '/list planes');
-		server::whisper($p, '/set planes <Loopy|Bomber|Explodet|Biplane|Miranda>');
-		server::whisper($p, '/unset planes');
+		chat::whisper($p, 'Allow only certain planes to join the game');
+		chat::whisper($p, '/list planes');
+		chat::whisper($p, '/set planes <Loopy|Bomber|Explodet|Biplane|Miranda>');
+		chat::whisper($p, '/unset planes');
 	},
 
 	'list planes'	=> sub {
 		my($e, $p)=@_;
-		my($planes)=stash::get('planes', game::mapname);
+		my($planes)=stash::get('planes', map::name);
 
-		server::whisper($p, 'planes:', $planes || 'all');
+		chat::whisper($p, 'planes:', $planes || 'all');
 	},
 
 	'enable planes'	=> sub {
 		my($e, $p)=@_;
-		my($planes)=stash::get('planes', game::mapname);
+		my($planes)=stash::get('planes', map::name);
 
 		if(defined($planes)) {
-			server::msg('planes:', $planes);
+			chat::all('planes:', $planes);
 		}
 	},
 
@@ -3564,8 +3707,8 @@ core protecting the flag.
 		my(%planes)=();
 		my($planere);
 
-		if(game::mode('ffa')) {
-			server::whisper($p, 'Plane enforcement is not possible in FFA');
+		if(map::mode('ffa')) {
+			chat::whisper($p, 'Plane enforcement is not possible in FFA');
 			return;
 		}
 
@@ -3581,8 +3724,8 @@ core protecting the flag.
 			s/mir.*/Miranda/i;
 
 			if(m/all|none/) {
-				stash::delete('planes', game::mapname);
-				server::msg('Plane enforcement for', game::mapname, 'is disabled');
+				stash::delete('planes', map::name);
+				chat::all('Plane enforcement for', map::name, 'is disabled');
 				return;
 			} elsif(m/Loopy|Bomber|Explodet|Biplane|Miranda/) {
 				$planes{$_}=1;
@@ -3590,8 +3733,8 @@ core protecting the flag.
 		}
 
 		$planere=join('|', keys(%planes));
-		stash::set('planes', game::mapname, $planere);
-		server::msg(game::mapname, 'only allows planes:', $planere);
+		stash::set('planes', map::name, $planere);
+		chat::all(map::name, 'only allows planes:', $planere);
 
 		foreach my $m (player::list) {
 			game::bench($m) unless($m->{'plane'}=~m/$planere/);
@@ -3601,39 +3744,39 @@ core protecting the flag.
 	'unset planes'	=> sub {
 		my($e, $p)=@_;
 
-		if(stash::delete('planes', game::mapname)) {
-			server::msg('Deleted plane requirements');
+		if(stash::delete('planes', map::name)) {
+			chat::all('Deleted plane requirements');
 		} else {
-			server::whisper($p, 'No plane requirements exist');
+			chat::whisper($p, 'No plane requirements exist');
 		}
 	},
 
 	'help ballScore'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'When the map loads, pre-set the initial ball score');
-		server::whisper($p, '/list ballScore');
-		server::whisper($p, '/set ballScore <-#|#> <-#|#>');
-		server::whisper($p, '/unset ballScore');
-		server::whisper($p, 'Negative numbers are an offset from the winning score');
+		chat::whisper($p, 'When the map loads, pre-set the initial ball score');
+		chat::whisper($p, '/list ballScore');
+		chat::whisper($p, '/set ballScore <-#|#> <-#|#>');
+		chat::whisper($p, '/unset ballScore');
+		chat::whisper($p, 'Negative numbers are an offset from the winning score');
 	},
 
 	'list ballScore'	=> sub {
 		my($e, $p)=@_;
-		my($scores)=stash::get('ballScore', game::mapname);
+		my($scores)=stash::get('ballScore', map::name);
 
-		return unless(game::mode('ball'));
+		return unless(map::mode('ball'));
 
 		if($scores) {
-			server::whisper($p, 'ballScore: [', join(',', @$scores), ']');
+			chat::whisper($p, 'ballScore: [', join(',', @$scores), ']');
 		} else {
-			server::whisper($p, 'ballScore: [', '0,0', ']');
+			chat::whisper($p, 'ballScore: [', '0,0', ']');
 		}
 	},
 
 	'enable ballScore'	=> sub {
 		my($e, $p)=@_;
-		my($scores)=stash::get('ballScore', game::mapname);
+		my($scores)=stash::get('ballScore', map::name);
 		my($goals)=$config::Goals;
 
 		if($scores) {
@@ -3647,16 +3790,16 @@ core protecting the flag.
 		my($e, $p, $l, $r)=@_;
 		my($goals)=$config::Goals;
 
-		return unless(game::mode('ball'));
+		return unless(map::mode('ball'));
 
 		if($l<=-$goals || $r<=-$goals || $goals<=$l || $goals<=$r) {
-			server::whisper($p, "Invalid goal #, must be between -$goals and $goals");
+			chat::whisper($p, "Invalid goal #, must be between -$goals and $goals");
 		} elsif($l==0 && $r==0) {
-			server::whisper($p, "Initial score returned to normal for next round");
-			stash::delete('ballScore', game::mapname);
+			chat::whisper($p, "Initial score returned to normal for next round");
+			stash::delete('ballScore', map::name);
 		} else {
-			server::msg("Initial score set to [$l, $r]");
-			stash::set('ballScore', game::mapname, [$l, $r]);
+			chat::all("Initial score set to [$l, $r]");
+			stash::set('ballScore', map::name, [$l, $r]);
 
 			$l=$goals+$l if($l<0);
 			$r=$goals+$r if($r<0);
@@ -3668,69 +3811,69 @@ core protecting the flag.
 	'unset ballScore'	=> sub {
 		my($e, $p)=@_;
 
-		if(stash::delete('ballScore', game::mapname)) {
-			server::whisper($p, 'Removed initial ballScore');
+		if(stash::delete('ballScore', map::name)) {
+			chat::whisper($p, 'Removed initial ballScore');
 		} else {
-			server::whisper($p, 'Initial ballScore not set');
+			chat::whisper($p, 'Initial ballScore not set');
 		}
 	},
 
 	'help maxPlayers'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Set a map specific max player # smaller than the server default');
-		server::whisper($p, '/list maxPlayers');
-		server::whisper($p, '/set maxPlayers #');
-		server::whisper($p, '/unset maxPlayers');
+		chat::whisper($p, 'Set a map specific max player # smaller than the server default');
+		chat::whisper($p, '/list maxPlayers');
+		chat::whisper($p, '/set maxPlayers #');
+		chat::whisper($p, '/unset maxPlayers');
 	},
 
 	'list maxPlayers'	=> sub {
 		my($e, $p)=@_;
-		my($count)=stash::get('maxPlayers', game::mapname);
+		my($count)=stash::get('maxPlayers', map::name);
 
-		server::whisper($p, 'maxPlayers:', $count || $config::Maxp);
+		chat::whisper($p, 'maxPlayers:', $count || $config::Maxp);
 	},
 
 	'set maxPlayers'	=> sub {
 		my($e, $p, $count)=@_;
 
 		if($count>0) {
-			stash::set('maxPlayers', game::mapname, $count);
+			stash::set('maxPlayers', map::name, $count);
 		} else {
-			stash::delete('maxPlayers', game::mapname);
+			stash::delete('maxPlayers', map::name);
 		}
 	},
 
 	'unset maxPlayers'	=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('maxPlayers', game::mapname);
+		stash::delete('maxPlayers', map::name);
 	},
 
 	'help spawnMode'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Change the behavior of how users spawn when they die, or pickup powerups');
-		server::whisper($p, '/list spawnMode');
-		server::whisper($p, '/set spawnMode <default|died|pickup|health|zone|near|portal>');
-		server::whisper($p, '/unset spawnMode');
+		chat::whisper($p, 'Change the behavior of how users spawn when they die, or pickup powerups');
+		chat::whisper($p, '/list spawnMode');
+		chat::whisper($p, '/set spawnMode <default|died|pickup|health|zone|near|portal>');
+		chat::whisper($p, '/unset spawnMode');
 	},
 
 	'list spawnMode'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 
 		if($spawn_mode) {
-			server::whisper($p, 'spawnMode:', $spawn_mode);
+			chat::whisper($p, 'spawnMode:', $spawn_mode);
 		}
 	},
 
 	'enable spawnMode'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 
 		if($spawn_mode) {
-			server::msg('spawnMode:', $spawn_mode);
+			chat::all('spawnMode:', $spawn_mode);
 		}
 	},
 
@@ -3738,68 +3881,68 @@ core protecting the flag.
 		my($e, $p, $spawn)=@_;
 
 		if($spawn=~m/default|normal|start/i) {
-			server::msg("Player spawn returned to normal");
-			stash::delete('spawnMode', game::mapname);
+			chat::all("Player spawn returned to normal");
+			stash::delete('spawnMode', map::name);
 		} elsif($spawn=~m/die/i) {
-			server::msg("Players spawn where died, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname, 'died');
+			chat::all("Players spawn where died, use '/sz start' to spawn normal");
+			stash::set('spawnMode', map::name, 'died');
 		} elsif($spawn=~m/power|pick/i) {
-			server::msg("Players spawn at last powerup, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname, 'powerup');
+			chat::all("Players spawn at last powerup, use '/sz start' to spawn normal");
+			stash::set('spawnMode', map::name, 'powerup');
 		} elsif($spawn=~m/health/i) {
-			server::msg("Players spawn at last health powerup, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname, 'health');
+			chat::all("Players spawn at last health powerup, use '/sz start' to spawn normal");
+			stash::set('spawnMode', map::name, 'health');
 		} elsif($spawn=~m/zone/i) {
-			server::msg("Spawn zones enabled, use /spawnZone to use them");
-			stash::set('spawnMode', game::mapname, 'zone');
+			chat::all("Spawn zones enabled, use /spawnZone to use them");
+			stash::set('spawnMode', map::name, 'zone');
 		} elsif($spawn=~m/near/i) {
-			server::msg("Spawn in closest zone enabled, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname, 'near');
+			chat::all("Spawn in closest zone enabled, use '/sz start' to spawn normal");
+			stash::set('spawnMode', map::name, 'near');
 		} elsif($spawn=~m/portal/i) {
-			if(game::mode('ffa')) {
-				server::whisper($p, 'Portals do not work in FFA');
+			if(map::mode('ffa')) {
+				chat::whisper($p, 'Portals do not work in FFA');
 				return;
 			}
 
-			server::msg("Spawn portals enabled, use '/sz start' to spawn normal");
-			stash::set('spawnMode', game::mapname, 'portal');
+			chat::all("Spawn portals enabled, use '/sz start' to spawn normal");
+			stash::set('spawnMode', map::name, 'portal');
 		}
 	},
 
 	'unset spawnMode'	=> sub {
 		my($e, $p)=@_;
 
-		if(stash::delete('spawnMode', game::mapname)) {
-			server::msg('Disabled enhanced spawn locations');
+		if(stash::delete('spawnMode', map::name)) {
+			chat::all('Disabled enhanced spawn locations');
 		} else {
-			server::whisper($p, 'Enhanced spawn locations not set');
+			chat::whisper($p, 'Enhanced spawn locations not set');
 		}
 	},
 
 	'help gameType'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'These are Alti+ game times, which are extentions to the mode');
-		server::whisper($p, '/list gameType');
-		server::whisper($p, '/set gameType <mapname|std|coop|race|flag|zone|mdg>');
-		server::whisper($p, '/unset gameType');
-		server::whisper($p, 'mapname causes the type to be inferred from the map name');
+		chat::whisper($p, 'These are Alti+ game times, which are extentions to the mode');
+		chat::whisper($p, '/list gameType');
+		chat::whisper($p, '/set gameType <mapname|std|coop|race|flag|zone|mdg>');
+		chat::whisper($p, '/unset gameType');
+		chat::whisper($p, 'mapname causes the type to be inferred from the map name');
 	},
 
 	'list gameType'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'gameType:', game::type);
+		chat::whisper($p, 'gameType:', map::type);
 	},
 
 	'enable gameType'	=> sub {
 		my($e, $p)=@_;
-		my($type)=stash::get('gameType', game::mapname);
+		my($type)=stash::get('gameType', map::name);
 
 		if($type) {
-			server::msg('gameType:', game::set_type($type));
+			chat::all('gameType:', map::set_type($type));
 		} else {
-			server::msg('gameType:', game::set_type(game::mapname));
+			chat::all('gameType:', map::set_type(map::name));
 		}
 	},
 
@@ -3807,52 +3950,52 @@ core protecting the flag.
 		my($e, $p, $type)=@_;
 
 		if($type=~m/normal|file/i) {
-			stash::delete('gameType', game::mapname);
-			game::set_type(game::mapname);
+			stash::delete('gameType', map::name);
+			map::set_type(map::name);
 		} else {
-			stash::set('gameType', game::mapname, $type);
-			game::set_type($type);
+			stash::set('gameType', map::name, $type);
+			map::set_type($type);
 		}
 
-		server::msg('gameType:', game::type);
+		chat::all('gameType:', map::type);
 	},
 
 	'unset gameType'		=> sub {
 		my($e, $p)=@_;
 
-		if(stash::delete('gameType', game::mapname)) {
-			server::whisper($p, 'Removed gameType override');
-			server::msg('gameType:', game::set_type(game::mapname));
+		if(stash::delete('gameType', map::name)) {
+			chat::whisper($p, 'Removed gameType override');
+			chat::all('gameType:', map::set_type(map::name));
 		} else {
-			server::whisper($p, 'gameType not set');
+			chat::whisper($p, 'gameType not set');
 		}
 	},
 
 	'help intro'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Set an introductory message for players on a map');
-		server::whisper($p, '/list intro');
-		server::whisper($p, '/set intro <text ...>');
-		server::whisper($p, '/unset intro');
+		chat::whisper($p, 'Set an introductory message for players on a map');
+		chat::whisper($p, '/list intro');
+		chat::whisper($p, '/set intro <text ...>');
+		chat::whisper($p, '/unset intro');
 	},
 
 	'list intro'	=> sub {
 		my($e, $p)=@_;
-		my($intro)=stash::get('intro', game::mapname);
+		my($intro)=stash::get('intro', map::name);
 
 		if($intro) {
-			server::whisper($p, $intro);
+			chat::whisper($p, $intro);
 		} else {
-			server::whisper($p, 'This map does not have an introduction');
+			chat::whisper($p, 'This map does not have an introduction');
 		}
 	},
 
 	'enable intro'	=> sub {
 		my($e, $p)=@_;
-		my($intro)=stash::get('intro', game::mapname);
+		my($intro)=stash::get('intro', map::name);
 
-		server::msg($intro) if($intro);
+		chat::all($intro) if($intro);
 	},
 
 	'set intro'		=> sub {
@@ -3860,11 +4003,11 @@ core protecting the flag.
 		my($text)=join(' ', @text);
 
 		if($text) {
-			stash::set('intro', game::mapname, $text);
-			server::msg($text);
+			stash::set('intro', map::name, $text);
+			chat::all($text);
 		} else {
-			stash::delete('intro', game::mapname);
-			server::whisper($p, 'Removed map introduction');
+			stash::delete('intro', map::name);
+			chat::whisper($p, 'Removed map introduction');
 		}
 
 	},
@@ -3872,85 +4015,85 @@ core protecting the flag.
 	'unset intro'		=> sub {
 		my($e, $p)=@_;
 
-		stash::delete('intro', game::mapname);
-		server::whisper($p, 'Removed map introduction');
+		stash::delete('intro', map::name);
+		chat::whisper($p, 'Removed map introduction');
 	},
 
 	'help portals'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Portals allow users to be transported from a pickup to another location');
-		server::whisper($p, '/list portals');
-		server::whisper($p, '/add portal <name> <px>,<py> <sx>,<sy>,<sa>');
-		server::whisper($p, '/del portal <name>');
+		chat::whisper($p, 'Portals allow users to be transported from a pickup to another location');
+		chat::whisper($p, '/list portals');
+		chat::whisper($p, '/add portal <name> <px>,<py> <sx>,<sy>,<sa>');
+		chat::whisper($p, '/del portal <name>');
 	},
 
 	'list portals'	=> sub {
 		my($e, $p)=@_;
-		my($portals)=stash::get('portals', game::mapname);
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($portals)=stash::get('portals', map::name);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 		my($any)=0;
 
 		foreach my $portal (sort(keys(%$portals))) {
-			server::whisper($p, sprintf('%s: %d,%d -> %d,%d @%d',
+			chat::whisper($p, sprintf('%s: %d,%d -> %d,%d @%d',
 				$portal, @{$portals->{$portal}}));
 			$any=1;
 		}
 
 		if($spawn_mode eq 'portal') {
-			server::whisper($p, 'No spawn portals defined') unless($any);
+			chat::whisper($p, 'No spawn portals defined') unless($any);
 		} else {
-			server::whisper($p, 'spawnMode is not set to portal');
+			chat::whisper($p, 'spawnMode is not set to portal');
 		}
 	},
 
 	'add portal'	=> sub {
 		my($e, $p, $portal, $px, $py, $sx, $sy, $sa)=@_;
 
-		if(game::mode('ffa')) {
-			server::whisper($p, 'Portals cannot function in FFA games');
+		if(map::mode('ffa')) {
+			chat::whisper($p, 'Portals cannot function in FFA games');
 			return;
 		}
 
 		$sa=game::angle($sa);
 
-		stash::set($portal, 'portals', game::mapname,
+		stash::set($portal, 'portals', map::name,
 			[$px, $py => $sx, $sy, $sa]);
-		server::msg('Added portal:', $portal);
+		chat::all('Added portal:', $portal);
 	},
 
 	'del portal'	=> sub {
 		my($e, $p, $portal)=@_;
 
-		if(stash::delete($portal, 'portals', game::mapname)) {
-			server::msg('Deleted portal:', $portal);
+		if(stash::delete($portal, 'portals', map::name)) {
+			chat::all('Deleted portal:', $portal);
 		} else {
-			server::whisper($p, 'No portal named:', $portal);
+			chat::whisper($p, 'No portal named:', $portal);
 		}
 	},
 
 	'help doors'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Doors disable planes to pass through a pickup until all keys are found');
-		server::whisper($p, '/list doors');
-		server::whisper($p, '/add door <name> <dx>,<dy>');
-		server::whisper($p, '/del door <name>');
+		chat::whisper($p, 'Doors disable planes to pass through a pickup until all keys are found');
+		chat::whisper($p, '/list doors');
+		chat::whisper($p, '/add door <name> <dx>,<dy>');
+		chat::whisper($p, '/del door <name>');
 	},
 
 	'help keys'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Keys unlock doors, see /help doors');
-		server::whisper($p, '/list keys');
-		server::whisper($p, '/add key <door_name> <kx>,<ky>');
-		server::whisper($p, '/del key <door_name>');
+		chat::whisper($p, 'Keys unlock doors, see /help doors');
+		chat::whisper($p, '/list keys');
+		chat::whisper($p, '/add key <door_name> <kx>,<ky>');
+		chat::whisper($p, '/del key <door_name>');
 	},
 
 	'list doors'	=> sub {
 		my($e, $p)=@_;
-		my($doors)=utils::invert(stash::get('doors', 'door', game::mapname));
-		my($keys)=utils::invert(stash::get('keys', 'door', game::mapname));
+		my($doors)=utils::invert(stash::get('doors', 'door', map::name));
+		my($keys)=utils::invert(stash::get('keys', 'door', map::name));
 		my($any)=0;
 		my($status);
 
@@ -3960,18 +4103,18 @@ core protecting the flag.
 			} else {
 				$status='(locked)';
 			}
-			server::whisper($p, $door, ':', @{$doors->{$door}}, '<=',
+			chat::whisper($p, $door, ':', @{$doors->{$door}}, '<=',
 				@{$keys->{$door}}, $status);
 			delete($keys->{$door});
 			$any=1;
 		}
 
 		foreach my $key (sort(keys(%$keys))) {
-			server::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
+			chat::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
 			$any=1;
 		}
 
-		server::whisper($p, 'No doors defined') unless($any);
+		chat::whisper($p, 'No doors defined') unless($any);
 	},
 
 	'list keys'	=> sub {
@@ -3981,81 +4124,81 @@ core protecting the flag.
 	'add door'	=> sub {
 		my($e, $p, $name, $dx, $dy)=@_;
 
-		if(game::mode('ffa')) {
-			server::whisper($p, 'Doors cannot function in FFA games');
+		if(map::mode('ffa')) {
+			chat::whisper($p, 'Doors cannot function in FFA games');
 			return;
 		}
 
-		stash::set("$dx,$dy", 'doors', 'door', game::mapname, $name);
-		server::msg('Added door:', $name, "($dx,$dy)");
+		stash::set("$dx,$dy", 'doors', 'door', map::name, $name);
+		chat::all('Added door:', $name, "($dx,$dy)");
 	},
 
 	'add key'	=> sub {
 		my($e, $p, $name, $kx, $ky)=@_;
 
-		if(game::mode('ffa')) {
-			server::whisper($p, 'Doors cannot function in FFA games');
+		if(map::mode('ffa')) {
+			chat::whisper($p, 'Doors cannot function in FFA games');
 			return;
 		}
 
-		stash::set("$kx,$ky", 'keys', 'door', game::mapname, $name);
-		server::msg('Added key for door:', $name, "($kx,$ky)");
+		stash::set("$kx,$ky", 'keys', 'door', map::name, $name);
+		chat::all('Added key for door:', $name, "($kx,$ky)");
 	},
 
 	'del door'	=> sub {
 		my($e, $p, $name)=@_;
-		my($doors)=stash::get('doors', 'door', game::mapname);
+		my($doors)=stash::get('doors', 'door', map::name);
 		my($any)=0;
 
 		foreach my $door (keys(%$doors)) {
 			if($doors->{$door} eq $name) {
-				stash::delete($door, 'doors', 'door', game::mapname);
-				server::msg('Deleted door:', $name, "($door)");
+				stash::delete($door, 'doors', 'door', map::name);
+				chat::all('Deleted door:', $name, "($door)");
 				$any=1;
 			}
 		}
 
 		unless($any) {
-			server::whisper($p, 'No door named:', $name);
+			chat::whisper($p, 'No door named:', $name);
 		}
 	},
 
 	'del key'	=> sub {
 		my($e, $p, $name)=@_;
-		my($keys)=stash::get('keys', 'door', game::mapname);
+		my($keys)=stash::get('keys', 'door', map::name);
 		my($any)=0;
 
 		foreach my $key (keys(%$keys)) {
 			if($keys->{$key} eq $name) {
-				stash::delete($key, 'keys', 'door', game::mapname);
-				server::msg('Deleted key for door:', $name, "($key)");
+				stash::delete($key, 'keys', 'door', map::name);
+				chat::all('Deleted key for door:', $name, "($key)");
 				$any=1;
 			}
 		}
 
 		unless($any) {
-			server::whisper($p, 'No keys for door named:', $name);
+			chat::whisper($p, 'No keys for door named:', $name);
 		}
 	},
 
 	'help diverters'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Diverters alternate access to parts of a map');
-		server::whisper($p, '/list diverters');
-		server::whisper($p, '/add diverter <x1>,<y1> <x2>,<y2>');
-		server::whisper($p, '/del diverter <x1>,<y1>');
-		server::whisper($p, 'only binary diverters are supported');
+		chat::whisper($p, 'Diverters alternate access to parts of a map');
+		chat::whisper($p, '/list diverters');
+		chat::whisper($p, '/add diverter <x1>,<y1> <x2>,<y2>');
+		chat::whisper($p, '/del diverter <x1>,<y1>');
+		chat::whisper($p, 'only binary diverters are supported');
 	},
 
 	'list diverters'	=> sub {
 		my($e, $p)=@_;
-		my($divs)=stash::get('diverters', game::mapname);
+		my($divs)=stash::get('diverters', map::name);
 		my(%seen)=();
 
 		foreach my $diverter (keys(%$divs)) {
 			unless(exists($seen{$diverter})) {
-				server::whisper($p, $diverter, ':', $divs->{$diverter});
+				chat::whisper($p, $diverter, ':', $divs->{$diverter});
 				$seen{$divs->{$diverter}}=1;
 			}
 		}
@@ -4064,92 +4207,92 @@ core protecting the flag.
 	'add diverter'	=> sub {
 		my($e, $p, $x1, $y1, $x2, $y2)=@_;
 
-		stash::set("$x1,$y1", 'diverters', game::mapname, "$x2,$y2");
-		stash::set("$x2,$y2", 'diverters', game::mapname, "$x1,$y1");
+		stash::set("$x1,$y1", 'diverters', map::name, "$x2,$y2");
+		stash::set("$x2,$y2", 'diverters', map::name, "$x1,$y1");
 	},
 
 	'del diverter'	=> sub {
 		my($e, $p, $x1, $y1)=@_;
-		my($divs)=stash::get('diverters', game::mapname);
+		my($divs)=stash::get('diverters', map::name);
 
-		stash::delete($divs->{"$x1,$y1"}, 'diverters', game::mapname);
-		stash::delete("$x1,$y1", 'diverters', game::mapname);
+		stash::delete($divs->{"$x1,$y1"}, 'diverters', map::name);
+		stash::delete("$x1,$y1", 'diverters', map::name);
 	},
 
 	'help oneways'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Ensure anyone picking up a powerup is traveling in a direction');
-		server::whisper($p, '/list oneways');
-		server::whisper($p, '/add oneway <x>,<y> <direction>');
-		server::whisper($p, '/del oneway <x>,<y>');
+		chat::whisper($p, 'Ensure anyone picking up a powerup is traveling in a direction');
+		chat::whisper($p, '/list oneways');
+		chat::whisper($p, '/add oneway <x>,<y> <direction>');
+		chat::whisper($p, '/del oneway <x>,<y>');
 	},
 
 	'list oneways'	=> sub {
 		my($e, $p)=@_;
-		my($oneway)=stash::get('oneways', game::mapname);
+		my($oneway)=stash::get('oneways', map::name);
 
 		foreach my $powerup (keys(%$oneway)) {
-			server::whisper($p, $powerup, ':', $oneway->{$powerup});
+			chat::whisper($p, $powerup, ':', $oneway->{$powerup});
 		}
 	},
 
 	'add oneway'	=> sub {
 		my($e, $p, $x, $y, $direction)=@_;
 
-		stash::set("$x,$y", 'oneways', game::mapname, lc($direction));
+		stash::set("$x,$y", 'oneways', map::name, lc($direction));
 	},
 
 	'del oneway'	=> sub {
 		my($e, $p, $x, $y)=@_;
 
-		stash::delete("$x,$y", 'oneways', game::mapname);
+		stash::delete("$x,$y", 'oneways', map::name);
 	},
 
 	'help zones'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Zones are used by spawnType zone and near for spawn locations');
-		server::whisper($p, '/list zones');
-		server::whisper($p, '/add zone <name> <team> <x>,<y>,<a>');
-		server::whisper($p, '/del zone <name> <team>');
+		chat::whisper($p, 'Zones are used by spawnType zone and near for spawn locations');
+		chat::whisper($p, '/list zones');
+		chat::whisper($p, '/add zone <name> <team> <x>,<y>,<a>');
+		chat::whisper($p, '/del zone <name> <team>');
 	},
 
 	'list zones'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 		my($any)=0;
 		my($zones);
 
-		server::whisper($p, 'start: default spawn zone for this map');
+		chat::whisper($p, 'start: default spawn zone for this map');
 
 		if($e->{'admin'}) {
-			$zones=stash::get(game::left, 'zones', game::mapname);
+			$zones=stash::get(map::left, 'zones', map::name);
 			foreach my $zone (sort(keys(%$zones))) {
-				server::whisper($p,
+				chat::whisper($p,
 					sprintf('%s < %d,%d @%d', $zone, @{$zones->{$zone}}));
 				$any=1;
 			}
 
-			$zones=stash::get(game::right, 'zones', game::mapname);
+			$zones=stash::get(map::right, 'zones', map::name);
 			foreach my $zone (sort(keys(%$zones))) {
-				server::whisper($p,
+				chat::whisper($p,
 					sprintf('%s > %d,%d @%d', $zone, @{$zones->{$zone}}));
 				$any=1;
 			}
 		} else {
-			$zones=stash::get($p->{'team'}, 'zones', game::mapname);
+			$zones=stash::get($p->{'team'}, 'zones', map::name);
 			foreach my $zone (sort(keys(%$zones))) {
-				server::whisper($p,
+				chat::whisper($p,
 					sprintf('%s: %d,%d @%d', $zone, @{$zones->{$zone}}));
 				$any=1;
 			}
 		}
 
 		if($spawn_mode eq 'zone' || $spawn_mode eq 'near') {
-			server::whisper($p, 'No spawn zones defined') unless($any);
+			chat::whisper($p, 'No spawn zones defined') unless($any);
 		} else {
-			server::whisper($p, 'spawnMode is not set to zone');
+			chat::whisper($p, 'spawnMode is not set to zone');
 		}
 	},
 
@@ -4159,14 +4302,14 @@ core protecting the flag.
 		$sa=game::angle($sa);
 		$team='*' unless($team);
 
-		if(game::left($team)) {
-			stash::set($zone, game::left, 'zones', game::mapname, [$sx, $sy, $sa]);
-			server::msg('Added left zone:', $zone, "($sx,$sy)");
+		if(map::left($team)) {
+			stash::set($zone, map::left, 'zones', map::name, [$sx, $sy, $sa]);
+			chat::all('Added left zone:', $zone, "($sx,$sy)");
 		}
 
-		if(game::right($team)) {
-			stash::set($zone, game::right, 'zones', game::mapname, [$sx, $sy, $sa]);
-			server::msg('Added right zone:', $zone, "($sx,$sy)");
+		if(map::right($team)) {
+			stash::set($zone, map::right, 'zones', map::name, [$sx, $sy, $sa]);
+			chat::all('Added right zone:', $zone, "($sx,$sy)");
 		}
 	},
 
@@ -4175,19 +4318,19 @@ core protecting the flag.
 
 		$team='*' unless($team);
 
-		if(game::left($team)) {
-			if(stash::delete($zone, game::left, 'zones', game::mapname)) {
-				server::msg('Deleted left zone:', $zone);
+		if(map::left($team)) {
+			if(stash::delete($zone, map::left, 'zones', map::name)) {
+				chat::all('Deleted left zone:', $zone);
 			} else {
-				server::whisper($p, 'No left zone', $zone);
+				chat::whisper($p, 'No left zone', $zone);
 			}
 		}
 
-		if(game::right($team)) {
-			if(stash::delete($zone, game::right, 'zones', game::mapname)) {
-				server::msg('Deleted right zone:', $zone);
+		if(map::right($team)) {
+			if(stash::delete($zone, map::right, 'zones', map::name)) {
+				chat::all('Deleted right zone:', $zone);
 			} else {
-				server::whisper($p, 'No right zone', $zone);
+				chat::whisper($p, 'No right zone', $zone);
 			}
 		}
 	},
@@ -4195,39 +4338,39 @@ core protecting the flag.
 	'help powerups'	=> sub {
 		my($e, $p)=@_;
 
-		server::whisper($p, 'Mark a powerup special to the game type (e.g. flag or race)');
-		server::whisper($p, '/list powerups');
-		server::whisper($p, '/add powerup <name> <team> <x> <y>');
-		server::whisper($p, '/del powerup <name> <team>');
+		chat::whisper($p, 'Mark a powerup special to the game type (e.g. flag or race)');
+		chat::whisper($p, '/list powerups');
+		chat::whisper($p, '/add powerup <name> <team> <x> <y>');
+		chat::whisper($p, '/del powerup <name> <team>');
 	},
 
 	'list powerups'	=> sub {
 		my($e, $p)=@_;
-		my($powerups)=stash::get('powerups', game::mapname);
+		my($powerups)=stash::get('powerups', map::name);
 		my($any)=0;
 		my($groups);
 
 		if($e->{'admin'}) {
-			$groups=utils::invert(%{$powerups->{game::left}});
+			$groups=utils::invert(%{$powerups->{map::left}});
 			foreach my $key (sort(keys(%$groups))) {
-				server::whisper($p, '<', $key, ':', @{$groups->{$key}});
+				chat::whisper($p, '<', $key, ':', @{$groups->{$key}});
 				$any=1;
 			}
 
-			$groups=utils::invert(%{$powerups->{game::right}});
+			$groups=utils::invert(%{$powerups->{map::right}});
 			foreach my $key (sort(keys(%$groups))) {
-				server::whisper($p, '>', $key, ':', @{$groups->{$key}});
+				chat::whisper($p, '>', $key, ':', @{$groups->{$key}});
 				$any=1;
 			}
 		} else {
 			$groups=utils::invert(%{$powerups->{$p->{'team'}}});
 			foreach my $key (sort(keys(%$groups))) {
-				server::whisper($p, $key, ':', @{$groups->{$key}});
+				chat::whisper($p, $key, ':', @{$groups->{$key}});
 				$any=1;
 			}
 		}
 
-		server::whisper($p, 'No special powerups defined') unless($any);
+		chat::whisper($p, 'No special powerups defined') unless($any);
 	},
 
 	'add powerup'	=> sub {
@@ -4237,16 +4380,16 @@ core protecting the flag.
 
 		$team='*' unless($team);
 
-		if(game::left($team)) {
-			$color=game::team_color('left');
-			stash::set("$px,$py", game::left, 'powerups', game::mapname, $powerup);
-			server::msg("Added left ($color) powerup:", $powerup, "($px,$py)");
+		if(map::left($team)) {
+			$color=map::team_color('left');
+			stash::set("$px,$py", map::left, 'powerups', map::name, $powerup);
+			chat::all("Added left ($color) powerup:", $powerup, "($px,$py)");
 		}
 
-		if(game::right($team)) {
-			$color=game::team_color('right');
-			stash::set("$px,$py", game::right, 'powerups', game::mapname, $powerup);
-			server::msg("Added right ($color) powerup:", $powerup, "($px,$py)");
+		if(map::right($team)) {
+			$color=map::team_color('right');
+			stash::set("$px,$py", map::right, 'powerups', map::name, $powerup);
+			chat::all("Added right ($color) powerup:", $powerup, "($px,$py)");
 		}
 	},
 	
@@ -4257,23 +4400,23 @@ core protecting the flag.
 
 		$team='*' unless($team);
 
-		if(game::left($team)) {
-			$color=game::team_color('left');
-			$powerup=stash::get("$px,$py", game::left, 'powerups', game::mapname);
-			if(stash::delete("$px,$py", game::left, 'powerups', game::mapname)) {
-				server::msg("Deleted left ($color) powerup:", $powerup, "($px,$py)");
+		if(map::left($team)) {
+			$color=map::team_color('left');
+			$powerup=stash::get("$px,$py", map::left, 'powerups', map::name);
+			if(stash::delete("$px,$py", map::left, 'powerups', map::name)) {
+				chat::all("Deleted left ($color) powerup:", $powerup, "($px,$py)");
 			} else {
-				server::whisper($p, 'No left powerup at', "$px,$py");
+				chat::whisper($p, 'No left powerup at', "$px,$py");
 			}
 		}
 
-		if(game::right($team)) {
-			$color=game::team_color('right');
-			$powerup=stash::get("$px,$py", game::right, 'powerups', game::mapname);
-			if(stash::delete("$px,$py", game::right, 'powerups', game::mapname)) {
-				server::msg("Deleted right ($color) powerup:", $powerup, "($px,$py)");
+		if(map::right($team)) {
+			$color=map::team_color('right');
+			$powerup=stash::get("$px,$py", map::right, 'powerups', map::name);
+			if(stash::delete("$px,$py", map::right, 'powerups', map::name)) {
+				chat::all("Deleted right ($color) powerup:", $powerup, "($px,$py)");
 			} else {
-				server::whisper($p, 'No right powerup at', "$px,$py");
+				chat::whisper($p, 'No right powerup at', "$px,$py");
 			}
 		}
 	},
@@ -4281,24 +4424,24 @@ core protecting the flag.
 	'spawnZone'	=> sub {
 		my($e, $p)=@_;
 		my($zone)=@{$e->{'arguments'}};
-		my($coords)=stash::get($zone, $p->{'team'}, 'zones', game::mapname);
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($coords)=stash::get($zone, $p->{'team'}, 'zones', map::name);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 
 		if($zone=~m/^start$/i) {
 			game::bench($p);
 			game::spawn_reset($p);
 		} elsif($spawn_mode ne 'zone') {
-			server::whisper($p, "Zone spawning not allowed in mode: $spawn_mode");
+			chat::whisper($p, "Zone spawning not allowed in mode: $spawn_mode");
 		} elsif(ref($coords) eq 'ARRAY') {
 			
-			if(game::mode('ffa')) {
-				server::whisper($p, 'Next spawn will be in', $zone);
+			if(map::mode('ffa')) {
+				chat::whisper($p, 'Next spawn will be in', $zone);
 			} else {
 				game::bench($p);
 			}
 			game::spawn_here($p, @$coords);
 		} else {
-			server::whisper($p, "No zone named '$zone'");
+			chat::whisper($p, "No zone named '$zone'");
 		}
 	},
 
@@ -4309,7 +4452,7 @@ core protecting the flag.
 	'sum'		=> sub {
 		my($e, $p)=@_;
 		my($name)=@{$e->{'arguments'}};
-		my($map)=game::mapfile;
+		my($map)=map::file;
 		my(%sums)=(
 			'crc32'	=> 'cksum',
 			'md5'	=> 'md5sum',
@@ -4319,13 +4462,13 @@ core protecting the flag.
 		my($sum)=$sums{lc($name)};
 
 		unless($sum) {
-			server::whisper($p, "Invalid digest name: $sum");
-			server::whisper($p, "Choose from: crc32 md5 sha1 sha256");
+			chat::whisper($p, "Invalid digest name: $sum");
+			chat::whisper($p, "Choose from: crc32 md5 sha1 sha256");
 			return(0);
 		}
 
 		if(-r $map && file::name_ok($map)) {
-			server::whisper($p, game::mapname, ':', file::sum($sum, $map));
+			chat::whisper($p, map::name, ':', file::sum($sum, $map));
 		}
 	},
 
@@ -4334,11 +4477,11 @@ core protecting the flag.
 
 		#                       PlayerId|VaporID
 		if($p->{'nickname'}=~m/^(\d{1,2}|[0-9a-f-]{36})$/) {
-			server::whisper($e, 'Invalid nickname for this server.');
+			chat::whisper($e, 'Invalid nickname for this server.');
 			server::send('kick', $e->{'nickname'});
 			return(undef);
 		} elsif($p->{'vaporId'}=~m/[^0-]/ && $p->{'nickname'}=~m/^Bot \d\d?/) {
-			server::whisper($e, 'Invalid nickname for this server.');
+			chat::whisper($e, 'Invalid nickname for this server.');
 			server::send('kick', $e->{'nickname'});
 			return(undef);
 		}
@@ -4358,7 +4501,7 @@ core protecting the flag.
 		}
 
 		foreach my $statement (split(m/;/, config::option('motd'))) {
-			server::whisper($p, $statement);
+			chat::whisper($p, $statement);
 		}
 	},
 
@@ -4367,8 +4510,8 @@ core protecting the flag.
 
 		player::rename($e->{'oldNickname'}, $e->{'newNickname'});
 
-		if(server::snarky) {
-			server::whisper($p, 'Oh', $p->{'nickname'},
+		if(chat::snarky) {
+			chat::whisper($p, 'Oh', $p->{'nickname'},
 				', you will always be', $p->{'vaporId'}, 'to me.');
 		}
 	},
@@ -4380,7 +4523,7 @@ core protecting the flag.
 
 		return if($p->{'isBot'});
 
-		game::busy;
+		map::busy;
 
 		ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
 
@@ -4392,8 +4535,8 @@ core protecting the flag.
 
 	'teamChange'		=> sub {
 		my($e, $p)=@_;
-		my($map_team)=stash::get('assignTeam', game::mapname);
-		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname);
+		my($map_team)=stash::get('assignTeam', map::name);
+		my($zones)=stash::get($p->{'team'}, 'zones', map::name);
 		my($minlvl)=0;
 		my(@badge)=();
 		my($planes, $intro);
@@ -4414,16 +4557,16 @@ core protecting the flag.
 		if($p->{'level'} < $minlvl) {
 			$p->{'team'}=$e->{'team'};
 
-			return if(game::spec($e->{'team'}));
+			return if(map::spec($e->{'team'}));
 
 			server::send('assignTeam', $p->{'nickname'}, -1);
 			player::infraction($p, 2);
 
 			if(exists($MILESTONES{$minlvl})) {
-				server::whisper($p, 'You must unlock',
+				chat::whisper($p, 'You must unlock',
 					$MILESTONES{$minlvl}, 'to play', @badge);
 			} else {
-				server::whisper($p, 'You must reach level',
+				chat::whisper($p, 'You must reach level',
 					$minlvl, 'to play', @badge);
 			}
 
@@ -4432,22 +4575,22 @@ core protecting the flag.
 
 		#Display the intro after users join (first teamChange to spec):
 		unless($p->{'stats'}{'intro'}) {
-			$planes=stash::get('planes', game::mapname);
-			$intro=stash::get('intro', game::mapname);
+			$planes=stash::get('planes', map::name);
+			$intro=stash::get('intro', map::name);
 
-			server::whisper($p, 'Allowed Planes:', $planes) if($planes);
-			server::whisper($p, $intro) if($intro);
+			chat::whisper($p, 'Allowed Planes:', $planes) if($planes);
+			chat::whisper($p, $intro) if($intro);
 
 			$p->{'stats'}{'intro'}=1;
 		}
 
 		#Keep track of players and allow access only as necessary:
-		if(game::spec($e->{'team'})) {
-			if(game::spec($p->{'team'})) {
+		if(map::spec($e->{'team'})) {
+			if(map::spec($p->{'team'})) {
 				$p->{'team'}=$e->{'team'};
 				return;
 			} else {
-				game::spawn_reset($p) unless(game::type('coop'));
+				game::spawn_reset($p) unless(map::type('coop'));
 
 				$p->{'team'}=$e->{'team'};
 
@@ -4468,20 +4611,20 @@ core protecting the flag.
 		}
 
 		#Ensure players are on the correct team:
-		if(game::type('mdg') && game::prey($p)) {
+		if(map::type('mdg') && game::prey($p)) {
 			if(ref($zones) eq 'HASH' && %$zones) {
 				game::spawn_here($p, @{utils::random_value($zones)});
 			}
-			if($map_team eq 'left' && game::left($p->{'team'})) {
+			if($map_team eq 'left' && map::left($p->{'team'})) {
 				server::send('assignTeam', $p->{'nickname'}, 1);
-			} elsif($map_team eq 'right' && game::right($p->{'team'})) {
+			} elsif($map_team eq 'right' && map::right($p->{'team'})) {
 				server::send('assignTeam', $p->{'nickname'}, 0);
 			}
-		} elsif($map_team eq 'left' && game::right($p->{'team'})) {
+		} elsif($map_team eq 'left' && map::right($p->{'team'})) {
 			game::spawn_reset($p);
 			server::send('assignTeam', $p->{'nickname'}, 0);
 			return;
-		} elsif($map_team eq 'right' && game::left($p->{'team'})) {
+		} elsif($map_team eq 'right' && map::left($p->{'team'})) {
 			game::spawn_reset($p);
 			server::send('assignTeam', $p->{'nickname'}, 1);
 			return;
@@ -4490,9 +4633,9 @@ core protecting the flag.
 
 	'spawn'	=> sub {
 		my($e, $p)=@_;
-		my($planere)=stash::get('planes', game::mapname);
-		my($map_team)=stash::get('assignTeam', game::mapname);
-		my($zones)=stash::get($p->{'team'}, 'zones', game::mapname);
+		my($planere)=stash::get('planes', map::name);
+		my($map_team)=stash::get('assignTeam', map::name);
+		my($zones)=stash::get($p->{'team'}, 'zones', map::name);
 		my($match);
 
 		$p->{'plane'}=$e->{'plane'};
@@ -4515,34 +4658,35 @@ core protecting the flag.
 
 		unless($p->{'plane'}=~m/$planere/) {
 			game::bench($p);
-			server::whisper($p, "Allowed planes: $planere");
+			chat::whisper($p, "Allowed planes: $planere");
 		}
 
-		if(game::type('mdg') && game::prey($p)) {
+		#Ensure players are on the correct team:
+		if(map::type('mdg') && game::prey($p)) {
 			if(ref($zones) eq 'HASH' && %$zones) {
 				game::spawn_here($p, @{utils::random_value($zones)});
 			}
-			if($map_team eq 'left' && game::left($p->{'team'})) {
+			if($map_team eq 'left' && map::left($p->{'team'})) {
 				server::send('assignTeam', $p->{'nickname'}, 1);
-			} elsif($map_team eq 'right' && game::right($p->{'team'})) {
+			} elsif($map_team eq 'right' && map::right($p->{'team'})) {
 				server::send('assignTeam', $p->{'nickname'}, 0);
 			}
-		} elsif($map_team eq 'left' && game::right($p->{'team'})) {
+		} elsif($map_team eq 'left' && map::right($p->{'team'})) {
 			server::send('assignTeam', $p->{'nickname'}, 0);
 			return;
-		} elsif($map_team eq 'right' && game::left($p->{'team'})) {
+		} elsif($map_team eq 'right' && map::left($p->{'team'})) {
 			server::send('assignTeam', $p->{'nickname'}, 1);
 			return;
 		}
 
-		if(server::snarky) {
+		if(chat::snarky) {
 			foreach my $snark (List::Util::shuffle(keys(%SNARKS))) {
 				$match=1;
 				foreach my $test (keys(%{$SNARKS{$snark}})) {
 					$match&=($e->{$test}=~m/\Q$SNARKS{$snark}{$test}/);
 				}
 				if($match) {
-					server::snark($p, sprintf($snark, $p->{'nickname'}));
+					chat::snark($p, sprintf($snark, $p->{'nickname'}));
 					last;
 				}
 			}
@@ -4553,11 +4697,11 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($a)=player::lookup($e->{'assister'});
 		my($a2)=player::lookup($e->{'secondaryAssister'});
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 
-		if(game::left($p->{'team'})) {
+		if(map::left($p->{'team'})) {
 			game::update_score('left');
-		} elsif(game::right($p->{'team'})) {
+		} elsif(map::right($p->{'team'})) {
 			game::update_score('right');
 		}
 
@@ -4568,13 +4712,13 @@ core protecting the flag.
 		}
 
 		if($p->{'Ball'}{'time'} && ($e->{'time'}-$p->{'Ball'}{'time'})>3000) {
-			server::laud("Nice Shot $p->{'nickname'}!");
+			chat::laud("Nice Shot $p->{'nickname'}!");
 		}
 
 		if($a2 && !$a2->{'isBot'}) {
-			server::laud("Good pass $a->{'nickname'}, you too $a2->{'nickname'}.");
+			chat::laud("Good pass $a->{'nickname'}, you too $a2->{'nickname'}.");
 		} elsif($a && !$a->{'isBot'}) {
-			server::laud("Good pass $a->{'nickname'}.");
+			chat::laud("Good pass $a->{'nickname'}.");
 		}
 	},
 	
@@ -4590,9 +4734,9 @@ core protecting the flag.
 		$p->{'logPickups'}^=1;
 
 		if($p->{'logPickups'}) {
-			server::whisper($p, 'Pickup logging enabled');
+			chat::whisper($p, 'Pickup logging enabled');
 		} else {
-			server::whisper($p, 'Pickup logging disabled');
+			chat::whisper($p, 'Pickup logging disabled');
 		}
 	},
 
@@ -4610,21 +4754,21 @@ core protecting the flag.
 		}
 
 		if($p->{'Homing Missile'}{'count'} > 12) {
-			server::snark($p, 'Hwacha');
+			chat::snark($p, 'Hwacha');
 		}
 		if($p->{'Bomb'}{'count'} > 10) {
-			server::snark($p, "$p->{'nickname'} bombs with extreme prejudice");
+			chat::snark($p, "$p->{'nickname'} bombs with extreme prejudice");
 		}
 	},
 
 	'powerupPickup'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 		my(@x)=POSIX::modf($e->{'positionX'});
 		my(@y)=POSIX::modf($e->{'positionY'});
 
-		game::capture($e, $p) if(game::type('flag'));
-		game::checkpoint($e, $p) if(game::type('race'));
+		game::capture($e, $p) if(map::type('flag'));
+		game::checkpoint($e, $p) if(map::type('race'));
 
 		game::divert($e, $p);
 
@@ -4633,16 +4777,16 @@ core protecting the flag.
 		if($e->{'powerup'} eq 'Ball') {
 			$p->{$e->{'powerup'}}{'time'}=0;
 		} elsif($e->{'powerup'} eq 'Bomb') {
-			if($e->{'velocityX'} && $e->{'velocityY'} && server::snarky) {
-				server::snark($p, 'Nice catch', $p->{'nickname'});
+			if($e->{'velocityX'} && $e->{'velocityY'} && chat::snarky) {
+				chat::snark($p, 'Nice catch', $p->{'nickname'});
 			}
 		}
 
-		server::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
+		chat::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
 
 		return if(game::knock($e, $p));
 
-		if(stash::get("$x[1],$y[1]", 'oneways', game::mapname)) {
+		if(stash::get("$x[1],$y[1]", 'oneways', map::name)) {
 			server::trigger('logPlanePositions', 'oneway', $e, $p);
 		} elsif($spawn_mode eq 'powerup') {
 			unless($x[0] || $y[0] || $e->{'velocityX'} || $e->{'velocityY'}) {
@@ -4655,22 +4799,22 @@ core protecting the flag.
 
 	'powerupAutoUse'	=> sub {
 		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 		my(@x)=POSIX::modf($e->{'positionX'});
 		my(@y)=POSIX::modf($e->{'positionY'});
 
-		game::capture($e, $p) if(game::type('flag'));
-		game::checkpoint($e, $p) if(game::type('race'));
+		game::capture($e, $p) if(map::type('flag'));
+		game::checkpoint($e, $p) if(map::type('race'));
 
 		game::divert($e, $p);
 
 		return if($p->{'isBot'});
 
-		server::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
+		chat::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
 
 		return if(game::knock($e, $p));
 
-		if(stash::get("$x[1],$y[1]", 'oneways', game::mapname)) {
+		if(stash::get("$x[1],$y[1]", 'oneways', map::name)) {
 			server::trigger('logPlanePositions', 'oneway', $e, $p);
 		} elsif($spawn_mode eq 'health' || $spawn_mode eq 'powerup') {
 			unless($x[0] || $y[0]) {
@@ -4695,7 +4839,7 @@ core protecting the flag.
 		my($e1, $p1, $e2, $p2)=@_;
 		my($x1, $y1)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
 		my($x2, $y2)=@$e2{'positionX','positionY'};
-		my($allowed)=game::angle(stash::get("$x2,$y2", 'oneways', game::mapname));
+		my($allowed)=game::angle(stash::get("$x2,$y2", 'oneways', map::name));
 		my($direction)=game::angle($x1-$x2, $y1-$y2);
 		my($wrong_way)=0;
 
@@ -4710,14 +4854,14 @@ core protecting the flag.
 		if($wrong_way) {
 			game::bench($p2);
 			game::spawn_here($p2, $x2, $y2, $allowed);
-			server::whisper($p2, 'Wrong way!');
+			chat::whisper($p2, 'Wrong way!');
 		}
 	},
 
 	'kill'	=> sub {
 		my($e, $p)=@_;
 		my($v)=player::lookup($e->{'victim'});
-		my($spawn_mode)=stash::get('spawnMode', game::mapname);
+		my($spawn_mode)=stash::get('spawnMode', map::name);
 		my($angle);
 
 		return unless($v);
@@ -4740,8 +4884,8 @@ core protecting the flag.
 		return unless($e->{'source'}=~m/plane/);
 		return if($p->{'isBot'});
 
-		if(game::type('mdg')) {
-			if(game::mode('ball')) {
+		if(map::type('mdg')) {
+			if(map::mode('ball')) {
 				if($e->{'player'}==-1) {
 					'crash';
 				} elsif($p->{'team'} == $v->{'team'}) {
@@ -4753,21 +4897,21 @@ core protecting the flag.
 		}
 
 		if(List::Util::max(map(abs, @$e{'victimVelocityX', 'victimVelocityY'})) > 15) {
-			server::snark($v, "$v->{'nickname'} says Ouch!!");
+			chat::snark($v, "$v->{'nickname'} says Ouch!!");
 		}
 
 		$p->{'stats'}{'kill'}{$v->{'nickname'}}++;
 		$v->{'stats'}{'died'}++;
 
 		if($p->{'team'} == $v->{'team'}) {
-			server::snark($v, "$v->{'nickname'} was killed by friendly fire");
+			chat::snark($v, "$v->{'nickname'} was killed by friendly fire");
 		} elsif($e->{'multi'}>5) {
-			server::snark($p, "$p->{'nickname'} says Booyah!!");
+			chat::snark($p, "$p->{'nickname'} says Booyah!!");
 		} elsif($e->{'streak'}>10) {
-			server::snark($p, "$p->{'nickname'}: $e->{'streak'}");
+			chat::snark($p, "$p->{'nickname'}: $e->{'streak'}");
 		} elsif(($v->{'stats'}{'died'}%15)==0 && player::count>4) {
 			if($p->{'stats'}{'kill'}{$v->{'nickname'}} > $v->{'stats'}{'died'}/(player::count()/4)) {
-				server::snark($v, "$p->{'nickname'} must really like killing $v->{'nickname'}");
+				chat::snark($v, "$p->{'nickname'} must really like killing $v->{'nickname'}");
 			}
 		}
 	},
@@ -4778,7 +4922,7 @@ core protecting the flag.
 		$p->{'stats'}{$e->{'target'}}++;
 
 		if( ($p->{'stats'}{$e->{'target'}} % 35)==0 ) {
-			server::snark($p, "$p->{'nickname'} is tearing down the house");
+			chat::snark($p, "$p->{'nickname'} is tearing down the house");
 		}
 	},
 
@@ -4787,13 +4931,13 @@ core protecting the flag.
 		my(%pings)=%{$e->{'pingByPlayer'}};
 		my($laggard);
 
-		return unless(server::snarky);
+		return unless(chat::snarky);
 		return if($config::Ping<100);
 
 		foreach my $player (List::Util::shuffle(keys(%pings))) {
 			if($pings{$player}>=$config::Ping) {
 				$laggard=player::lookup($player);
-				server::snark($laggard, $laggard->{'nickname'}, 'is laggy');
+				chat::snark($laggard, $laggard->{'nickname'}, 'is laggy');
 				last;
 			}
 		}
@@ -4806,23 +4950,30 @@ core protecting the flag.
 		if($e->{'team'}) {
 			if($e->{'blocked'}) {
 				$to='!';
-			} elsif(game::left($p->{'team'})) {
-				$to='<';
-			} elsif(game::right($p->{'team'})) {
-				$to='>';
-			} elsif(game::spec($p->{'team'})) {
-				$to='^';
+				if(length($e->{'message'})>10) {
+					chat::whisper($p,
+						'Message (',
+						substr($e->{'message'}, 0, 8),
+						'...) not delivered'
+					);
+				} else {
+					chat::whisper($p,
+						'Message (',
+						$e->{'message'},
+						') not delivered'
+					);
+				}
 			} else {
-				$to='?';
+				$to=map::team_symbol($p->{'team'});
 			}
 		}
 
 		ui::chat_log($to, $p->{'nickname'}, $e->{'message'});
 
 		if(config::language($e->{'message'})) {
-			server::whisper($p, 'language(', player::infraction($p, 1), ')');
-		} elsif($e->{'blocked'}) {
-			server::whisper($p, 'Message blocked(', player::infraction($p, 1), ')');
+			chat::whisper($p, 'language(', player::infraction($p, 1), ')');
+		} elsif($e->{'blocked'} && config::option('bullyKick')) {
+			player::infraction($p, 0.5);
 		}
 	},
 
@@ -4836,7 +4987,8 @@ core protecting the flag.
 	'objectiveGameStart'	=> sub {
 		my($e, $p)=@_;
 
-		game::teams($e->{'leftTeam'}, $e->{'rightTeam'});
+		map::teams($e->{'leftTeam'}, $e->{'rightTeam'});
+		game::round;
 	},
 
 	'roundEnd'	=> sub {
@@ -4866,7 +5018,7 @@ core protecting the flag.
 			game::most('Tank Award: ', $stats{'Damage Received'}, $pls);
 		}
 
-		if($stats{'Kills'} && $stats{'Deaths'} && !game::type('coop')) {
+		if($stats{'Kills'} && $stats{'Deaths'} && !map::type('coop')) {
 			for(my $i=0; $i<@$pls; $i++) {
 				$stats{'Deaths'}->[$i]=1 unless($stats{'Deaths'}->[$i]);
 				$ratio->[$i]=$stats{'Kills'}->[$i]/$stats{'Deaths'}->[$i];
@@ -4874,7 +5026,7 @@ core protecting the flag.
 			game::most('Best Ratio: ', $ratio, $pls);
 		}
 
-		if(game::type('race')) {
+		if(map::type('race')) {
 			for(my $i=0; $i<@$pls; $i++) {
 				$cps->[$i]=player::lookup($pls->[$i])->{'stats'}{'checkpoint'};
 			}
@@ -4911,7 +5063,7 @@ core protecting the flag.
 
 		if(@alive==1 && $p2==$alive[0]) {
 			server::send('balanceTeams');
-		} elsif(@alive<=2 && game::type('coop')) {
+		} elsif(@alive<=2 && map::type('coop')) {
 			if(grep($p2==$_, @alive)) {
 				server::send('balanceTeams');
 			}
@@ -4923,17 +5075,17 @@ core protecting the flag.
 
 		return unless($e->{'superAdmin'});
 
-		server::msg('Restarting server in');
+		chat::all('Restarting server in');
 		ui::display('', '', 'Restarting server in');
-		server::msg("5"); ui::display('', '', '5');
+		chat::all("5"); ui::display('', '', '5');
 		sleep(1);
-		server::msg("4"); ui::display('', '', '4');
+		chat::all("4"); ui::display('', '', '4');
 		sleep(1);
-		server::msg("3"); ui::display('', '', '3');
+		chat::all("3"); ui::display('', '', '3');
 		sleep(1);
-		server::msg("2"); ui::display('', '', '2');
+		chat::all("2"); ui::display('', '', '2');
 		sleep(1);
-		server::msg("1"); ui::display('', '', '1');
+		chat::all("1"); ui::display('', '', '1');
 		sleep(1);
 
 		if(config::option('updateMapList')) {
@@ -4960,11 +5112,11 @@ core protecting the flag.
 		my($lag);
 
 		return if($e->{'changedMap'});
-		return if(($e->{'time'}-game::start)<10000);	#10 seconds
+		return if(($e->{'time'}-map::start)<10000);	#10 seconds
 
 		$lag=$e->{'duration'}/1000;
 		if($lag > config::option('hitchThreshold')) {
-			server::msg(sprintf('Server lag: %.2f seconds', $lag));
+			chat::all(sprintf('Server lag: %.2f seconds', $lag));
 		}
 	},
 );
@@ -4994,12 +5146,12 @@ also only available from the console.
 			'defer';
 		} elsif($action eq 'set') {
 			unless(config::option_exists($name)) {
-				server::whisper($s, 'Invalid option name', $name);
+				chat::whisper($s, 'Invalid option name', $name);
 				return;
 			}
 
 			if($name=~m/Color/i && $value!~m/black|blue|cyan|green|magenta|red|white|yellow/) {
-				server::whisper($s, 'Invalid color:', $value);
+				chat::whisper($s, 'Invalid color:', $value);
 				return;
 			} elsif($name eq 'ulSizeLimit') {
 				if($value=~m/(\d+)g/i) {
@@ -5016,12 +5168,12 @@ also only available from the console.
 			ui::setup_screen if($name=~m/^ui|Color$/i);
 		} elsif($action eq 'unset') {
 			config::option_del($name);
-			server::whisper($s, $name, 'restored to default');
+			chat::whisper($s, $name, 'restored to default');
 
 			ui::setup_screen if($name=~m/^ui|Color$/i);
 		} elsif($action eq 'add') {
 			unless(config::option_exists($name)) {
-				server::whisper($s, 'Invalid option name', $name);
+				chat::whisper($s, 'Invalid option name', $name);
 				return;
 			}
 
@@ -5030,7 +5182,7 @@ also only available from the console.
 			if($name eq 'superAdmins' && $value!~m/^[0-9a-f-]{36}$/) {
 				$value=player::lookup($value)->{'vaporId'};
 				unless($value) {
-					server::whisper($s, 'Could not find vaporID');
+					chat::whisper($s, 'Could not find vaporID');
 					return;
 				}
 			}
@@ -5043,18 +5195,18 @@ also only available from the console.
 			$current=~s/$value;|;?$value//;
 			config::option_set($name, $current);
 		} else {
-			server::whisper($s, 'Syntax: /server [list|set|unset] [...]');
+			chat::whisper($s, 'Syntax: /server [list|set|unset] [...]');
 			return;
 		}
 
 		$current=config::option($name);
 		foreach my $entry (split(m/;/, $current)) {
-			server::whisper($s, "$name:", $entry);
+			chat::whisper($s, "$name:", $entry);
 		}
 	},
 
 	'showPlayer'		=> sub {
-		my($p)=player::server;
+		my($s)=player::server;
 		my($player)=player::lookup(@_);
 		my(@keys)=qw(
 			nickname
@@ -5068,10 +5220,31 @@ also only available from the console.
 		);
 
 		foreach my $key (@keys) {
-			server::whisper($p, "$key:", $player->{$key});
+			chat::whisper($s, "$key:", $player->{$key});
 		}
-		server::whisper($p, "joined:",
+		chat::whisper($s, 'joined:',
 			scalar(localtime($server::Start + $player->{'time'}/1000)));
+	},
+
+	'showTeams'		=> sub {
+		my($s)=player::server;
+		my($left, $right)=(map::team_color('left'), map::team_color('right'));
+
+		chat::whisper($s, 'left: ', player::list('left'), " ($left)");
+		chat::whisper($s, 'right:', player::list('right'), " ($right)");
+		chat::whisper($s, 'spec: ', player::list('spec'));
+	},
+
+	'chatLeft'		=> sub {
+		chat::team('left', @_);
+	},
+
+	'chatRight'		=> sub {
+		chat::team('right', @_);
+	},
+
+	'chatSpec'		=> sub {
+		chat::team('spec', @_);
 	},
 
 	'shutdown'		=> sub {
@@ -5182,8 +5355,8 @@ while(1) {
 					server::cpu_hrs);
 
 				if(	player::count == 0	&&
-					game::mapname		&&
-					game::elapsed > config::option('timeIdleChange')
+					map::name			&&
+					map::elapsed > config::option('timeIdleChange')
 				) {
 					server::send('changeMap', config::random_map)
 				}
