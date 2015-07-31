@@ -479,6 +479,16 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     be checked.  If the size is above ulSizeLimit, then the
     map file will be promptly deleted.
 
+  * **altBouncer [0|1]**<br>
+    Add support for sending data on users who join the server to the
+    AltBouncer (http://tec27.com/altbouncer/) site.  Setting this to
+    `0` (the default) will ensure data does not get forwarded to the
+    AltBouncer site.  Setting this to `1` will periodically send data
+    to the site.  Data will normally be sent when the server is otherwise
+    idle, so the upload process does not affect game play.  Also, when
+    shutting down, user info will be flushed to the AltBouner server before
+    exiting.
+
   * **boxColor [black|blue|cyan|green|magenta|red|white|yellow]**<br>
     Two sections of the console curses interface are encapsulated
     in boxes.  This value specifes the color of these boxes.
