@@ -18,6 +18,7 @@ my(%OPTIONS)=(
 	hitchThreshold	=> 0.6,			#Length of serverHitch to report
 	timeIdleChange	=> 7200,			#changeMap when server is idle for 2hrs
 	ulSizeLimit	=> 10485760,        #Max allowed download size
+	altBouncer	=> 0,			#Upload users to AltBouncer, 0=no/1=yes
 	boxColor		=> 'blue',          #Curses color palet:
 	chatFromColor	=> 'cyan',          # black, blue, cyan, green,
 	chatToColor	=> 'yellow',        # magenta, red, white, yellow
@@ -79,110 +80,6 @@ my($FATAL_SERVER_ERRORS)=join('|',
 );
 
 my(%HOOKS, %CONSOLE);
-
-{	package utils;
-
-	my($Geoip)=grep(-x $_, (
-			'/bin/geoiplookup',
-			'/usr/bin/geoiplookup',
-			'/sbin/geoiplookup',
-			'/usr/sbin/geoiplookup',
-			'/usr/local/bin/geoiplookup',
-			'/opt/bin/geoiplookup',
-			"$ENV{'HOME'}/bin/geoiplookup",
-		));
-
-	my($Ticks)=POSIX::sysconf(&POSIX::_SC_CLK_TCK);
-
-	sub minmax {
-		my($pair);
-		
-		return(undef, undef) unless(@_);
-
-		List::Util::reduce {
-			$pair=(ref($a) eq 'ARRAY')?$a:[$a, $a];
-			$pair->[0]=$b if($pair->[0]>$b);
-			$pair->[1]=$b if($pair->[1]<$b);
-
-			return($pair);
-		} @_;
-
-		return(@$pair);
-	}
-
-	sub invert {
-		my($hash)=@_;
-		my($inverted)={};
-
-		if($hash) {
-			foreach my $key (keys(%$hash)) {
-				push(@{$inverted->{$hash->{$key}}}, $key);
-			}
-		}
-
-		return($inverted);
-	}
-
-	sub geoip {
-		my($ip)=@_;
-		my($lookup)=IO::Handle->new;
-		my($country)=undef;
-
-		if($Geoip) {
-			$ip=~s/:.*$//;
-
-			open($lookup, '-|', $Geoip, $ip);
-			while(<$lookup>) {
-				$country=$1 if(m/,\s+(.*?)\s*$/);
-			}
-			close($lookup);
-		}
-
-		return($country);
-	}
-
-	sub distance {
-		my($x1, $y1, $x2, $y2)=@_;
-
-		return(sqrt( ($x2-$x1)**2 + ($y2-$y1)**2 ));
-	}
-
-	sub random_value {
-		my(@values)=values(%{$_[0]});
-
-		return($values[int(rand(@values))]);
-	}
-
-	sub proc_time {
-		my($pid)=@_;
-		my($stat)=IO::Handle->new;
-		my($file)="/proc/$pid/stat";
-		my($user, $sys)=(0, 0);
-		my(@proc);
-
-		if(-r $file) {
-			open($stat, '<', $file);
-			@proc=split(m/\s+/, $stat->getline);
-			close($stat);
-
-			$user=$proc[13]+$proc[15];
-			$sys=$proc[14]+$proc[16];
-		}
-
-		return($user/$Ticks, $sys/$Ticks);
-	}
-
-	sub secs2time {
-		my($time)=@_;
-		my($hrs, $mins, $secs);
-
-		$secs=$time%60;
-		$mins=($time/60)%60;
-		$hrs=$time/3600;
-
-		return(sprintf('%02d:%02d:%02d', $hrs, $mins, $secs));
-	}
-}
 
 =head2 Interface
 
@@ -624,6 +521,147 @@ list.
 	}
 }
 
+=head2 Server Notes
+
+B<alti+server> is designed to run on Linux, but may also run on other
+UNIX like operating systems.  It is likely that it could be modified
+to run on non UNIX like systems, if necessary.  A recent version of
+L<perl(1)> should be used to ensure basic operation.
+
+=cut
+
+{	package utils;
+
+	my(@Path)=(
+		split(m/:+/, $ENV{'PATH'}),
+		qw(/usr/bin /bin /usr/sbin /sbin /usr/local/bin /opt/bin),
+		"$ENV{'HOME'}/bin",
+	);
+
+	my($Ticks)=POSIX::sysconf(&POSIX::_SC_CLK_TCK);
+
+	my($Geoip);
+
+	sub which {
+		my($prog, $feeling, $failing)=@_;
+		my(%checked)=();
+		my($bin);
+
+		foreach my $dir (@Path) {
+			next if($checked{$dir}++);
+
+			$bin="$dir/$prog";
+			if(-x $bin) {
+				if($feeling) {
+					ui::slog('Using', $bin, "($feeling)");
+				} else {
+					ui::slog('Using', $bin);
+				}
+				return($bin);
+			}
+		}
+
+		if($failing) {
+			ui::slog($prog, 'not found,', $failing);
+		} else {
+			ui::slog($prog, 'not found');
+		}
+
+		return(undef);
+	}
+
+	$Geoip=&which('geoiplookup', 'good', 'Country lookups not available');
+
+	sub minmax {
+		my($pair);
+		
+		return(undef, undef) unless(@_);
+
+		List::Util::reduce {
+			$pair=(ref($a) eq 'ARRAY')?$a:[$a, $a];
+			$pair->[0]=$b if($pair->[0]>$b);
+			$pair->[1]=$b if($pair->[1]<$b);
+
+			return($pair);
+		} @_;
+
+		return(@$pair);
+	}
+
+	sub invert {
+		my($hash)=@_;
+		my($inverted)={};
+
+		if($hash) {
+			foreach my $key (keys(%$hash)) {
+				push(@{$inverted->{$hash->{$key}}}, $key);
+			}
+		}
+
+		return($inverted);
+	}
+
+	sub geoip {
+		my($ip)=@_;
+		my($lookup)=IO::Handle->new;
+		my($country)=undef;
+
+		if($Geoip) {
+			$ip=~s/:.*$//;
+
+			open($lookup, '-|', $Geoip, $ip);
+			while(<$lookup>) {
+				$country=$1 if(m/,\s+(.*?)\s*$/);
+			}
+			close($lookup);
+		}
+
+		return($country);
+	}
+
+	sub distance {
+		my($x1, $y1, $x2, $y2)=@_;
+
+		return(sqrt( ($x2-$x1)**2 + ($y2-$y1)**2 ));
+	}
+
+	sub random_value {
+		my(@values)=values(%{$_[0]});
+
+		return($values[int(rand(@values))]);
+	}
+
+	sub proc_time {
+		my($pid)=@_;
+		my($stat)=IO::Handle->new;
+		my($file)="/proc/$pid/stat";
+		my($user, $sys)=(0, 0);
+		my(@proc);
+
+		if(-r $file) {
+			open($stat, '<', $file);
+			@proc=split(m/\s+/, $stat->getline);
+			close($stat);
+
+			$user=$proc[13]+$proc[15];
+			$sys=$proc[14]+$proc[16];
+		}
+
+		return($user/$Ticks, $sys/$Ticks);
+	}
+
+	sub secs2time {
+		my($time)=@_;
+		my($hrs, $mins, $secs);
+
+		$secs=$time%60;
+		$mins=($time/60)%60;
+		$hrs=$time/3600;
+
+		return(sprintf('%02d:%02d:%02d', $hrs, $mins, $secs));
+	}
+}
+
 =head2 State
 
 B<alti+server> keeps state from one invocation to another.  It stores
@@ -836,33 +874,11 @@ to see if it looks like it will be sufficient.
 
 {	package compress;
 
-	my($Compress)=grep(-x $_, (
-			'/bin/lzma',
-			'/usr/bin/lzma',
-			'/sbin/lzma',
-			'/usr/sbin/lzma',
-			'/usr/local/bin/lzma',
-			'/opt/bin/lzma',
-			"$ENV{'HOME'}/bin/lzma",
-			'/bin/gzip',
-			'/usr/bin/gzip',
-			'/sbin/gzip',
-			'/usr/sbin/gzip',
-			'/usr/local/bin/gzip',
-			'/opt/bin/gzip',
-			"$ENV{'HOME'}/bin/gzip",
-			'/bin/bzip2',
-			'/usr/bin/bzip2',
-			'/sbin/bzip2',
-			'/usr/sbin/bzip2',
-			'/usr/local/bin/bzip2',
-			'/opt/bin/bzip2',
-			"$ENV{'HOME'}/bin/bzip2",
-		));
+	my($Compress)=	utils::which('lzma', 'good')	||
+				utils::which('gzip', 'ok')	||
+				utils::which('bzip2', 'ok');
 
-	if($Compress) {
-		ui::slog("using $Compress (good)");
-	} else {
+	unless($Compress) {
 		ui::slog('No Compress found (guessing), consider installing lzma (its more accurate)');
 	}
 
@@ -882,9 +898,10 @@ to see if it looks like it will be sufficient.
 	sub deflate {
 		my($in, $out, $err)=(IO::Handle->new, IO::Handle->new, IO::Handle->new);
 		my($output)='';
+		my($pid);
 		
 		#6 tends to be the default, and Altitude seems not to be that good:
-		IPC::Open3::open3($in, $out, $err, $Compress, '-4', '-c');
+		$pid=IPC::Open3::open3($in, $out, $err, $Compress, '-4', '-c');
 
 		print $in @_;
 		close($in);
@@ -893,6 +910,8 @@ to see if it looks like it will be sufficient.
 		close($out);
 		close($err);
 	
+		waitpid($pid, 0);
+
 		return($output);
 	}
 
@@ -1395,6 +1414,74 @@ has occured.  After too many infractions, the player is kicked by the server.
 	}
 }
 
+=head2 AltBouncer
+
+Keep AltBounder up-to-date
+
+=cut
+
+{	package altbouncer;
+
+	my($File)="$INSTALL_ROOT/servers/players_seen.xml";
+	my($Url)='http://tec27.com/altbouncer/uploadaltnames.php';
+	my($Curl)=utils::which('curl', 'good', 'forcing AltBouncer support off');
+	my(@Args)=qw(-s -m 5 -F MAX_FILE_SIZE=80000);
+
+	my($Xml_h)=qq(<?xml version="1.0" encoding="UTF-8"?>\n<PlayedWithList>\n  <list>\n);
+	my($Xml_b)=qq(    <PlayedWith lastPlayedWithTime="%s" nickname="%s" vaporID="%s" />\n);
+	my($Xml_f)=qq(  </list>\n</PlayedWithList>\n\n);
+
+	my(%Seen)=();
+
+	sub add {
+		my($p)=@_;
+
+		return unless(config::option('altBouncer'));
+		return unless($Curl);
+		return if($p->{'demo'});
+
+		if($p->{'nickname'} && $p->{'vaporId'}) {
+			$Seen{$p->{'vaporId'}}{$p->{'nickname'}}=time()*1000;
+		}
+	}
+
+	sub upload {
+		my($stage, $upload)=(IO::Handle->new, IO::Handle->new);
+		local($_);
+
+		return unless(keys(%Seen)>10);
+
+		open($stage, '>', $File);
+		print $stage $Xml_h;
+
+		foreach my $vip (keys(%Seen)) {
+			foreach my $nick (keys(%{$Seen{$vip}})) {
+				print $stage sprintf($Xml_b, $Seen{$vip}{$nick}, $nick, $vip);
+			}
+		}
+
+		print $stage $Xml_f;
+		close($stage);
+
+		ui::slog($Curl, @Args, '-F', "uploadedfile=\@$File", $Url);
+		open($upload, '-|', $Curl, @Args, '-F', "uploadedfile=\@$File", $Url);
+
+		while(<$upload>) {
+			chomp;
+			ui::slog($_) if(m/<title>|<h2>|error|fail/i);
+		}
+
+		close($upload);
+
+		if($?) {
+			ui::slog('ERROR : CURL EXIT STATUS:', $?>>8);
+		} else {
+			ui::slog('INFO  : curl upload to AltBouncer successful');
+			%Seen=();
+		}
+	}
+}
+
 =head2 Altitude Game Engine
 
 The core of B<alti+server> is the altitude game engine itself.  B<alti+server>
@@ -1658,6 +1745,13 @@ types which alter the normal behavior.
 		return(time()-$Map->{'idle'});
 	}
 
+	sub idle {
+		return(0) unless($Map->{'map'});
+		return(0) unless(&elapsed > config::option('timeIdleChange'));
+
+		return(1);
+	}
+
 	sub teams {
 		($Map->{'leftTeam'}, $Map->{'rightTeam'})=@_;
 	}
@@ -1908,6 +2002,10 @@ is updated with them as the games progress.
 
 	sub count {
 		return(scalar(&list(@_)));
+	}
+
+	sub none {
+		return(@Players==0);
 	}
 
 	sub values {
@@ -2431,6 +2529,8 @@ with their name.
 
 {	package file;
 
+	my($Curl)=utils::which('curl', 'good', 'map uploads not possible');
+
 	sub sum {
 		my($sum, $file)=@_;
 		my($cmd)=IO::Handle->new;
@@ -2495,12 +2595,13 @@ with their name.
 		my($eout);
 		my($pid);
 
-		ui::slog('curl', @_);
+		ui::slog($Curl, @_);
 
+		return(0) unless($Curl);
 		return(0) unless(&url_ok($_[-1]));
 
 		$pid=IPC::Open3::open3($in, $out, $err,
-			'curl', '-s', '--max-filesize', config::option('ulSizeLimit'), @_);
+			$Curl, '-s', '--max-filesize', config::option('ulSizeLimit'), @_);
 
 		$_=join('', <$out>);
 
@@ -4494,6 +4595,8 @@ core protecting the flag.
 
 		return if($p->{'isBot'});
 
+		altbouncer::add($p);
+
 		if($p->{'country'}=utils::geoip($p->{'ip'})) {
 			ui::display('', '', "< $p->{'nickname'} entered from $p->{'country'} >");
 		} else {
@@ -4509,6 +4612,8 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		player::rename($e->{'oldNickname'}, $e->{'newNickname'});
+
+		altbouncer::add($p);
 
 		if(chat::snarky) {
 			chat::whisper($p, 'Oh', $p->{'nickname'},
@@ -5230,14 +5335,14 @@ also only available from the console.
 		my($s)=player::server;
 		my($left, $right)=(map::team_color('left'), map::team_color('right'));
 
-		chat::whisper($s, sprintf('%-16s', "left  ($left):"),
-			map($_->{'nickname'}, player::list('left')));
+		chat::whisper($s, sprintf('%-16s:', "left  ($left)"),
+			join(', ', map($_->{'nickname'}, player::list('left'))));
 
-		chat::whisper($s, sprintf('%-16s', "right ($right):"),
-			map($_->{'nickname'}, player::list('right')));
+		chat::whisper($s, sprintf('%-16s:', "right ($right)"),
+			join(', ', map($_->{'nickname'}, player::list('right'))));
 
-		chat::whisper($s, sprintf('%-16s', 'spec:'),
-			map($_->{'nickname'}, player::list('spec')));
+		chat::whisper($s, sprintf('%-16s:', 'spec'),
+			join(', ', map($_->{'nickname'}, player::list('spec'))));
 	},
 
 	'chatLeft'		=> sub {
@@ -5253,6 +5358,7 @@ also only available from the console.
 	},
 
 	'shutdown'		=> sub {
+		altbouncer::upload;
 		server::shutdown;
 		ui::shutdown;
 		exit(0);
@@ -5359,10 +5465,9 @@ while(1) {
 				ui::slog('INFO  : CPU Totals (user system):',
 					server::cpu_hrs);
 
-				if(	player::count == 0	&&
-					map::name			&&
-					map::elapsed > config::option('timeIdleChange')
-				) {
+				if(player::none && map::idle) {
+					altbouncer::upload;
+
 					server::send('changeMap', config::random_map)
 				}
 			}
