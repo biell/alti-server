@@ -1896,11 +1896,11 @@ is updated with them as the games progress.
 		my($filter)=@_;
 
 		if(map::left($filter)) {
-			return(grep(map::left($_), @Players));
+			return(grep(map::left($_->{'team'}), @Players));
 		} elsif(map::right($filter)) {
-			return(grep(map::right($_), @Players));
+			return(grep(map::right($_->{'team'}), @Players));
 		} elsif(map::spec($filter)) {
-			return(grep(map::spec($_), @Players));
+			return(grep(map::spec($_->{'team'}), @Players));
 		} else {
 			return(@Players);
 		}
@@ -5230,9 +5230,14 @@ also only available from the console.
 		my($s)=player::server;
 		my($left, $right)=(map::team_color('left'), map::team_color('right'));
 
-		chat::whisper($s, 'left: ', player::list('left'), " ($left)");
-		chat::whisper($s, 'right:', player::list('right'), " ($right)");
-		chat::whisper($s, 'spec: ', player::list('spec'));
+		chat::whisper($s, sprintf('%-16s', "left  ($left):"),
+			map($_->{'nickname'}, player::list('left')));
+
+		chat::whisper($s, sprintf('%-16s', "right ($right):"),
+			map($_->{'nickname'}, player::list('right')));
+
+		chat::whisper($s, sprintf('%-16s', 'spec:'),
+			map($_->{'nickname'}, player::list('spec')));
 	},
 
 	'chatLeft'		=> sub {
