@@ -1439,6 +1439,7 @@ Keep AltBounder up-to-date
 		$str=~s/&/&amp;/g;
 		$str=~s/</&lt;/g;
 		$str=~s/>/&gt;/g;
+		$str=~s/"/&quot;/g;
 
 		return($str);
 	}
