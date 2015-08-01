@@ -1186,7 +1186,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 			push(@filter, $_);
 		}
 		close($fh);
-		$Language=sprintf('(%s|\b)(%s)(%s)?s?\b',
+		$Language=sprintf('(%s|\b)(%s)+(%s)?s?\b',
 				'er|ing?',
 				join('|', @filter),
 				'a|er|ing?|ed'
@@ -1433,6 +1433,16 @@ Keep AltBounder up-to-date
 
 	my(%Seen)=();
 
+	sub xml {
+		my($str)=@_;
+
+		$str=~s/&/&amp;/g;
+		$str=~s/</&lt;/g;
+		$str=~s/>/&gt;/g;
+
+		return($str);
+	}
+
 	sub add {
 		my($p)=@_;
 
@@ -1441,8 +1451,12 @@ Keep AltBounder up-to-date
 		return if($p->{'demo'});
 
 		if($p->{'nickname'} && $p->{'vaporId'}) {
-			$Seen{$p->{'vaporId'}}{$p->{'nickname'}}=time()*1000;
+			$Seen{&xml($p->{'vaporId'})}{&xml($p->{'nickname'})}=time()*1000;
 		}
+	}
+
+	sub count {
+		return(scalar(keys(%Seen)));
 	}
 
 	sub upload {
@@ -1704,7 +1718,7 @@ types which alter the normal behavior.
 			$Type='flag';
 		} elsif(m/(^|_)zone(_|$)/) {
 			$Type='zone';
-		} elsif(m/(^|_)race(_|$)/) {
+		} elsif(m/(^|_)ra?ce(_|$)/) {
 			$Type='race';
 		} elsif(m/(^|_)coop(_|$)/) {
 			$Type='coop';
@@ -1741,15 +1755,9 @@ types which alter the normal behavior.
 		$Map->{'idle'}=time();
 	}
 
-	sub elapsed {
-		return(time()-$Map->{'idle'});
-	}
-
 	sub idle {
 		return(0) unless($Map->{'map'});
-		return(0) unless(&elapsed > config::option('timeIdleChange'));
-
-		return(1);
+		return(time()-$Map->{'idle'});
 	}
 
 	sub teams {
@@ -3377,10 +3385,10 @@ core protecting the flag.
 
 	'list nextMap'	=> sub {
 		my($e, $p)=@_;
-		my($force)=stash::get('nextMap', 'admin');
+		my($next)=stash::get('nextMap', 'admin');
 
-		if($force) {
-			chat::whisper($p, 'Next map is', $force);
+		if($next) {
+			chat::whisper($p, 'Next map is', $next);
 		} else {
 			chat::whisper($p, 'Run /nextMap to see next map');
 		}
@@ -3388,16 +3396,16 @@ core protecting the flag.
 
 	'nextMap'	=> sub {
 		my($e, $p)=@_;
-		my($force)=stash::get('nextMap', 'admin');
+		my($next)=stash::get('nextMap', 'admin');
 
-		chat::whisper($p, 'Next map override is', $force) if($force);
+		chat::whisper($p, 'Next map override is', $next) if($next);
 	},
 
 	'set nextMap'	=> sub {
-		my($e, $p, $force)=@_;
+		my($e, $p, $next)=@_;
 
-		stash::set('nextMap', 'admin', $force);
-		chat::whisper($p, 'Next map is now', $force);
+		stash::set('nextMap', 'admin', $next);
+		chat::whisper($p, 'Next map is now', $next);
 	},
 
 	'unset nextMap'	=> sub {
@@ -3409,22 +3417,22 @@ core protecting the flag.
 
 	'mapLoading'	=> sub {
 		my($e, $p)=@_;
-		my($map)="$INSTALL_ROOT/maps/$MAPDIR/$e->{'map'}";
-		my($force)=stash::get('nextMap', 'admin');
+		my($map)="$INSTALL_ROOT/maps/$MAPDIR/$e->{'map'}.altx";
+		my($next)=stash::get('nextMap', 'admin');
 
-
-		if($force) {
-			server::send('changeMap', $force) unless($e->{'map'} eq $force);
-			stash::delete('nextMap', 'admin');
+		if($next && $e->{'map'} ne $next) {
+			server::send('changeMap', $next);
 			server::override('mapChange', 'skip');
 		} else {
 			file::update_ctime($map);
 			map::busy;
 		}
+
+		stash::delete('nextMap', 'admin') if($next);
 	},
 
-	'mapChange:skip'		=> sub {
-		1; #Skip, this map won't last long
+	'mapChange:skip'	=> sub {
+		return;
 	},
 
 	'mapChange'	=> sub {
@@ -5105,6 +5113,11 @@ core protecting the flag.
 		my($cps)=[];
 		my($keys)=[];
 
+		#This is a good time to do slow stuff:
+		if(altbouncer::count > 250) {
+			altbouncer::upload;
+		}
+
 		return if(@$pls<4);
 
 		if($stats{'Crashes'}) {
@@ -5414,6 +5427,8 @@ if(config::option('updateMapList')) {
 server::start;
 
 while(1) {
+	server::reaper;
+
 	foreach my $fh (server::data) {
 		if(server::is_log($fh)) {
 			next unless($REQ=server::event);
@@ -5465,10 +5480,15 @@ while(1) {
 				ui::slog('INFO  : CPU Totals (user system):',
 					server::cpu_hrs);
 
-				if(player::none && map::idle) {
-					altbouncer::upload;
+				if(player::none) {
+					if(map::idle > config::option('timeIdleChange')) {
+						server::send('changeMap', config::random_map);
+						altbouncer::upload;
+					}
 
-					server::send('changeMap', config::random_map)
+					if(altbouncer::count > 100) {
+						altbouncer::upload;
+					}
 				}
 			}
 
