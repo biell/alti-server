@@ -5428,8 +5428,6 @@ if(config::option('updateMapList')) {
 server::start;
 
 while(1) {
-	server::reaper;
-
 	foreach my $fh (server::data) {
 		if(server::is_log($fh)) {
 			next unless($REQ=server::event);
