@@ -532,6 +532,8 @@ L<perl(1)> should be used to ensure basic operation.
 
 {	package utils;
 
+	use Digest::SHA;
+
 	my(@Path)=(
 		split(m/:+/, $ENV{'PATH'}),
 		qw(/usr/bin /bin /usr/sbin /sbin /usr/local/bin /opt/bin),
@@ -629,6 +631,15 @@ L<perl(1)> should be used to ensure basic operation.
 		my(@values)=values(%{$_[0]});
 
 		return($values[int(rand(@values))]);
+	}
+
+	sub uuid {
+		my(@seed)=(POSIX::uname(), $$, time(), rand(2**63), rand(2**31));
+		my($digest)=Digest::SHA::sha256_hex(@seed);
+		
+		$digest=~m/(.{8}).(.{4}).(.{4}).(.{4}).(.{16})/;
+
+		return(join('-', $1, $4, $3, '0000', $5));
 	}
 
 	sub proc_time {
@@ -1002,6 +1013,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 	our($Ping)=500; #reset from launcher_config.xml
 	our($Goals)=6;  #reset from launcher_config.xml
 	our($Maxp)=14;  #reset from launcher_config.xml
+
+	our($Uuid)=stash::get('uuid', 'server');
+
+	stash::set('uuid', 'server', $Uuid=utils::uuid) unless($Uuid);
 
 	$MAPDIR=~s|/+$|| if($MAPDIR);
 
@@ -1416,13 +1431,13 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 =head2 AltBouncer
 
-Keep AltBounder up-to-date
+Keep AltBouncer up-to-date.
 
 =cut
 
 {	package altbouncer;
 
-	my($File)="$INSTALL_ROOT/servers/players_seen.xml";
+	my($File)="$INSTALL_ROOT/servers/played_with_$config::Uuid.xml";
 	my($Url)='http://tec27.com/altbouncer/uploadaltnames.php';
 	my($Curl)=utils::which('curl', 'good', 'forcing AltBouncer support off');
 	my(@Args)=qw(-s -m 5 -F MAX_FILE_SIZE=80000);
