@@ -1477,6 +1477,7 @@ Keep AltBouncer up-to-date.
 
 	sub upload {
 		my($stage, $upload)=(IO::Handle->new, IO::Handle->new);
+		my($rejected)=1;
 		local($_);
 
 		return unless(keys(%Seen)>10);
@@ -1499,12 +1500,16 @@ Keep AltBouncer up-to-date.
 		while(<$upload>) {
 			chomp;
 			ui::slog($_) if(m/<title>|<h2>|error|fail/i);
+			$rejected=0 if(m/<h2>Completed/);
 		}
 
 		close($upload);
 
 		if($?) {
 			ui::slog('ERROR : CURL EXIT STATUS:', $?>>8);
+		} elsif($rejected) {
+			ui::slog('WARN  : curl upload rejected by AltBouncer');
+			%Seen=();
 		} else {
 			ui::slog('INFO  : curl upload to AltBouncer successful');
 			%Seen=();
