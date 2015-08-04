@@ -5133,6 +5133,7 @@ core protecting the flag.
 		my($ratio)=[];
 		my($cps)=[];
 		my($keys)=[];
+		my($player);
 
 		#This is a good time to do slow stuff:
 		if(altbouncer::count > 250) {
@@ -5167,14 +5168,16 @@ core protecting the flag.
 
 		if(map::type('race')) {
 			for(my $i=0; $i<@$pls; $i++) {
-				$cps->[$i]=player::lookup($pls->[$i])->{'stats'}{'checkpoint'};
+				$player=player::lookup($pls->[$i]);
+				$cps->[$i]=$player->{'stats'}{'checkpoint'} if($player);
 			}
 			game::most('Front Runner: ', $cps, $pls);
 		}
 
 		if('key finder stats') {
 			for(my $i=0; $i<@$pls; $i++) {
-				$keys->[$i]=player::lookup($pls->[$i])->{'stats'}{'keys'};
+				$player=player::lookup($pls->[$i]);
+				$keys->[$i]=$player->{'stats'}{'keys'} if($player);
 			}
 			game::most('Key Master: ', $keys, $pls);
 		}
