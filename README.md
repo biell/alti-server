@@ -230,7 +230,7 @@ manage Alti+ game maps.
     *health* (the location of their last health powerup),
     *zone* (zone based spawning where uses can cange their spawn zone on demand),
     *near* (nearest zone to a player when they die),
-    *portal* (pre-defined specified health powerups cause a player to immediately respawn at a defined location),
+    *portal* (players continue to spawn at the end of a portal after a death --implied with `died`, `powerup`, and `health`),
     or *normal* (at the normal, map defined start).
     If users get into a bind, they can use `/sz start` to spawn in the
     normal location.
@@ -655,6 +655,14 @@ allowed values:
   * **e|ne|n|nw|w|sw|s|se**<br>
     Compass directions which are converted to
     0, 45, 90, 135, 180, -135, -90, and -45 respectively.
+    The long names of `east`, `northeast`, ..., `southeast` are also allowed.
+
+  * **c|h|v**<br>
+    Specify relative angles directed towards the
+    center of the map,
+    facing horizontally left or right towards the middle vertical axis, or
+    facing vertically up or down towards the middle horizontal axis.
+    The long names of `center`, `horizontal`, and `vertical` are also allowed.
 
 ## Custom Awards
 

@@ -627,6 +627,12 @@ L<perl(1)> should be used to ensure basic operation.
 		return(sqrt( ($x2-$x1)**2 + ($y2-$y1)**2 ));
 	}
 
+	sub direction {
+		my($x, $y)=@_;
+
+		return(int(atan2($y, $x)*180/3.14159));
+	}
+
 	sub random_value {
 		my(@values)=values(%{$_[0]});
 
@@ -866,6 +872,32 @@ stash are automatically saved to disk.
 		}
 
 		return($value);
+	}
+
+	sub upgrade {
+		my($changes)=0;
+		my($tmp);
+
+		$Stash=&_read($Stashfile) unless($Stash);
+
+		foreach my $key (keys(%$Stash)) {
+			if(exists($Stash->{$key}{'portals'})) {		##Upgrade portals##
+				foreach my $portal (keys(%{$Stash->{$key}{'portals'}})) {
+					$tmp=$Stash->{$key}{'portals'}{$portal};
+					if(@$tmp==5) {
+						delete($Stash->{$key}{'portals'}{$portal});
+						$Stash->{$key}{'portals'}{join(',', @$tmp[0,1])}=
+							[ $portal, @$tmp[2,3,4] ];
+						$changes=1;
+					}
+				}
+			}
+		}
+
+		if($changes) {
+			&_write($Stash, $Stashfile);
+			ui::slog('Stash upgraded');
+		}
 	}
 
 }
@@ -1714,6 +1746,11 @@ types which alter the normal behavior.
 	my($Map)=undef;
 	my($Type)=undef;
 
+	my($Ds)=undef;
+	my(%Pickups)=();
+
+	our($Xmid, $Ymid)=(0, 0);
+
 	my(%Teams)=(
 		2	=> 'spec',	'spec'	=> 2,
 		3	=> 'red',		'red'	=> 3,
@@ -1729,7 +1766,28 @@ types which alter the normal behavior.
 	my($Color_re)=join('|', grep(length>2, keys(%Teams)));
 
 	sub file {
-		return("$INSTALL_ROOT/maps/$Map->{'map'}.altx");
+		if($MAPDIR) {
+			return("$INSTALL_ROOT/maps/$MAPDIR/$Map->{'map'}.altx");
+		} else {
+			return("$INSTALL_ROOT/maps/$Map->{'map'}.altx");
+		}
+	}
+
+	sub definition {
+		my($map)=@_;
+		my($cache)="$INSTALL_ROOT/maps/cache/$MAPDIR";
+		my(%parser)=(
+			'SuppressEmpty'	=> 1,
+			'ForceArray'		=> ['View', 'powerupSpawner', 'String'],
+			'ValueAttr'		=> [ 'value', 'index' ],
+			'GroupTags'		=> {
+				'views'			=> 'View',
+				'selectedPowerups'	=> 'String',
+				'image'			=> 'path'
+			}
+		);
+
+		return(XML::Simple::XMLin(<$cache/$map.altx/*.alte>, %parser));
 	}
 
 	sub set_type {
@@ -1758,14 +1816,6 @@ types which alter the normal behavior.
 		} else { 
 			return($Type);
 		}
-	}
-
-	sub new {
-		my($mapref)=@_;
-
-		$Map=$mapref;
-		&set_type($Map->{'map'});
-		$Map->{'idle'}=time();
 	}
 
 	sub start	{
@@ -1874,6 +1924,49 @@ types which alter the normal behavior.
 			return('?');
 		}
 	}
+
+	sub powerup {
+		my($xy, $type)=@_;
+
+		if(exists($Pickups{$xy})) {
+			if($type) {
+				if(@{$Pickups{$xy}}==1 && $Pickups{$xy}[0]=~m/$type/i) {
+					return($Pickups{$xy}[0]);
+				} else {
+					return(undef);
+				}
+			} else {
+				return(@{$Pickups{$xy}});
+			}
+		} else {
+			return(undef);
+		}
+	}
+
+	sub new {
+		my($mapref)=@_;
+		my(@views)=();
+
+		$Map=$mapref;
+		&set_type($Map->{'map'});
+		$Map->{'idle'}=time();
+
+		$Ds=&definition($Map->{'map'});
+		$Xmid=$Ds->{'views'}{'Game'}{'bounds'}{'maxX'}/2;
+		$Ymid=$Ds->{'views'}{'Game'}{'bounds'}{'maxY'}/2;
+
+		@views=map($Ds->{'views'}{$_}{'powerupSpawner'},
+			keys(%{$Ds->{'views'}}));
+
+		foreach my $view (@views) {
+			next unless($view);
+
+			foreach my $pu (@{$view->[0]{'powerupSpawner'}}) {
+				$Pickups{"$pu->{'x'},$pu->{'y'}"}=$pu->{'selectedPowerups'};
+			}
+		}
+	}
+
 }
 
 =head2 Players
@@ -2166,6 +2259,7 @@ play though extended interfaces and server support.
 
 	my(@Score)=(0, 0);
 	my(%Stats)=();
+	my(%Reset)=();
 	my($Hunted)=undef;
 
 	sub new {
@@ -2269,12 +2363,14 @@ play though extended interfaces and server support.
 	}
 
 	sub angle {
+		my($x)=shift;
+		my($y)=shift;
 		my($a);
 
 		if(@_==1) {
 			$a=lc($_[0]);
 		} else {
-			$a=atan2($_[1], $_[0])*180/3.14159;
+			return(utils::direction(@_));
 		}
 
 		#Accept -90, 270, 'down', or 's' to signify straight down:
@@ -2294,6 +2390,12 @@ play though extended interfaces and server support.
 			$a=-135;
 		} elsif($a eq 'nw' || $a eq 'northwest') {
 			$a=135;
+		} elsif($a eq 'c' || $a eq 'center') {
+			$a=utils::direction($map::Xmid-$x, $map::Ymid-$y);
+		} elsif($a eq 'h' || $a eq 'hmirror') {
+			$a=utils::direction($map::Xmid-$x, 0);
+		} elsif($a eq 'v' || $a eq 'vmirror') {
+			$a=utils::direction(0, $map::Ymid-$y);
 		} elsif($a<=-180) {
 			$a=int($a + 360);
 		} elsif($a>180) {
@@ -2310,7 +2412,7 @@ play though extended interfaces and server support.
 
 	sub spawn_here {
 		my($p, $x, $y, @angle)=@_;
-		my($angle)=&angle(@angle);
+		my($angle)=&angle($x, $y, @angle);
 		
 		if(abs($angle)>90) {
 			$x=POSIX::ceil($x);
@@ -2324,6 +2426,24 @@ play though extended interfaces and server support.
 		}
 
 		server::send('overrideSpawnPoint', $p->{'nickname'}, $x, $y, $angle);
+	}
+
+	sub clear_spawn {
+		my($p)=@_;
+
+		$Reset{$p}=1;
+	}
+
+	sub check_spawn {
+		my($p)=@_;
+
+		if(exists($Reset{$p})) {
+			&spawn_reset($p);
+			delete($Reset{$p});
+			return(1);
+		} else {
+			return(0);
+		}
 	}
 
 	sub spawn_near {
@@ -2481,35 +2601,33 @@ play though extended interfaces and server support.
 
 	sub divert {
 		my($e, $p)=@_;
-		my($divs)=stash::get('diverters', map::name);
 		my($pickup)=join(',', @$e{'positionX','positionY'});
+		my($other)=stash::get($pickup, 'diverters', map::name);
 
-		if($divs->{$pickup}) {
-			if($Stats{'diverters'}{$pickup}) {
-				chat::whisper($p, 'Wrong diverter');
-				game::bench($p);
-			} else {
-				$Stats{'diverters'}{$pickup}=1;
-				$Stats{'diverters'}{$divs->{$pickup}}=0;
-			}
+		return unless($other);
+
+		if($Stats{'diverters'}{$pickup}) {
+			chat::whisper($p, 'Wrong diverter');
+			game::bench($p);
+		} else {
+			$Stats{'diverters'}{$pickup}=1;
+			$Stats{'diverters'}{$other}=0;
 		}
 	}
 
 	sub teleport {
 		my($e, $p)=@_;
-		my($portals)=stash::get('portals', map::name);
-		my($px, $py)=($e->{'positionX'}, $e->{'positionY'});
-		my($name, $portal);
+		my($pickup)=join(',', @$e{'positionX','positionY'});
+		my($portal)=stash::get($pickup, 'portals', map::name);
 
-		while( ($name, $portal)=each(%$portals) ) {
-			if($px==$portal->[0] && $py==$portal->[1]) {
-				game::bench($p);
-				game::spawn_here($p, @$portal[2,3,4]);
+		return(0) unless($portal);
 
-				chat::whisper($p, 'Teleporting you to:', $name);
-				last;
-			}
-		}
+		&bench($p);
+		&spawn_here($p, @$portal[1,2,3]);
+
+		chat::whisper($p, 'Teleporting you to:', $portal->[0]);
+
+		return(1);
 	}
 
 	sub most {
@@ -2732,6 +2850,9 @@ and better passing in the game.
 =cut
 
 my(%SNARKS)=(
+	"%s, pick a nick already!"
+			=> { 'nickname'=> 'Guest_' },
+
 	"%s can't aim"
 			=> { 'perkRed' => 'Tracker' },
 
@@ -3056,8 +3177,12 @@ core protecting the flag.
 	'switch'	=> sub {
 		my($e, $p)=@_;
 
-		server::send('assignTeam', $p->{'nickname'}, -1);
-		chat::whisper($p, 'Spectating, press `t` to join a team');
+		if(map::mode('ffa')) {
+			chat::whisper($p, '/switch does not function in ffa');
+		} else {
+			server::send('assignTeam', $p->{'nickname'}, -1);
+			chat::whisper($p, 'Spectating, press `t` to join a team');
+		}
 	},
 
 	'mesg'	=> sub {
@@ -4165,16 +4290,15 @@ core protecting the flag.
 		my($any)=0;
 
 		foreach my $portal (sort(keys(%$portals))) {
-			chat::whisper($p, sprintf('%s: %d,%d -> %d,%d @%d',
-				$portal, @{$portals->{$portal}}));
+			chat::whisper($p, sprintf('%s: %s -> %d,%d @%s',
+					$portals->{$portal}[0],
+					$portal,
+					@{$portals->{$portal}}[1,2,3]
+				));
 			$any=1;
 		}
 
-		if($spawn_mode eq 'portal') {
-			chat::whisper($p, 'No spawn portals defined') unless($any);
-		} else {
-			chat::whisper($p, 'spawnMode is not set to portal');
-		}
+		chat::whisper($p, 'No spawn portals defined') unless($any);
 	},
 
 	'add portal'	=> sub {
@@ -4185,20 +4309,27 @@ core protecting the flag.
 			return;
 		}
 
-		$sa=game::angle($sa);
-
-		stash::set($portal, 'portals', map::name,
-			[$px, $py => $sx, $sy, $sa]);
+		stash::set("$px,$py", 'portals', map::name,
+			[$portal => $sx, $sy, $sa]);
 		chat::all('Added portal:', $portal);
 	},
 
 	'del portal'	=> sub {
-		my($e, $p, $portal)=@_;
+		my($e, $p, $remove, $rest)=@_;
+		my($portals)=stash::get('portals', map::name);
 
-		if(stash::delete($portal, 'portals', map::name)) {
-			chat::all('Deleted portal:', $portal);
-		} else {
-			chat::whisper($p, 'No portal named:', $portal);
+		$remove=join(',', $remove, $rest) if($rest);
+
+		foreach my $portal (keys(%$portals)) {
+			if($portal eq $remove) {
+				stash::delete($portal, 'portals', map::name);
+				chat::all('Deleted portal:', $portal);
+			} elsif($portals->{$portal}[0] eq $remove) {
+				stash::delete($portal, 'portals', map::name);
+				chat::all('Deleted portal:', $portal);
+			} else {
+				chat::whisper($p, 'No portal at or named:', $remove);
+			}
 		}
 	},
 
@@ -4400,21 +4531,21 @@ core protecting the flag.
 			$zones=stash::get(map::left, 'zones', map::name);
 			foreach my $zone (sort(keys(%$zones))) {
 				chat::whisper($p,
-					sprintf('%s < %d,%d @%d', $zone, @{$zones->{$zone}}));
+					sprintf('%s < %d,%d @%s', $zone, @{$zones->{$zone}}));
 				$any=1;
 			}
 
 			$zones=stash::get(map::right, 'zones', map::name);
 			foreach my $zone (sort(keys(%$zones))) {
 				chat::whisper($p,
-					sprintf('%s > %d,%d @%d', $zone, @{$zones->{$zone}}));
+					sprintf('%s > %d,%d @%s', $zone, @{$zones->{$zone}}));
 				$any=1;
 			}
 		} else {
 			$zones=stash::get($p->{'team'}, 'zones', map::name);
 			foreach my $zone (sort(keys(%$zones))) {
 				chat::whisper($p,
-					sprintf('%s: %d,%d @%d', $zone, @{$zones->{$zone}}));
+					sprintf('%s: %d,%d @%s', $zone, @{$zones->{$zone}}));
 				$any=1;
 			}
 		}
@@ -4429,7 +4560,6 @@ core protecting the flag.
 	'add zone'	=> sub {
 		my($e, $p, $zone, $team, $sx, $sy, $sa)=@_;
 
-		$sa=game::angle($sa);
 		$team='*' unless($team);
 
 		if(map::left($team)) {
@@ -4793,6 +4923,7 @@ core protecting the flag.
 		unless($p->{'plane'}=~m/$planere/) {
 			game::bench($p);
 			chat::whisper($p, "Allowed planes: $planere");
+			return;
 		}
 
 		#Ensure players are on the correct team:
@@ -4812,6 +4943,8 @@ core protecting the flag.
 			server::send('assignTeam', $p->{'nickname'}, 1);
 			return;
 		}
+
+		game::check_spawn($p);
 
 		if(chat::snarky) {
 			foreach my $snark (List::Util::shuffle(keys(%SNARKS))) {
@@ -4898,8 +5031,7 @@ core protecting the flag.
 	'powerupPickup'	=> sub {
 		my($e, $p)=@_;
 		my($spawn_mode)=stash::get('spawnMode', map::name);
-		my(@x)=POSIX::modf($e->{'positionX'});
-		my(@y)=POSIX::modf($e->{'positionY'});
+		my($pickup)=join(',', @$e{'positionX','positionY'});
 
 		game::capture($e, $p) if(map::type('flag'));
 		game::checkpoint($e, $p) if(map::type('race'));
@@ -4916,47 +5048,34 @@ core protecting the flag.
 			}
 		}
 
-		chat::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
+		if($p->{'logPickups'} && map::powerup($pickup)) {
+			chat::whisper($p, $pickup,':',join(', ', map::powerup($pickup)));
+		}
 
 		return if(game::knock($e, $p));
 
-		if(stash::get("$x[1],$y[1]", 'oneways', map::name)) {
-			server::trigger('logPlanePositions', 'oneway', $e, $p);
-		} elsif($spawn_mode eq 'powerup') {
-			unless($x[0] || $y[0] || $e->{'velocityX'} || $e->{'velocityY'}) {
-				server::trigger('logPlanePositions', 'powerup', $e, $p);
+		if(game::teleport($e, $p)) {
+			if($spawn_mode!~m/died|powerup|health|portal/) {
+				game::clear_spawn($p);
 			}
-		} elsif($spawn_mode eq 'portal') {
-			game::teleport($e, $p);
+			return;
+		}
+
+		if(stash::get($pickup, 'oneways', map::name)) {
+			server::trigger('logPlanePositions', 'oneway', $e, $p);
+		} elsif($spawn_mode eq 'health') {
+			if(map::powerup($pickup, 'Health')) {
+				server::trigger('logPlanePositions', 'powerup', $e, $p)
+			}
+		} elsif($spawn_mode eq 'powerup') {
+			if(map::powerup($pickup)) {
+				server::trigger('logPlanePositions', 'powerup', $e, $p)
+			}
 		}
 	},
 
 	'powerupAutoUse'	=> sub {
-		my($e, $p)=@_;
-		my($spawn_mode)=stash::get('spawnMode', map::name);
-		my(@x)=POSIX::modf($e->{'positionX'});
-		my(@y)=POSIX::modf($e->{'positionY'});
-
-		game::capture($e, $p) if(map::type('flag'));
-		game::checkpoint($e, $p) if(map::type('race'));
-
-		game::divert($e, $p);
-
-		return if($p->{'isBot'});
-
-		chat::whisper($p, @$e{'positionX','positionY'}) if($p->{'logPickups'});
-
-		return if(game::knock($e, $p));
-
-		if(stash::get("$x[1],$y[1]", 'oneways', map::name)) {
-			server::trigger('logPlanePositions', 'oneway', $e, $p);
-		} elsif($spawn_mode eq 'health' || $spawn_mode eq 'powerup') {
-			unless($x[0] || $y[0]) {
-				server::trigger('logPlanePositions', 'powerup', $e, $p);
-			}
-		} elsif($spawn_mode eq 'portal') {
-			game::teleport($e, $p);
-		}
+		$HOOKS{'powerupPickup'}->(@_);
 	},
 
 	'logPlanePositions:powerup'	=> sub {
@@ -4973,15 +5092,15 @@ core protecting the flag.
 		my($e1, $p1, $e2, $p2)=@_;
 		my($x1, $y1)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
 		my($x2, $y2)=@$e2{'positionX','positionY'};
-		my($allowed)=game::angle(stash::get("$x2,$y2", 'oneways', map::name));
-		my($direction)=game::angle($x1-$x2, $y1-$y2);
+		my($allowed)=game::angle($x2, $y2, stash::get("$x2,$y2", 'oneways', map::name));
+		my($direction)=game::angle($x2, $y2, $x1-$x2, $y1-$y2);
 		my($wrong_way)=0;
 
-		if($allowed>90 && $direction<0) {
-			$wrong_way=1 if(game::angle($allowed+90)<$direction);
-		} elsif($allowed<=-90 && $direction>0) {
-			$wrong_way=1 if(game::angle($allowed-90)>$direction);
-		} elsif($direction<($allowed-90) || ($allowed+90)<$direction) {
+		if($allowed>80 && $direction<0) {
+			$wrong_way=1 if(game::angle($x2, $y2, $allowed+80)<$direction);
+		} elsif($allowed<=-80 && $direction>0) {
+			$wrong_way=1 if(game::angle($x2, $y2, $allowed-80)>$direction);
+		} elsif($direction<($allowed-80) || ($allowed+80)<$direction) {
 			$wrong_way=1;
 		}
 
@@ -5439,6 +5558,8 @@ knowledge of ports, players, log files, standard output, etc.
 my($REQ, $SOUT, $TRIGGER);
 
 ui::setup_screen;
+
+stash::upgrade;
 
 config::launcher;
 
