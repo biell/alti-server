@@ -29,6 +29,7 @@ my(%OPTIONS)=(
 	bullyKick		=> 1,               #Kick repeated aggressive language
 	infractions	=> 10,			#10 infractions gets players kicked
 	debug		=> 0,			#Debug is on(1) or off(0)
+	recordsTypes	=> 'coop,race',     #Which map types to keep records on
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
 								# normal: all commands and help
@@ -670,7 +671,13 @@ L<perl(1)> should be used to ensure basic operation.
 		return($user/$Ticks, $sys/$Ticks);
 	}
 
-	sub secs2time {
+	sub secs2mins {
+		my($time)=@_;
+
+		return(sprintf('%02d:%04.1f', $time/60, $time%60));
+	}
+
+	sub secs2hrs {
 		my($time)=@_;
 		my($hrs, $mins, $secs);
 
@@ -679,6 +686,20 @@ L<perl(1)> should be used to ensure basic operation.
 		$hrs=$time/3600;
 
 		return(sprintf('%02d:%02d:%02d', $hrs, $mins, $secs));
+	}
+
+	sub nth {
+		my($n)=@_;
+
+		if($n==1) {
+			return('1st');
+		} elsif($n==2) {
+			return('2nd');
+		} elsif($n==3) {
+			return('3rd');
+		} else {
+			return($n.'th');
+		}
 	}
 }
 
@@ -1699,7 +1720,7 @@ directly with it to manage the instance.
 	}
 
 	sub uptime {
-		return(utils::secs2time(time()-$^T));
+		return(utils::secs2hrs(time()-$^T));
 	}
 
 	sub cpu_hrs {
@@ -1713,8 +1734,8 @@ directly with it to manage the instance.
 		}
 
 		return(
-			utils::secs2time($pu+$cu+$Cu),
-			utils::secs2time($ps+$cs+$Cs),
+			utils::secs2hrs($pu+$cu+$Cu),
+			utils::secs2hrs($ps+$cs+$Cs),
 		);
 	}
 
@@ -2273,6 +2294,73 @@ debugging or to make funny comments.
 		$Delay=$time+3;
 		return(1);
 	}
+}
+
+=head2 Records
+
+The server can keep track of records on a per-map basis.  Records will be
+displayed at the completion of a map and players will be congratulated if
+they make the top 5.
+
+=cut
+
+{	package records;
+
+	my($Start)=0;
+
+	sub print {
+		my(@records)=split(m/;/, stash::get('records', map::name));
+		my($i)=1;
+
+		if(@records) {
+			chat::all('Record Times');
+			chat::all('---------------');
+			foreach my $record (@records) {
+				chat::all(utils::nth($i++), ':', utils::secs2mins($record));
+			}
+			chat::all('---------------');
+		}
+	}
+
+	sub mark {
+		my($e)=@_;
+
+		$Start=$e->{'time'}/1000;
+	}
+
+	sub enter {
+		my($e, $winner)=@_;
+		my($types)=config::option('recordsTypes');
+		my(@records)=split(m/;/, stash::get('records', map::name));
+		my($place)=1;
+		my($time);
+
+		return unless(map::type(split(m/[\w,;|]+/, $types)));
+
+		$time=$e->{'time'}/1000 - $Start;
+
+		for(my $i=0; $i<@records; $i++) {
+			if($time<$records[$i]) {
+				splice(@records, $i, 0, $time);
+				pop(@records) if(@records>5);
+				last;
+			} else {
+				$place++;
+			}
+		}
+
+		&print;
+
+		if(@records) {
+			if($place<=5) {
+				chat::all('Congratulations, you placed',  utils::nth($place));
+				stash::set('records', map::name, join(';', @records));
+			}
+		} else {
+			stash::set('records', map::name, $time);
+		}
+	}
+
 }
 
 =head2 Altitued Plus Games
@@ -3641,6 +3729,8 @@ core protecting the flag.
 		}
 
 		chat::all('Server configured for map:', $e->{'map'});
+
+		records::mark($e);
 	},
 
 	'help gravity'	=> sub {
@@ -5283,6 +5373,8 @@ core protecting the flag.
 		my($cps)=[];
 		my($keys)=[];
 		my($player);
+
+		records::enter($e);
 
 		#This is a good time to do slow stuff:
 		if(altbouncer::count > 250) {

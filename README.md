@@ -573,6 +573,14 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     library will now send messages to console, and to all admins
     who are playing the game.
  
+  * **recordsTypes [type1;type2;...]**<br>
+    Keep records of game types `type1`, `type2`, and so on.  This is
+    a commonly desired feature on coop and race map types, and not
+    so much on other map types.  If this string is set to non-empty,
+    then for these maps the top 5 times will be displayed at the end
+    of each round.  Additionally, a team will be congratulated if they
+    score in the top 5.
+
   * **rotationRE [RE]**<br>
     Not all maps need to be in the map rotation, and should only
     be available via an admin */changeMap* or a */vote changeMap*.
