@@ -674,7 +674,7 @@ L<perl(1)> should be used to ensure basic operation.
 	sub secs2mins {
 		my($time)=@_;
 
-		return(sprintf('%02d:%04.1f', $time/60, $time%60));
+		return(sprintf('%02d:%04.1f', $time/60, POSIX::fmod($time, 60)));
 	}
 
 	sub secs2hrs {
@@ -2312,13 +2312,8 @@ they make the top 5.
 		my(@records)=split(m/;/, stash::get('records', map::name));
 		my($i)=1;
 
-		if(@records) {
-			chat::all('Record Times');
-			chat::all('---------------');
-			foreach my $record (@records) {
-				chat::all(utils::nth($i++), ':', utils::secs2mins($record));
-			}
-			chat::all('---------------');
+		foreach my $record (@records) {
+			chat::all(utils::nth($i++), ':', utils::secs2mins($record));
 		}
 	}
 
@@ -2349,13 +2344,21 @@ they make the top 5.
 			}
 		}
 
-		&print;
-
 		if(@records) {
 			if($place<=5) {
-				chat::all('Congratulations, you placed',  utils::nth($place));
 				stash::set('records', map::name, join(';', @records));
 			}
+
+			chat::all('Record Times');
+			chat::all('-----------------------');
+			&print;
+
+			if($place<=5) {
+				chat::all('Congratulations, you placed',  utils::nth($place));
+			} else {
+				chat::all('you',  ':', utils::secs2mins($time));
+			}
+			chat::all('-----------------------');
 		} else {
 			stash::set('records', map::name, $time);
 		}
@@ -5374,54 +5377,54 @@ core protecting the flag.
 		my($keys)=[];
 		my($player);
 
-		records::enter($e);
-
 		#This is a good time to do slow stuff:
 		if(altbouncer::count > 250) {
 			altbouncer::upload;
 		}
 
-		return if(@$pls<4);
-
-		if($stats{'Crashes'}) {
-			game::most('Training Wheels Award: ', $stats{'Crashes'}, $pls);
-		}
-		if($stats{'Deaths'}) {
-			game::most('Kenny McCormick Award: ', $stats{'Deaths'}, $pls);
-		}
-		if($stats{'Ball Possession Time'}) {
-			game::most('Ball Hog Award: ', $stats{'Ball Possession Time'}, $pls);
-		}
-		if($stats{'Damage Dealt'}) {
-			game::most('Sledge Hammer Award: ', $stats{'Damage Dealt'}, $pls);
-		}
-		if($stats{'Damage Received'}) {
-			game::most('Tank Award: ', $stats{'Damage Received'}, $pls);
-		}
-
-		if($stats{'Kills'} && $stats{'Deaths'} && !map::type('coop')) {
-			for(my $i=0; $i<@$pls; $i++) {
-				$stats{'Deaths'}->[$i]=1 unless($stats{'Deaths'}->[$i]);
-				$ratio->[$i]=$stats{'Kills'}->[$i]/$stats{'Deaths'}->[$i];
+		if(player::count>2) {
+			if($stats{'Crashes'}) {
+				game::most('Training Wheels Award: ', $stats{'Crashes'}, $pls);
 			}
-			game::most('Best Ratio: ', $ratio, $pls);
+			if($stats{'Deaths'}) {
+				game::most('Kenny McCormick Award: ', $stats{'Deaths'}, $pls);
+			}
+			if($stats{'Ball Possession Time'}) {
+				game::most('Ball Hog Award: ', $stats{'Ball Possession Time'}, $pls);
+			}
+			if($stats{'Damage Dealt'}) {
+				game::most('Sledge Hammer Award: ', $stats{'Damage Dealt'}, $pls);
+			}
+			if($stats{'Damage Received'}) {
+				game::most('Tank Award: ', $stats{'Damage Received'}, $pls);
+			}
+	
+			if($stats{'Kills'} && $stats{'Deaths'} && !map::type('coop')) {
+				for(my $i=0; $i<@$pls; $i++) {
+					$stats{'Deaths'}->[$i]=1 unless($stats{'Deaths'}->[$i]);
+					$ratio->[$i]=$stats{'Kills'}->[$i]/$stats{'Deaths'}->[$i];
+				}
+				game::most('Best Ratio: ', $ratio, $pls);
+			}
+
+			if(map::type('race')) {
+				for(my $i=0; $i<@$pls; $i++) {
+					$player=player::lookup($pls->[$i]);
+					$cps->[$i]=$player->{'stats'}{'checkpoint'} if($player);
+				}
+				game::most('Front Runner: ', $cps, $pls);
+			}
+
+			if('key finder stats') {
+				for(my $i=0; $i<@$pls; $i++) {
+					$player=player::lookup($pls->[$i]);
+					$keys->[$i]=$player->{'stats'}{'keys'} if($player);
+				}
+				game::most('Key Master: ', $keys, $pls);
+			}
 		}
 
-		if(map::type('race')) {
-			for(my $i=0; $i<@$pls; $i++) {
-				$player=player::lookup($pls->[$i]);
-				$cps->[$i]=$player->{'stats'}{'checkpoint'} if($player);
-			}
-			game::most('Front Runner: ', $cps, $pls);
-		}
-
-		if('key finder stats') {
-			for(my $i=0; $i<@$pls; $i++) {
-				$player=player::lookup($pls->[$i]);
-				$keys->[$i]=$player->{'stats'}{'keys'} if($player);
-			}
-			game::most('Key Master: ', $keys, $pls);
-		}
+		records::enter($e);
 	},
 
 	'restartMap'	=> sub {
