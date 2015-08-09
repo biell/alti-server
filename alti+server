@@ -38,6 +38,9 @@ my(%OPTIONS)=(
 	                                   # admin: all admins are super admins
 								# console: cmds typed at console only
 								# list: vaporId from @superAdmins array:
+	admins		=> join(';',
+			'00000000-0000-0000-0000-000000000000',
+		),
 	superAdmins	=> join(';',
 			'00000000-0000-0000-0000-000000000000',
 		),
@@ -1133,6 +1136,69 @@ has occured.  After too many infractions, the player is kicked by the server.
 		close($fh);
 	}
 
+	sub write_launcher_config {
+		my($lconfig)=IO::Handle->new;
+		my($maplist, $adminlist)=(0, 0);
+		my($admins)=config::option('admins');
+		my($rotation)=config::option('rotationRE');
+		my($update_maps)=config::option('updateMapList');
+		my($update_admins)=($admins=~m/[1-9a-f]/);
+		my(@xml);
+
+		return unless($update_maps || $update_admins);
+
+		open($lconfig, '<', $Conffile);
+		@xml=<$lconfig>;
+		close($lconfig);
+
+		foreach(@xml) {
+			if($update_maps) {
+				if(m{</mapList>}i) {
+					foreach my $map (@Maps) {
+						s{^}{        <String value="$map" />\r\n}s;
+					}
+					$maplist=0;
+				}
+				if(m{</mapRotationList>}i) {
+					foreach my $map (grep(m/($rotation)/, @Maps)) {
+						s{^}{        <String value="$map" />\r\n}s;
+					}
+					$maplist=0;
+				}
+
+				if($maplist) {
+					$_=''
+				}
+	
+				if(m{<mapList>|<mapRotationList>}i) {
+					$maplist=1;
+				}
+			}
+
+			if($update_admins) {
+				if(m{</adminsByVaporID>}i) {
+					foreach my $admin (split(m/;/, $admins)) {
+						s{^}{        <UUID UUID="$admin" />\r\n}s;
+					}
+					$adminlist=0;
+				}
+
+				if($adminlist) {
+					$_=''
+				}
+	
+				if(m{<adminsByVaporID>}i) {
+					$adminlist=1;
+				}
+			}
+		}
+
+		rename($Conffile, "$Conffile.bak");
+		open($lconfig, '>', $Conffile);
+		print $lconfig @xml;
+		close($lconfig);
+	}
+
 	sub launcher {
 		my($server)=XML::Simple::XMLin($Conffile);
 		my($fh)=IO::Handle->new;
@@ -1274,11 +1340,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	}
 
 	sub find_maps {
-		my($lconfig)=IO::Handle->new;
-		my($maplist)=0;
 		my($packet_space)=1450-220-21*$Maxp-$Reserve;
-		my($rotation)=config::option('rotationRE');
-		my(@xml);
 
 		ui::slog('Space reserved for maps:', $packet_space);
 
@@ -1300,38 +1362,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 			ui::slog('Error: no maps found during startup');
 			return;
 		}
-
-		open($lconfig, '<', $Conffile);
-		@xml=<$lconfig>;
-		close($lconfig);
-
-		foreach(@xml) {
-			if(m{</mapList>}i) {
-				foreach my $map (@Maps) {
-					s{^}{        <String value="$map" />\r\n}s;
-				}
-				$maplist=0;
-			}
-			if(m{</mapRotationList>}i) {
-				foreach my $map (grep(m/($rotation)/, @Maps)) {
-					s{^}{        <String value="$map" />\r\n}s;
-				}
-				$maplist=0;
-			}
-
-			if($maplist) {
-				$_=''
-			}
-
-			if(m{<mapList>|<mapRotationList>}i) {
-				$maplist=1;
-			}
-		}
-
-		rename($Conffile, "$Conffile.bak");
-		open($lconfig, '>', $Conffile);
-		print $lconfig @xml;
-		close($lconfig);
 	}
 
 	sub resize {
@@ -5355,6 +5385,8 @@ core protecting the flag.
 			config::read_maps;
 		}
 
+		config::write_launcher_config;
+
 		server::start;
 		server::reopen_log;
 	},
@@ -5440,7 +5472,13 @@ also only available from the console.
 
 			$current=config::option($name);
 
-			if($name eq 'superAdmins' && $value!~m/^[0-9a-f-]{36}$/) {
+			if($name eq 'admins' && $value!~m/^[0-9a-f-]{36}$/) {
+				$value=player::lookup($value)->{'vaporId'};
+				unless($value) {
+					chat::whisper($s, 'Could not find vaporID');
+					return;
+				}
+			} elsif($name eq 'superAdmins' && $value!~m/^[0-9a-f-]{36}$/) {
 				$value=player::lookup($value)->{'vaporId'};
 				unless($value) {
 					chat::whisper($s, 'Could not find vaporID');
@@ -5568,6 +5606,8 @@ if(config::option('updateMapList')) {
 } else {
 	config::read_maps;
 }
+
+config::write_launcher_config;
 
 server::start;
 
