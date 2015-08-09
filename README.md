@@ -615,6 +615,14 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     Finally, setting this to `list` will allow a list of
     vaporIds to be set with actual super admin users.
    
+  * **admins [vaporID|nickname]**<br>
+    An array of server admins.  If this list is unset, then the
+    *adminsByVaporID* section of the `launcher_config.xml` file
+    is left in-tact.  If this array is set, then the vapor IDs in
+    this array are set to be the server administrators and any vapor IDs
+    listed in the `launcher_config.xml` file are replaced with this
+    list.
+
   * **superAdmins [vaporID|nickname]**<br>
     This is an array (so use "add" and "del" when at the console)
     of vapor IDs which have super admin privledges.  It is used
