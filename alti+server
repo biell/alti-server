@@ -1046,13 +1046,125 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 =cut
 
+my(@Altiplus)=(
+	{
+		"name"			=> "help",
+		"arguments"		=> [["map", "nextMap", "gravity", "weapons", "spawnHealth", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "powerups", "portals", "doors", "keys", "diverters", "oneways", "zones", "altitudegame", "ladder", "url", "intro"]],
+		"voteThreshold"	=> 0,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "upload",
+		"arguments"		=> [["altitudegame", "ladder", "tinyupload", "url"], "string"],
+		"voteThreshold"	=> 100,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "list",
+		"arguments"		=> [["map", "nextMap", "gravity", "weapons", "spawnHealth", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "powerups", "portals", "doors", "keys", "diverters", "oneways", "zones", "intro"]],
+		"voteThreshold"	=> 0,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "set",
+		"arguments"		=> [["nextMap", "gravity", "weapons", "spawnHealth", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "intro"], "string"],
+		"voteThreshold"	=> 100,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "unset",
+		"arguments"		=> [["nextMap", "gravity", "weapons", "spawnHealth", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "intro"]],
+		"voteThreshold"	=> 100,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "add",
+		"arguments"		=> [["powerup", "portal", "door", "key", "diverter", "oneway", "zone"], "string"],
+		"voteThreshold"	=> 100,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "del",
+		"arguments"		=> [["powerup", "portal", "door", "key", "diverter", "oneway", "zone"], "string"],
+		"voteThreshold"	=> 100,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "restartServer",
+		"arguments"		=> [],
+		"voteThreshold"	=> 100,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "randomMap",
+		"arguments"		=> [],
+		"voteThreshold"	=> 66,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "removeMap",
+		"arguments"		=> ["map"],
+		"voteThreshold"	=> 100,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "spawnZone",
+		"arguments"		=> ["string"],
+		"argumentDescriptions" => ["Zone name"],
+		"voteThreshold"	=> 0,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "sz",
+		"arguments"		=> ["string"],
+		"argumentDescriptions" => ["Zone name"],
+		"voteThreshold"	=> 0,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "switch",
+		"arguments"		=> [],
+		"voteThreshold"	=> 0,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "talk",
+		"arguments"		=> ["player", "string"],
+		"voteThreshold"	=> 0,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "mesg",
+		"arguments"		=> [["Yes", "No", "?"]],
+		"voteThreshold"	=> 0,
+		"required"		=> 1,
+	},
+	{
+		"name"			=> "sum",
+		"arguments"		=> [["crc32", "md5", "sha1", "sha256"]],
+		"voteThreshold"	=> 0,
+		"required"		=> 0,
+	},
+	{
+		"name"			=> "logPickups",
+		"arguments"		=> [],
+		"voteThreshold"	=> 0,
+		"required"		=> 0,
+	},
+	{
+		"name"			=> "restartMap",
+		"arguments"		=> [],
+		"voteThreshold"	=> 0,
+		"required"		=> 0,
+	},
+);
+
 {	package config;
 
 	use XML::Simple;
 	use Storable;
 	use FindBin qw($Bin $RealBin);
 
-	my($Altiplus)	="$INSTALL_ROOT/servers/alti+commands.txt";
 	my($Conffile)	="$INSTALL_ROOT/servers/launcher_config.xml";
 	my($Custfile)	="$INSTALL_ROOT/servers/custom_json_commands.txt";
 	my($Custfile_o)="$INSTALL_ROOT/servers/custom_json_commands_old.txt";
@@ -1224,7 +1336,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($server)=XML::Simple::XMLin($Conffile);
 		my($fh)=IO::Handle->new;
 		my(@filter)=();
-		my($cmd);
 		local($_);
 
 		foreach my $admin (@{$server->
@@ -1261,38 +1372,24 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Commands{'ban'}=['vaporId'];
 		$Commands{'serverWhisper'}=['player', 'string'];
 
-		unless(-r $Altiplus) {
-			if(-r "$Bin/alti+commands.txt") {
-				$Altiplus="$Bin/alti+commands.txt";
-			} elsif(-r "$RealBin/alti+commands.txt") {
-				$Altiplus="$RealBin/alti+commands.txt";
-			} else {
-				die("Could not find an alti+commands.txt file in $Altiplus, $Bin, or $RealBin.");
-			}
-		}
-		ui::slog('Using custom json command file:', $Altiplus);
-
 		rename($Custfile, $Custfile_o);
+
 		&_write_custom_commands({
-			"name"=>"!",
-			"required"=>1,
-			"voteThreshold"=>100,
-			"arguments"=>["string"],
+			"name"			=> "!",
+			"arguments"		=> ["string"],
+			"voteThreshold"	=> 100,
+			"required"		=> 1,
 		}) if(&option('configSize')=~m/tiny/i);
 
-		open($fh, '<', $Altiplus);
-		while(<$fh>) {
-			if($cmd=json::decode($_)) {
-				if($cmd->{'arguments'} && @{$cmd->{'arguments'}}) {
-					$Commands{$cmd->{'name'}}=$cmd->{'arguments'};
-				} else {
-					$Commands{$cmd->{'name'}}=undef;
-				}
-
-				&_write_custom_commands($cmd);
+		foreach my $cmd (@Altiplus) {
+			if($cmd->{'arguments'} && @{$cmd->{'arguments'}}) {
+				$Commands{$cmd->{'name'}}=$cmd->{'arguments'};
+			} else {
+				$Commands{$cmd->{'name'}}=undef;
 			}
+
+			&_write_custom_commands($cmd);
 		}
-		close($fh);
 
 		$Reserve=compress::size_file($Custfile);
 

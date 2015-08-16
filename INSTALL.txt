@@ -3,21 +3,9 @@ INSTALL.txt
 ###########
 
 The installation process for alti+server is very straight forward.  The
-software consists of two necessary files.
+software consists of one file which contains all necessary code and information:
 
-  1. alti+server
-  2. alti+commands.txt
-
-There are three choices for the second file.  If you require your server
-to run more than 75 maps, it is recommended you use the file from GitHub
-named small_custom_json_commands.txt and rename it.  If you can safely
-run with fewer than 75 maps, you should use the original file.  It provides
-help to users on how to use the custom commands, making the server much
-easier to use and administrate.  If you really need to run more than 100 maps
-and your map list is getting trimmed with the small_custom_json_commands.txt,
-then you can switch to tiny_custom_json_commands.txt.  This is a bare-bones
-command list which provides little help to admins, but supports the necessary
-functionality for running a server.
+  alti+server
 
 
 ======================
@@ -70,32 +58,8 @@ to set these values on a running instance, the values take automatic effect
 and the server is configured for use.
 
 
-==================================
-Step 2, the alti+commands.txt file
-==================================
-The alti+commands.txt file is needed by the server to understand custom
-commands and arguments.  This file is used to generate the Altitude server's
-custom_json_commands.txt file.  If you have any data in that file, it will
-be overwritten.  There are three places where this file can reside:
-
- 1. In your ~/altitude/servers/ directory (or wherever you installed altitude).
-    This file should be in the same location as your launcher_config.xml file.
-    This is the first place searched, and if the file alti+commands.txt file
-    exists here, it will be used.
-
- 2. In the same location as you installed the alti+server script.  This
-    is the second place searched, and if the file alti+commands.txt exists
-    here, then it will be used.
-
- 3. If (and only if) the alti+server is a symbolic link to another location,
-    then that symbolic link will be folled, and the directory containing the
-    actual alti+server will be searched.  If the alti+commands.txt file
-    exists here, it will be used.  This works well if you are pointing the
-    alti+server via symbolic link to a GIT checkout directory, as described
-    in Step 1.
-
 =========================
-Step 3, Start alti+server
+Step 2, Start alti+server
 =========================
 You should be ready to go to start your server, give it a try.  It is highly
 recommended that alti+server be run from a detatchable terminal.  Good

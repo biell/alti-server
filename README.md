@@ -13,11 +13,6 @@ Altitude game server wrapper to enable enhanced modes of game play.
   * **alti+server**  The perl code which starts the altitude game engine
     and monitors it for events.
 
-  * **alti+commands.txt**  The custom commands which allow people to
-    interact with the server.  The Altitude *custom_json_commands.txt* file
-    is automatically generated from this file, and it's syntax is almost
-    identical.
-
 ## Alti+ game types
 
 ### Normal Games
