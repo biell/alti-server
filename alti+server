@@ -1679,7 +1679,13 @@ directly with it to manage the instance.
 	}
 	
 	sub data { 
-		return($Streams->can_read);
+		my(@streams)=$Streams->can_read(300);
+
+		if(@streams) {
+			return(@streams);
+		} else {
+			return(-1);
+		}
 	}
 
 	sub is_log {
@@ -5771,6 +5777,15 @@ while(1) {
 			}
 
 			ui::slog($SOUT);
+		} elsif($fh==-1) {
+			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+			ui::slog('!!   Server is hung, restarting   !!');
+			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+
+			server::interrupt;
+			server::shutdown;
+			server::start;
+			server::reopen_log;
 		} else {
 			input::stdin;
 		}
