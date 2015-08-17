@@ -2433,9 +2433,9 @@ they make the top 5.
 		my($place)=1;
 		my($time);
 
-		return unless(map::type(split(m/[\w,;|]+/, $types)));
+		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
-		$time=$e->{'time'}/1000 - $Start;
+		$time=sprintf("%0.1f", $e->{'time'}/1000 - $Start);
 
 		for(my $i=0; $i<@records; $i++) {
 			if($time<$records[$i]) {
