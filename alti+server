@@ -671,6 +671,21 @@ L<perl(1)> should be used to ensure basic operation.
 		return($user/$Ticks, $sys/$Ticks);
 	}
 
+	sub date {
+		my($time)=@_;
+		my($now)=time();
+
+		if($time>($now-60)) {
+			return('now');
+		} elsif($time>($now-3600)) {
+			return(sprintf('%d minutes ago', ($now-$time)/60));
+		} elsif($time>($now-57600)) {
+			return(POSIX::strftime("today at %H:%M", gmtime($time)));
+		} else {
+			return(POSIX::strftime("%Y-%m-%d %H:%M", gmtime($time)));
+		}
+	}
+
 	sub secs2mins {
 		my($time)=@_;
 
@@ -1046,116 +1061,116 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 =cut
 
-my(@Altiplus)=(
+my(@ALTIPLUS)=(
 	{
-		"name"			=> "help",
-		"arguments"		=> [["map", "nextMap", "gravity", "weapons", "spawnHealth", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "powerups", "portals", "doors", "keys", "diverters", "oneways", "zones", "altitudegame", "ladder", "url", "intro"]],
-		"voteThreshold"	=> 0,
-		"required"		=> 1,
+		'name'			=> 'help',
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'altitudegame', 'ladder', 'url', 'intro', 'records']],
+		'voteThreshold'	=> 0,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "upload",
-		"arguments"		=> [["altitudegame", "ladder", "tinyupload", "url"], "string"],
-		"voteThreshold"	=> 100,
-		"required"		=> 1,
+		'name'			=> 'upload',
+		'arguments'		=> [['altitudegame', 'ladder', 'tinyupload', 'url'], 'string'],
+		'voteThreshold'	=> 100,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "list",
-		"arguments"		=> [["map", "nextMap", "gravity", "weapons", "spawnHealth", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "powerups", "portals", "doors", "keys", "diverters", "oneways", "zones", "intro"]],
-		"voteThreshold"	=> 0,
-		"required"		=> 1,
+		'name'			=> 'list',
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'intro', 'records']],
+		'voteThreshold'	=> 0,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "set",
-		"arguments"		=> [["nextMap", "gravity", "weapons", "spawnHealth", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "intro"], "string"],
-		"voteThreshold"	=> 100,
-		"required"		=> 1,
+		'name'			=> 'set',
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'intro'], 'string'],
+		'voteThreshold'	=> 100,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "unset",
-		"arguments"		=> [["nextMap", "gravity", "weapons", "spawnHealth", "cameraScale", "planeScale", "assignTeam", "planes", "ballScore", "spawnMode", "maxPlayers", "gameType", "intro"]],
-		"voteThreshold"	=> 100,
-		"required"		=> 1,
+		'name'			=> 'unset',
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'intro']],
+		'voteThreshold'	=> 100,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "add",
-		"arguments"		=> [["powerup", "portal", "door", "key", "diverter", "oneway", "zone"], "string"],
-		"voteThreshold"	=> 100,
-		"required"		=> 1,
+		'name'			=> 'add',
+		'arguments'		=> [['powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone'], 'string'],
+		'voteThreshold'	=> 100,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "del",
-		"arguments"		=> [["powerup", "portal", "door", "key", "diverter", "oneway", "zone"], "string"],
-		"voteThreshold"	=> 100,
-		"required"		=> 1,
+		'name'			=> 'del',
+		'arguments'		=> [['powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
+		'voteThreshold'	=> 100,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "restartServer",
-		"arguments"		=> [],
-		"voteThreshold"	=> 100,
-		"required"		=> 1,
+		'name'			=> 'restartServer',
+		'arguments'		=> [],
+		'voteThreshold'	=> 100,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "randomMap",
-		"arguments"		=> [],
-		"voteThreshold"	=> 66,
-		"required"		=> 1,
+		'name'			=> 'randomMap',
+		'arguments'		=> [],
+		'voteThreshold'	=> 66,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "removeMap",
-		"arguments"		=> ["map"],
-		"voteThreshold"	=> 100,
-		"required"		=> 1,
+		'name'			=> 'removeMap',
+		'arguments'		=> ['map'],
+		'voteThreshold'	=> 100,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "spawnZone",
-		"arguments"		=> ["string"],
-		"argumentDescriptions" => ["Zone name"],
-		"voteThreshold"	=> 0,
-		"required"		=> 1,
+		'name'			=> 'spawnZone',
+		'arguments'		=> ['string'],
+		'argumentDescriptions' => ['Zone name'],
+		'voteThreshold'	=> 0,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "sz",
-		"arguments"		=> ["string"],
-		"argumentDescriptions" => ["Zone name"],
-		"voteThreshold"	=> 0,
-		"required"		=> 1,
+		'name'			=> 'sz',
+		'arguments'		=> ['string'],
+		'argumentDescriptions' => ['Zone name'],
+		'voteThreshold'	=> 0,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "switch",
-		"arguments"		=> [],
-		"voteThreshold"	=> 0,
-		"required"		=> 1,
+		'name'			=> 'switch',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "talk",
-		"arguments"		=> ["player", "string"],
-		"voteThreshold"	=> 0,
-		"required"		=> 1,
+		'name'			=> 'talk',
+		'arguments'		=> ['player', 'string'],
+		'voteThreshold'	=> 0,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "mesg",
-		"arguments"		=> [["Yes", "No", "?"]],
-		"voteThreshold"	=> 0,
-		"required"		=> 1,
+		'name'			=> 'mesg',
+		'arguments'		=> [['Yes', 'No', '?']],
+		'voteThreshold'	=> 0,
+		'required'		=> 1,
 	},
 	{
-		"name"			=> "sum",
-		"arguments"		=> [["crc32", "md5", "sha1", "sha256"]],
-		"voteThreshold"	=> 0,
-		"required"		=> 0,
+		'name'			=> 'sum',
+		'arguments'		=> [['crc32', 'md5', 'sha1', 'sha256']],
+		'voteThreshold'	=> 0,
+		'required'		=> 0,
 	},
 	{
-		"name"			=> "logPickups",
-		"arguments"		=> [],
-		"voteThreshold"	=> 0,
-		"required"		=> 0,
+		'name'			=> 'logPickups',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'required'		=> 0,
 	},
 	{
-		"name"			=> "restartMap",
-		"arguments"		=> [],
-		"voteThreshold"	=> 0,
-		"required"		=> 0,
+		'name'			=> 'restartMap',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'required'		=> 0,
 	},
 );
 
@@ -1381,7 +1396,7 @@ my(@Altiplus)=(
 			"required"		=> 1,
 		}) if(&option('configSize')=~m/tiny/i);
 
-		foreach my $cmd (@Altiplus) {
+		foreach my $cmd (@ALTIPLUS) {
 			if($cmd->{'arguments'} && @{$cmd->{'arguments'}}) {
 				$Commands{$cmd->{'name'}}=$cmd->{'arguments'};
 			} else {
@@ -2412,44 +2427,73 @@ they make the top 5.
 	my($Start)=0;
 
 	sub print {
-		my(@records)=split(m/;/, stash::get('records', map::name));
+		my($records)=stash::get('records', map::name);
 		my($i)=1;
 
-		foreach my $record (@records) {
-			chat::all(utils::nth($i++), ':', utils::secs2mins($record));
+		return unless(ref($records) eq 'ARRAY');
+
+		foreach my $record (@$records) {
+			chat::all(sprintf('%s : %s  (%s)',
+					utils::nth($i++),
+					utils::secs2mins($record->[0]),
+					utils::date($record->[1]),
+				));
 		}
+	}
+
+	sub whisper {
+		my($p)=@_;
+		my($records)=stash::get('records', map::name);
+		my($i)=1;
+
+		return unless(ref($records) eq 'ARRAY');
+
+		foreach my $record (@$records) {
+			chat::whisper($p, sprintf('%s : %s  (%s)',
+					utils::nth($i++),
+					utils::secs2mins($record->[0]),
+					utils::date($record->[1]),
+				));
+		}
+	}
+
+	sub reset {
+		$Start=0;
 	}
 
 	sub mark {
 		my($e)=@_;
 
-		$Start=$e->{'time'}/1000;
+		$Start=$e->{'time'}/1000 if(!$Start);
 	}
 
 	sub enter {
 		my($e, $winner)=@_;
 		my($types)=config::option('recordsTypes');
-		my(@records)=split(m/;/, stash::get('records', map::name));
+		my($records)=stash::get('records', map::name);
 		my($place)=1;
 		my($time);
 
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
+		$records=[] unless(ref($records) eq 'ARRAY');
+
 		$time=sprintf("%0.1f", $e->{'time'}/1000 - $Start);
 
-		for(my $i=0; $i<@records; $i++) {
-			if($time<$records[$i]) {
-				splice(@records, $i, 0, $time);
-				pop(@records) if(@records>5);
+		for(my $i=0; $i<@$records; $i++) {
+			if($time<$records->[$i][0]) {
+				splice(@$records, $i, 0, [$time, time()]);
+				pop(@$records) if(@$records>5);
 				last;
 			} else {
 				$place++;
 			}
 		}
 
-		if(@records) {
+		if(@$records) {
 			if($place<=5) {
-				stash::set('records', map::name, join(';', @records));
+				push(@$records, [$time, time()]) if(@$records<$place);
+				stash::set('records', map::name, $records);
 			}
 
 			chat::all('Record Times');
@@ -2463,8 +2507,29 @@ they make the top 5.
 			}
 			chat::all('-----------------------');
 		} else {
-			stash::set('records', map::name, $time);
+			stash::set('records', map::name, [[$time, time()]]);
 		}
+	}
+
+	sub delete {
+		my($remove)=@_;
+		my($records)=stash::get('records', map::name);
+		my($found)=0;
+
+		return(0) unless(ref($records) eq 'ARRAY');
+
+		if($remove=~m/0?(\d+):0?(\d+.\d+)/) {
+			$remove=$1*60+$2;
+		}
+
+		for(my $i=0; $i<@$records; $i++) {
+			if($remove == $records->[$i][0]) {
+				splice(@$records, $i, 1);
+				$found=1;
+			}
+		}
+
+		return($found);
 	}
 
 }
@@ -3836,7 +3901,7 @@ core protecting the flag.
 
 		chat::all('Server configured for map:', $e->{'map'});
 
-		records::mark($e);
+		records::reset;
 	},
 
 	'help gravity'	=> sub {
@@ -4500,6 +4565,30 @@ core protecting the flag.
 		chat::whisper($p, 'Removed map introduction');
 	},
 
+	'help records'	=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, 'Manage map records');
+		chat::whisper($p, '/list records');
+		chat::whisper($p, '/del record <time>');
+	},
+
+	'list records'	=> sub {
+		my($e, $p)=@_;
+
+		records::whisper($p);
+	},
+
+	'del record'	=> sub {
+		my($e, $p, $record)=@_;
+
+		if(records::delete($record)) {
+			chat::whisper($p, "Record $record deleted");
+		} else {
+			chat::whisper($p, "Failed to delete record: $record");
+		}
+	},
+
 	'help portals'	=> sub {
 		my($e, $p)=@_;
 
@@ -5151,6 +5240,8 @@ core protecting the flag.
 			chat::whisper($p, "Allowed planes: $planere");
 			return;
 		}
+
+		records::mark($e);
 
 		#Ensure players are on the correct team:
 		if(map::type('mdg') && game::prey($p)) {
