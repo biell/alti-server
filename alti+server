@@ -1844,10 +1844,11 @@ directly with it to manage the instance.
 
 		if(@streams) {
 			return(@streams);
-		} elsif($Streams->has_exception(1)) {
-			return();
+		#How to check for hung servers???
+		#} elsif(kill(0, $Server_pid)) {
+		#	return(-1);
 		} else {
-			return(-1);
+			return();
 		}
 	}
 
