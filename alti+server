@@ -166,7 +166,6 @@ delete($ENV{'COLUMNS'});
 
 		#Make sure size is right:
 		getmaxyx($Rows, $Cols);
-		resizeterm($Rows, $Cols);
 		($Sline, $Iline)=($Rows/2-1, $Rows-3);
 		($Iputw)=$Cols-6;
 		&resize_win($Swin, $Sline,   $Cols,   0,        0 );
