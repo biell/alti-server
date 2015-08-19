@@ -79,6 +79,7 @@ use List::Util;
 
 my($FATAL_SERVER_ERRORS)=join('|',
 	'Server config size \(\d+ bytes\) exceeds max allowed size',
+	'No suitable Java Virtual Machine could be found',
 	'no available nuons!',
 	'ERROR : serverLoop disrupted',
 );
@@ -679,7 +680,7 @@ L<perl(1)> should be used to ensure basic operation.
 			return('now');
 		} elsif($time>($now-3600)) {
 			return(sprintf('%d minutes ago', ($now-$time)/60));
-		} elsif($time>($now-57600)) {
+		} elsif($time>($now-86400)) {
 			return(POSIX::strftime("today at %H:%M", gmtime($time)));
 		} else {
 			return(POSIX::strftime("%Y-%m-%d %H:%M", gmtime($time)));
@@ -718,12 +719,12 @@ L<perl(1)> should be used to ensure basic operation.
 	}
 }
 
-=head2 State
+=head2 Interchange Formats
 
-B<alti+server> keeps state from one invocation to another.  It stores
-user preferences for certain extensions, and map preferences.  These are
-used to ensure games are playable as designed for different types of maps.
-The format for this data is JSON.
+B<alti+server> can talk both JSON and XML, but needs the libraries to
+do so.  The only non-core libraries you should install for B<alti+server>
+are C<JSON::XS> and C<XML::Simple>.  Newer versions of perl contain a
+pure-perl C<JSON::PP>, and this will be used if C<JSON::XS> is not found.
 
 =cut
 
@@ -775,7 +776,57 @@ The format for this data is JSON.
 
 }
 
-=pod
+{	package xml;
+
+	use XML::Simple;
+
+	sub decode {
+		local($SIG{'__DIE__'})=sub {
+			ui::slog(@_);
+			select(undef, undef, undef, 0.1);
+			return(0);
+		};
+		my($ds)=eval { XMLin(@_) };
+
+		if($ds) {
+			return($ds);
+		} else {
+			if(@_<2) {
+				ui::slog('Failed to read XML from:', @_);
+			} else {
+				ui::slog('Failed to read XML from:', $_[0], json::encode($_[1]));
+			}
+			return(undef);
+		}
+	}
+
+	sub encode {
+		my($ds, @opts)=@_;
+		my($header)='<?xml version="1.0" encoding="UTF-8"?>';
+
+		unless(ref($ds)) {
+			ui::slog('Invalid data structure sent to xml::encode');
+			return('');
+		}
+
+		return(XMLout($ds, @opts, 'KeepRoot' => 1, 'XMLDecl' => $header));
+	}
+
+	sub valid {
+		if(&decode(@_)) {
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+}
+=head2 State
+
+B<alti+server> keeps state from one invocation to another.  It stores
+user preferences for certain extensions, and map preferences.  These are
+used to ensure games are playable as designed for different types of maps.
+The format for this data is JSON.
 
 This file is read from at startup, and written to when settings changes
 are requested by administrative users.  When written to, the previous
@@ -1176,7 +1227,6 @@ my(@ALTIPLUS)=(
 
 {	package config;
 
-	use XML::Simple;
 	use Storable;
 	use FindBin qw($Bin $RealBin);
 
@@ -1348,7 +1398,7 @@ my(@ALTIPLUS)=(
 	}
 
 	sub launcher {
-		my($server)=XML::Simple::XMLin($Conffile);
+		my($server)=xml::decode($Conffile);
 		my($fh)=IO::Handle->new;
 		my(@filter)=();
 		local($_);
@@ -1626,43 +1676,31 @@ my(@ALTIPLUS)=(
 
 =head2 AltBouncer
 
-Keep AltBouncer up-to-date.
+Keep AltBouncer up-to-date.  If the C<altBouncer> configuration option is
+set, then the server will keep track of all users seen and periodically send
+them to the AltBouncer system.
 
 =cut
 
 {	package altbouncer;
 
-	my($File)="$INSTALL_ROOT/servers/played_with_$config::Uuid.xml";
+	my($File)="$INSTALL_ROOT/servers/players_seen_$config::Uuid.xml";
 	my($Url)='http://tec27.com/altbouncer/uploadaltnames.php';
 	my($Curl)=utils::which('curl', 'good', 'forcing AltBouncer support off');
 	my(@Args)=qw(-s -m 5 -F MAX_FILE_SIZE=80000);
 
-	my($Xml_h)=qq(<?xml version="1.0" encoding="UTF-8"?>\n<PlayedWithList>\n  <list>\n);
-	my($Xml_b)=qq(    <PlayedWith lastPlayedWithTime="%s" nickname="%s" vaporID="%s" />\n);
-	my($Xml_f)=qq(  </list>\n</PlayedWithList>\n\n);
-
 	my(%Seen)=();
-
-	sub xml {
-		my($str)=@_;
-
-		$str=~s/&/&amp;/g;
-		$str=~s/</&lt;/g;
-		$str=~s/>/&gt;/g;
-		$str=~s/"/&quot;/g;
-
-		return($str);
-	}
 
 	sub add {
 		my($p)=@_;
+		my($vaporid, $nickname);
 
 		return unless(config::option('altBouncer'));
 		return unless($Curl);
 		return if($p->{'demo'});
 
-		if($p->{'nickname'} && $p->{'vaporId'}) {
-			$Seen{&xml($p->{'vaporId'})}{&xml($p->{'nickname'})}=time()*1000;
+		if($p->{'vaporId'} && $p->{'nickname'}) {
+			$Seen{$p->{'vaporId'}}{$p->{'nickname'}}=time()*1000;
 		}
 	}
 
@@ -1673,21 +1711,32 @@ Keep AltBouncer up-to-date.
 	sub upload {
 		my($stage, $upload)=(IO::Handle->new, IO::Handle->new);
 		my($rejected)=1;
+		my(@players)=();
 		local($_);
 
 		return unless(keys(%Seen)>10);
 
-		open($stage, '>', $File);
-		print $stage $Xml_h;
-
 		foreach my $vip (keys(%Seen)) {
 			foreach my $nick (keys(%{$Seen{$vip}})) {
-				print $stage sprintf($Xml_b, $Seen{$vip}{$nick}, $nick, $vip);
+				push(@players, {
+					'lastPlayedWithTime'	=> $Seen{$vip}{$nick},
+					'nickname'			=> $nick,
+					'vaporID'				=> $vip,
+				});
 			}
 		}
 
-		print $stage $Xml_f;
+		open($stage, '>', $File);
+		print $stage xml::encode({
+			'PlayedWithList' => { 'list' => { 'PlayedWith' => [@players] } }
+			});
 		close($stage);
+
+		unless(xml::valid($stage)) {
+			ui::slog('Generated invalid XML file, not uploading');
+			%Seen=();
+			return;
+		}
 
 		ui::slog($Curl, @Args, '-F', "uploadedfile=\@$File", $Url);
 		open($upload, '-|', $Curl, @Args, '-F', "uploadedfile=\@$File", $Url);
@@ -1796,7 +1845,7 @@ directly with it to manage the instance.
 		if(@streams) {
 			return(@streams);
 		} else {
-			return(-1);
+			return(-2);
 		}
 	}
 
@@ -1956,7 +2005,7 @@ types which alter the normal behavior.
 			}
 		);
 
-		return(XML::Simple::XMLin(<$cache/$map.altx/*.alte>, %parser));
+		return(xml::decode(<$cache/$map.altx/*.alte>, %parser));
 	}
 
 	sub set_type {
@@ -2457,14 +2506,10 @@ they make the top 5.
 		}
 	}
 
-	sub reset {
-		$Start=0;
-	}
-
 	sub mark {
 		my($e)=@_;
 
-		$Start=$e->{'time'}/1000 if(!$Start);
+		$Start=$e->{'time'}/1000;
 	}
 
 	sub enter {
@@ -3901,7 +3946,7 @@ core protecting the flag.
 
 		chat::all('Server configured for map:', $e->{'map'});
 
-		records::reset;
+		records::mark($e);
 	},
 
 	'help gravity'	=> sub {
@@ -5241,8 +5286,6 @@ core protecting the flag.
 			return;
 		}
 
-		records::mark($e);
-
 		#Ensure players are on the correct team:
 		if(map::type('mdg') && game::prey($p)) {
 			if(ref($zones) eq 'HASH' && %$zones) {
@@ -5965,7 +6008,7 @@ while(1) {
 			}
 
 			ui::slog($SOUT);
-		} elsif($fh==-1) {
+		} elsif($fh==-2) {
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
 			ui::slog('!!   Server is hung, restarting   !!');
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
