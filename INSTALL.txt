@@ -20,7 +20,34 @@ does not work with alti+server.
 
 
 =======================
-Step 1, the alti+server
+Step 1, dependencies
+=======================
+
+If your systems is a bare-bones installation, you may have to install
+some of these dependencies.  Many systems already have them all.
+
+Required:
+  1. perl
+  2. perl-JSON-XS
+  3. perl-XML-Simple
+  4. perl-Curses
+  5. perl-Digest-SHA
+
+Recommended:
+  1. GeoIP
+  2. curl
+
+Optional:
+  1. git
+  2. screen, or
+  3. tmux
+  4. java (you may need a different one from what comes with altitude)
+
+Each of the above packages has it's own dependencies which should be taken
+care of by your package manager.
+
+=======================
+Step 2, the alti+server
 =======================
 
 Copy this file to wherever you want.  It does not need to be co-located

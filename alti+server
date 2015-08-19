@@ -151,11 +151,29 @@ delete($ENV{'COLUMNS'});
 	my($Chat)=newwin($Sline-3, $Cols-4, $Sline+1, 2 );
 	my($Iput)=newwin(1,        $Iputw,  $Iline+1, 3 );
 	
+	sub resize_win {
+		my($win, $height, $width, $y, $x)=@_;
+
+		$win->resize($height, $width);
+		$win->move($y, $x);
+	}
+
 	sub setup_screen {
 		my($default)=-1;
 		my($boxColor)='COLOR_'.uc(config::option('boxColor'));
 		my($chatFromColor)='COLOR_'.uc(config::option('chatFromColor'));
 		my($chatToColor)='COLOR_'.uc(config::option('chatToColor'));
+
+		#Make sure size is right:
+		getmaxyx($Rows, $Cols);
+		resizeterm($Rows, $Cols);
+		($Sline, $Iline)=($Rows/2-1, $Rows-3);
+		($Iputw)=$Cols-6;
+		&resize_win($Swin, $Sline,   $Cols,   0,        0 );
+		&resize_win($Cwin, $Sline-1, $Cols-2, $Sline,   1 );
+		&resize_win($Iwin, 3,        $Cols-4, $Iline,   2 );
+		&resize_win($Chat, $Sline-3, $Cols-4, $Sline+1, 2 );
+		&resize_win($Iput, 1,        $Iputw,  $Iline+1, 3 );
 
 		start_color();
 		use_default_colors();
@@ -287,6 +305,7 @@ delete($ENV{'COLUMNS'});
 		
 		if($input == KEY_RESIZE) {
 			&slog('resize'); #Not working
+			&setup_screen;
 			return();
 		} elsif($input eq "\014") {
 			&setup_screen;
@@ -1855,12 +1874,13 @@ directly with it to manage the instance.
 	sub data { 
 		my(@streams);
 
-		if(@streams=$Streams->can_read(150)) {
+		if(@streams=$Streams->can_read(300)) {
 			return(@streams);
-		} elsif(@streams=$Streams->can_read(150)) {
-			return(@streams);
+		#} elsif(@streams=$Streams->can_read(150)) {
+			#return(@streams);
 		} else {
-			return(-1);
+			return();
+			#return(-1);
 		}
 	}
 
