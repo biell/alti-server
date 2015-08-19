@@ -3646,7 +3646,7 @@ core protecting the flag.
 		my($e, $p, $name)=@_;
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		#my($url)="http://altituderank.com/mapdownloads/%s.altx";
-		my($url)="http://www.planeball.com/%s.altx";
+		my($url)="http://maps.planeball.com/%s.altx";
 		my($mapname, $file);
 
 		$name=~s|^$MAPDIR/|| if($MAPDIR);
