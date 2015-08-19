@@ -1844,8 +1844,10 @@ directly with it to manage the instance.
 
 		if(@streams) {
 			return(@streams);
+		} elsif($Streams->has_exception(1)) {
+			return();
 		} else {
-			return(-2);
+			return(-1);
 		}
 	}
 
@@ -6008,7 +6010,7 @@ while(1) {
 			}
 
 			ui::slog($SOUT);
-		} elsif($fh==-2) {
+		} elsif($fh==-1) {
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
 			ui::slog('!!   Server is hung, restarting   !!');
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
