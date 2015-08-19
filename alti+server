@@ -595,6 +595,19 @@ L<perl(1)> should be used to ensure basic operation.
 		return(@$pair);
 	}
 
+	sub uniq {
+		my(@ary)=sort(@_);
+
+		for(my $i=1; $i<@ary; $i++) {
+			if($ary[$i]==$ary[$i-1]) {
+				splice(@ary, $i, 1);
+				redo;
+			}
+		}
+
+		return(@ary);
+	}
+
 	sub invert {
 		my($hash)=@_;
 		my($inverted)={};
@@ -1732,7 +1745,7 @@ them to the AltBouncer system.
 			});
 		close($stage);
 
-		unless(xml::valid($stage)) {
+		unless(xml::valid($File)) {
 			ui::slog('Generated invalid XML file, not uploading');
 			%Seen=();
 			return;
@@ -1840,15 +1853,14 @@ directly with it to manage the instance.
 	}
 	
 	sub data { 
-		my(@streams)=$Streams->can_read(300);
+		my(@streams);
 
-		if(@streams) {
+		if(@streams=$Streams->can_read(150)) {
 			return(@streams);
-		#How to check for hung servers???
-		#} elsif(kill(0, $Server_pid)) {
-		#	return(-1);
+		} elsif(@streams=$Streams->can_read(150)) {
+			return(@streams);
 		} else {
-			return();
+			return(-1);
 		}
 	}
 
@@ -1869,8 +1881,14 @@ directly with it to manage the instance.
 	}
 
 	sub interrupt {
-		kill('INT', $Tail_pid) if($Tail_pid);
-		kill('INT', $Server_pid) if($Server_pid);
+		if($Tail_pid) {
+			kill('CONT', $Tail_pid);
+			kill('INT', $Tail_pid);
+		}
+		if($Server_pid) {
+			kill('CONT', $Server_pid);
+			kill('INT', $Server_pid);
+		}
 	}
 
 	sub shutdown {
@@ -6018,7 +6036,9 @@ while(1) {
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
 
 			server::interrupt;
-			server::shutdown;
+
+			sleep(2);
+
 			server::start;
 			server::reopen_log;
 		} else {
