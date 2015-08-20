@@ -2247,7 +2247,7 @@ types which alter the normal behavior.
 	sub end {
 		my($cpu)=List::Util::sum(server::cpu_secs)-$Cpu;
 
-		ui::slog('INFO  : CPU used by', &name, ':', utils::secs2hrs($cpu));
+		ui::slog('INFO  : CPU used by', &name, ':', utils::secs2mins($cpu));
 	}
 
 }
