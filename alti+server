@@ -1294,7 +1294,7 @@ my(@ALTIPLUS)=(
 
 	sub option {
 		my($key)=@_;
-		my($value)=stash::get($key, 'server') || $OPTIONS{$key};
+		my($value)=stash::get($key, 'server') // $OPTIONS{$key};
 
 		if(ref($value)) {
 			return($value);
