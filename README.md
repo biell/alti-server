@@ -342,7 +342,9 @@ distinction between normal Altitude admin functionality and Super Admin
 functionality is that super admins can change the maps on a server and restart
 it.  There may be users who are admins to set ban and kick, and can also
 `set assignTeam` to keep the game going, but should have access to restart
-the server.
+the server.  If this option is set to `console`, then the `upload` and
+`removeMap` commands will not be included in the *custom_json_commands.txt*
+file to save space for more maps.
 
   * **/restartServer**<br>
     Restart the server. This will shut the currently running server down,
@@ -462,6 +464,17 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     limiting the number of maps the server can load.  Not enabling this feature
     results in enough space for an additional couple maps to be run by
     the server.
+
+  * **allowUploads [0|1]**<br>
+    Allow uploads to the server by admins (assuming the user fits the criteria
+    of a *superAdmin* as defined below).  If this option is disabled, then
+    the `upload` and `removeMap` commands will not be included in the
+    *custom_json_commands.txt* file.  This option is useful if you don't plan
+    on using this feature, and wish to reserver more space for maps.  Disabling
+    this ability will allow your server to run between 4 to 12 extra maps,
+    depending on their names.  While on by default, it is recommended that
+    this feature be disabled if you don't plan on using it.  Regardless of
+    this setting, upload functionality is still available from the console.
 
   * **ulSizeLimit [#]**<br>
     Specify the maximum size of an uploaded map.  This number
