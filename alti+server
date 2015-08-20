@@ -1945,7 +1945,7 @@ directly with it to manage the instance.
 		return(utils::secs2hrs(time()-$^T));
 	}
 
-	sub cpu_hrs {
+	sub cpu_secs {
 		my($pu, $ps, $cu, $cs)=times;
 		my(@times);
 
@@ -1955,10 +1955,11 @@ directly with it to manage the instance.
 			$cs+=$times[1];
 		}
 
-		return(
-			utils::secs2hrs($pu+$cu+$Cu),
-			utils::secs2hrs($ps+$cs+$Cs),
-		);
+		return($pu+$cu+$Cu, $ps+$cs+$Cs);
+	}
+
+	sub cpu_hrs {
+		return(map(utils::secs2hrs($_), &cpu_secs));
 	}
 
 	sub send {
@@ -2019,6 +2020,7 @@ types which alter the normal behavior.
 	my($Map)=undef;
 	my($Type)=undef;
 
+	my($Cpu)=0;
 	my($Ds)=undef;
 	my(%Pickups)=();
 
@@ -2224,6 +2226,8 @@ types which alter the normal behavior.
 		&set_type($Map->{'map'});
 		$Map->{'idle'}=time();
 
+		$Cpu=List::Util::sum(server::cpu_secs);
+
 		$Ds=&definition($Map->{'map'});
 		$Xmid=$Ds->{'views'}{'Game'}{'bounds'}{'maxX'}/2;
 		$Ymid=$Ds->{'views'}{'Game'}{'bounds'}{'maxY'}/2;
@@ -2238,6 +2242,12 @@ types which alter the normal behavior.
 				$Pickups{"$pu->{'x'},$pu->{'y'}"}=$pu->{'selectedPowerups'};
 			}
 		}
+	}
+
+	sub end {
+		my($cpu)=List::Util::sum(server::cpu_secs)-$Cpu;
+
+		ui::slog('CPU used by', &name, ':', utils::secs2hrs($cpu));
 	}
 
 }
@@ -5718,6 +5728,8 @@ core protecting the flag.
 		}
 
 		records::enter($e);
+
+		map::end;
 	},
 
 	'restartMap'	=> sub {
