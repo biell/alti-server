@@ -2247,7 +2247,7 @@ types which alter the normal behavior.
 	sub end {
 		my($cpu)=List::Util::sum(server::cpu_secs)-$Cpu;
 
-		ui::slog('CPU used by', &name, ':', utils::secs2hrs($cpu));
+		ui::slog('INFO  : CPU used by', &name, ':', utils::secs2hrs($cpu));
 	}
 
 }
@@ -5680,11 +5680,6 @@ core protecting the flag.
 		my($keys)=[];
 		my($player);
 
-		#This is a good time to do slow stuff:
-		if(altbouncer::count > 250) {
-			altbouncer::upload;
-		}
-
 		if(player::count>2) {
 			if($stats{'Crashes'}) {
 				game::most('Training Wheels Award: ', $stats{'Crashes'}, $pls);
@@ -5730,6 +5725,9 @@ core protecting the flag.
 		records::enter($e);
 
 		map::end;
+
+		#This is a good time to do slow stuff:
+		altbouncer::upload if(altbouncer::count > 250);
 	},
 
 	'restartMap'	=> sub {
@@ -5952,7 +5950,7 @@ also only available from the console.
 			chat::whisper($s, sprintf('%-20s  %36s  %s',
 					$player->{'nickname'},
 					$player->{'vaporID'},
-					utils::date($player->{'lastPlayedWithTime'}),
+					utils::date($player->{'lastPlayedWithTime'}/1000),
 				));
 			$found=1;
 		}
@@ -6087,6 +6085,7 @@ while(1) {
 				if(player::none) {
 					if(map::idle > config::option('timeIdleChange')) {
 						server::send('changeMap', config::random_map);
+						map::end;
 						altbouncer::upload;
 					}
 
