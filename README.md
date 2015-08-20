@@ -418,6 +418,10 @@ file to save space for more maps.
   * **/showTeams**<br>
     Print a list of teams and the players who are on them.
 
+  * **/showSeen**<br>
+    If user information is being kept per the "altBouncer" option, then
+    display the users currently queued for the next altbouncer update.
+
   * **/chatLeft [message]**<br>
     Send `message` to all members of the left team.
 
