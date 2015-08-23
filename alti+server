@@ -77,6 +77,7 @@ use POSIX;
 use IO::Handle;
 use IPC::Open3;
 use List::Util;
+use Data::Dumper;
 
 my($FATAL_SERVER_ERRORS)=join('|',
 	'Server config size \(\d+ bytes\) exceeds max allowed size',
@@ -668,6 +669,33 @@ L<perl(1)> should be used to ensure basic operation.
 		my($x, $y)=@_;
 
 		return(int(atan2($y, $x)*180/3.14159));
+	}
+
+	sub transform {
+		my($t, $x, $y)=@_;
+		my($a)=$t->{'rotate'};
+
+		$x+=$t->{'translate'}{'x'};
+		$x*=$t->{'scale'};
+
+		$y+=$t->{'translate'}{'y'};
+		$y*=$t->{'scale'};
+
+		if($t->{'flipX'} eq 'true') {
+			if($a<0) {
+				$a=-180-$a;
+			} else {
+				$a=180-$a;
+			}
+		}
+
+		if($t->{'flipY'} eq 'true') {
+			$a*=-1;
+		}
+
+		$a*=3.14159/180;	#convert to radians
+
+		return($x*cos($a)-$y*sin($a), $x*sin($a)+$y*cos($a));
 	}
 
 	sub random_value {
@@ -1734,14 +1762,14 @@ them to the AltBouncer system.
 
 	sub add {
 		my($p)=@_;
-		my($vaporid, $nickname);
 
 		return unless(config::option('altBouncer'));
 		return unless($Curl);
 		return if($p->{'demo'});
+		return if($p->{'nickname'}=~m/Guest_\d{12}/);
 
-		if($p->{'vaporId'} && $p->{'nickname'}) {
-			$Seen{$p->{'vaporId'}}{$p->{'nickname'}}=time()*1000;
+		if($p->{'nickname'} && $p->{'vaporId'}) {
+			$Seen{$p->{'nickname'}}{$p->{'vaporId'}}=time()*1000;
 		}
 	}
 
@@ -1752,10 +1780,13 @@ them to the AltBouncer system.
 	sub seen {
 		my(@players)=();
 
-		foreach my $vip (keys(%Seen)) {
-			foreach my $nick (keys(%{$Seen{$vip}})) {
+		foreach my $nick (keys(%Seen)) {
+			#Don't propogate people messing around with a nick:
+			next if(keys(%{$Seen{$nick}}) > 2);
+
+			foreach my $vip (keys(%{$Seen{$nick}})) {
 				push(@players, {
-					'lastPlayedWithTime'	=> $Seen{$vip}{$nick},
+					'lastPlayedWithTime'	=> $Seen{$nick}{$vip},
 					'nickname'			=> $nick,
 					'vaporID'				=> $vip,
 				});
@@ -2023,6 +2054,7 @@ types which alter the normal behavior.
 	my($Cpu)=0;
 	my($Ds)=undef;
 	my(%Pickups)=();
+	my(%Goals)=();
 
 	our($Xmid, $Ymid)=(0, 0);
 
@@ -2150,6 +2182,18 @@ types which alter the normal behavior.
 		}
 	}
 
+	sub side		{
+		my($p)=@_;
+
+		if(&left($p->{'team'})) {
+			return('left');
+		} elsif(&right($p->{'team'})) {
+			return('right');
+		} else {
+			return(undef);
+		}
+	}
+
 	sub team_color {
 		my($team)=@_;
 
@@ -2218,6 +2262,72 @@ types which alter the normal behavior.
 		}
 	}
 
+	sub register_goal {
+		my($obj)=@_;
+		my(@goal)=utils::transform($obj->{'transformation'}, -25, 0);
+		my(@box)=utils::transform($obj->{'transformation'}, 60, 0);
+
+		$goal[0]+=$obj->{'x'};
+		$goal[1]+=$obj->{'y'};
+
+		$box[0]+=$obj->{'x'};
+		$box[1]+=$obj->{'y'};
+
+		$Goals{$obj->{'team'}}{'goal'}=[@goal];
+
+		#The goal box is really a circle:
+		$Goals{$obj->{'team'}}{'box'}=[@box];
+		$Goals{$obj->{'team'}}{'radius'}=utils::distance(@goal, @box);
+	}
+
+	sub goalbox {
+		my($e)=@_;
+		my($x, $y)=@$e{'positionX','positionY'};
+		my($left, $right)=(&left(), &right());
+		my($box, $radius);
+		
+		if($box=$Goals{$left}{'box'}) {
+			$radius=$Goals{$left}{'radius'};
+
+			if(utils::distance(@$box, $x, $y) < $radius) {
+				return('left');
+			}
+		}
+
+		if($box=$Goals{$right}{'box'}) {
+			$radius=$Goals{$right}{'radius'};
+
+			if(utils::distance(@$box, $x, $y) < $radius) {
+				return('right');
+			}
+		}
+
+		return();
+	}
+
+	sub going_in {
+		my($e)=@_;
+		my($cx, $cy)=@$e{'positionX','positionY'};
+		my($vx, $vy)=@$e{'velocityX','velocityY'};
+		my($team, $goal);
+		my($catch, $miss);
+
+		#Extend the travel line by two intervals:
+		$vx*=2;
+		$vy*=2;
+
+		if($team=&goalbox($e)) {
+			if($goal=$Goals{&team_number($team)}{'goal'}) {
+				$catch=utils::distance(@$goal, $cx, $cy);
+				$miss=utils::distance(@$goal, $cx+$vx, $cy+$vy);
+
+				return(1) if($miss < $catch);
+			}
+		}
+
+		return(0);
+	}
+
 	sub new {
 		my($mapref)=@_;
 		my(@views)=();
@@ -2231,6 +2341,12 @@ types which alter the normal behavior.
 		$Ds=&definition($Map->{'map'});
 		$Xmid=$Ds->{'views'}{'Game'}{'bounds'}{'maxX'}/2;
 		$Ymid=$Ds->{'views'}{'Game'}{'bounds'}{'maxY'}/2;
+
+		if(ref($Ds->{'views'}{'Game'}{'Goal'}{'Goal'}) eq 'ARRAY') {
+			foreach my $goal (@{$Ds->{'views'}{'Game'}{'Goal'}{'Goal'}}) {
+				&register_goal($goal);
+			}
+		}
 
 		@views=map($Ds->{'views'}{$_}{'powerupSpawner'},
 			keys(%{$Ds->{'views'}}));
@@ -2660,11 +2776,13 @@ play though extended interfaces and server support.
 	my(%Stats)=();
 	my(%Reset)=();
 	my($Hunted)=undef;
+	my($Ball)=map::spec;
 
 	sub new {
 		@Score=(0, 0);
 		%Stats=();
 		$Hunted=undef;
+		$Ball=map::spec;
 
 		foreach my $player (player::list) {
 			delete($player->{'team'});
@@ -2759,6 +2877,23 @@ play though extended interfaces and server support.
 
 		&update_score(map::left($p->{'team'})?'left':'right');
 		&set_score(@Score);
+	}
+
+	sub ball {
+		$Ball=map::team_number(@_);
+	}
+
+	sub intercept {
+		my($p)=@_;
+
+		if(map::spec($Ball)) {
+			$Ball=$p->{'team'};
+			return(undef);
+		} elsif($p->{'team'} == $Ball) {
+			return(undef);
+		} else {
+			return($Ball=$p->{'team'});
+		}
 	}
 
 	sub angle {
@@ -4001,7 +4136,7 @@ core protecting the flag.
 		game::new;
 
 		foreach my $player (player::list) {
-			$player->{'stats'}={};
+			$player->{'stats'}={'carrier' => 0};
 			player::forgive($player);
 		}
 
@@ -5392,6 +5527,8 @@ core protecting the flag.
 		my($a2)=player::lookup($e->{'secondaryAssister'});
 		my($spawn_mode)=stash::get('spawnMode', map::name);
 
+		game::ball('spec');
+
 		if(map::left($p->{'team'})) {
 			game::update_score('left');
 		} elsif(map::right($p->{'team'})) {
@@ -5412,6 +5549,18 @@ core protecting the flag.
 			chat::laud("Good pass $a->{'nickname'}, you too $a2->{'nickname'}.");
 		} elsif($a && !$a->{'isBot'}) {
 			chat::laud("Good pass $a->{'nickname'}.");
+		}
+	},
+
+	'ballLost'		=> sub {
+		my($spawn_mode)=stash::get('spawnMode', map::name);
+
+		game::ball('spec');
+
+		if($spawn_mode eq 'near') {
+	 		foreach my $player (player::list) {
+				game::spawn_reset($player);
+			}
 		}
 	},
 	
@@ -5436,6 +5585,10 @@ core protecting the flag.
 	'powerupUse'	=> sub {
 		my($e, $p)=@_;
 		my($diff)=$e->{'time'} - $p->{$e->{'powerup'}}{'time'};
+
+		if($e->{'powerup'}=~m/Ball|Bomb|Demolition Charge/) {
+			$p->{'carrier'}=0;
+		}
 
 		if($e->{'powerup'} eq 'Ball') {
 			$p->{$e->{'powerup'}}{'time'}=$e->{'time'};
@@ -5464,11 +5617,26 @@ core protecting the flag.
 
 		game::divert($e, $p);
 
+		if(	$e->{'powerup'}=~m/Ball/			&&
+			game::intercept($p)				&&
+			map::goalbox($e) eq map::side($p)	&&
+			map::going_in($e)
+		) {
+			$p->{'stats'}{'saves'}++;
+			chat::snark($p, 'Nice Save', $p->{'nickname'}) if(chat::snarky);
+		}
+
+		if($e->{'powerup'}=~m/Ball|Bomb|Demolition Charge/) {
+			$p->{'carrier'}=1;
+		}
+
 		return if($p->{'isBot'});
 
 		if($e->{'powerup'} eq 'Ball') {
+			$p->{'carrier'}=1;
 			$p->{$e->{'powerup'}}{'time'}=0;
 		} elsif($e->{'powerup'} eq 'Bomb') {
+			$p->{'carrier'}=1;
 			if($e->{'velocityX'} && $e->{'velocityY'} && chat::snarky) {
 				chat::snark($p, 'Nice catch', $p->{'nickname'});
 			}
@@ -5544,6 +5712,9 @@ core protecting the flag.
 		my($angle);
 
 		return unless($v);
+
+		$v->{'carrier'}=0;
+
 		return if($v->{'isBot'});
 
 		if($spawn_mode eq 'died') {
@@ -5677,6 +5848,7 @@ core protecting the flag.
 		my($pls)=$e->{'participants'};
 		my($ratio)=[];
 		my($cps)=[];
+		my($saves)=[];
 		my($keys)=[];
 		my($player);
 
@@ -5711,6 +5883,14 @@ core protecting the flag.
 					$cps->[$i]=$player->{'stats'}{'checkpoint'} if($player);
 				}
 				game::most('Front Runner: ', $cps, $pls);
+			}
+
+			if(map::mode('ball')) {
+				for(my $i=0; $i<@$pls; $i++) {
+					$player=player::lookup($pls->[$i]);
+					$saves->[$i]=$player->{'stats'}{'saves'} if($player);
+				}
+				game::most('Savior Award: ', $saves, $pls);
 			}
 
 			if('key finder stats') {
