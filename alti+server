@@ -1796,6 +1796,29 @@ them to the AltBouncer system.
 		return(@players);
 	}
 
+	sub lookup {
+		my($query)=@_;
+		my(@players)=();
+
+		foreach my $nick (keys(%Seen)) {
+			#Don't propogate people messing around with a nick:
+			next if(keys(%{$Seen{$nick}}) > 2);
+			next if($nick!~m/$query/ && $query!~m/^[0-9a-f-]{36}$/);
+
+			foreach my $vip (keys(%{$Seen{$nick}})) {
+				next if($vip!~m/$query/ && $query=~m/^[0-9a-f-]{36}$/);
+
+				push(@players, {
+					'lastPlayedWithTime'	=> $Seen{$nick}{$vip},
+					'nickname'			=> $nick,
+					'vaporID'				=> $vip,
+				});
+			}
+		}
+
+		return(@players);
+	}
+
 	sub upload {
 		my($stage, $upload)=(IO::Handle->new, IO::Handle->new);
 		my($rejected)=1;
@@ -4002,6 +4025,7 @@ core protecting the flag.
 		return(0) unless(file::name_ok($e->{'arguments'}[0]));
 
 		$mapname="$MAPDIR/$e->{'arguments'}[0]";
+		$mapname=~s|^/+||;
 		$file="$maps/$mapname.altx";
 
 		if(-r $file) {
@@ -6011,6 +6035,7 @@ also only available from the console.
 		my($action, $name, @args)=@_;
 		my($value)=join(' ', @args);
 		my($s)=player::server;
+		my($lookup);
 		my($current);
 
 		if($action eq 'list') {
@@ -6050,15 +6075,12 @@ also only available from the console.
 
 			$current=config::option($name);
 
-			if($name eq 'admins' && $value!~m/^[0-9a-f-]{36}$/) {
-				$value=player::lookup($value)->{'vaporId'};
-				unless($value) {
-					chat::whisper($s, 'Could not find vaporID');
-					return;
-				}
-			} elsif($name eq 'superAdmins' && $value!~m/^[0-9a-f-]{36}$/) {
-				$value=player::lookup($value)->{'vaporId'};
-				unless($value) {
+			if($name=~m/(superA|a)dmins/ && $value!~m/^[0-9a-f-]{36}$/) {
+				if($lookup=player::lookup($value)) {
+					$value=$lookup->{'vaporId'};
+				} elsif(($lookup)=altbouncer::lookup($value)) {
+					$value=$lookup->{'vaporID'};
+				} else {
 					chat::whisper($s, 'Could not find vaporID');
 					return;
 				}
