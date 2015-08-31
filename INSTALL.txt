@@ -32,6 +32,7 @@ Required:
   3. perl-XML-Simple
   4. perl-Curses
   5. perl-Digest-SHA
+  6. perl-TermReadKey
 
 Recommended:
   1. GeoIP

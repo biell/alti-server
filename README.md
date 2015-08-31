@@ -477,8 +477,8 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     on using this feature, and wish to reserver more space for maps.  Disabling
     this ability will allow your server to run between 4 to 12 extra maps,
     depending on their names.  While on by default, it is recommended that
-    this feature be disabled if you don't plan on using it.  Regardless of
-    this setting, upload functionality is still available from the console.
+    this feature be disabled if you don't plan on using it.  Disabling this
+    feature removes it from both the game and from the console.
 
   * **ulSizeLimit [#]**<br>
     Specify the maximum size of an uploaded map.  This number
