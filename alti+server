@@ -1902,9 +1902,9 @@ directly with it to manage the instance.
 
 			waitpid($Server_pid, 0);
 			close($Server);
-			$Streams->remove($Server);
 			$Server_pid=undef;
 		}
+		$Streams->remove($Server);
 
 		rename($Logfile, $Logfile_o);
 
@@ -1928,9 +1928,9 @@ directly with it to manage the instance.
 			$Cs+=$times[1];
 
 			close($Log);
-			$Streams->remove($Log);
 			$Tail_pid=undef;
 		}
+		$Streams->remove($Log);
 
 		open($pid, '<', $Pidfile);
 		$Server_pid=<$pid>;
