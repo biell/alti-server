@@ -1988,10 +1988,10 @@ directly with it to manage the instance.
 		kill('HUP', $Tail_pid) if($Tail_pid);
 		kill('HUP', $Server_pid) if($Server_pid);
 
+		$Streams->remove($Server, $Log);
+
 		close($Server);
 		close($Log);
-
-		$Streams->remove($Server, $Log);
 
 		waitpid($Server_pid, 0);
 		waitpid($Tail_pid, 0);
