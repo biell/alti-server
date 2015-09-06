@@ -439,6 +439,20 @@ file to save space for more maps.
 Use the console-only `/server list`, `/server set`, `/server unset`,
 `/server add`, and `/server del` commands to modify the below values.
 
+  * **lobby [map]**<br>
+    Set `map` to be the lobby map for this server.  When the server
+    becomes idle, alti+server will change the map to lobby.  When players
+    join the server, the server will change the map for them to a random
+    map in rotation.  Lobbies serve two purposes:
+    (1) maps should be started with players ready to play so they can be
+    assured to start fresh, and
+    (2) some maps use a lot of CPU (especially some coop maps where bots
+    spawn on top of a health), and the lobby map can be set to be low
+    CPU.
+    If set to a null string, no lobby map is in effect; this is the default.
+    N.B. The `nextMap` setting is not consulted on an idle server when
+    `lobby` is set.
+
   * **updateMapList [0|1]**<br>
     Specify if alti+server can change your launcher_config.xml
     file with an updated map list and map rotation list.  These

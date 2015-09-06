@@ -13,6 +13,7 @@ my($INSTALL_ROOT)="$ENV{'HOME'}/altitude";
 my($MAPDIR)='';                         #Directory under $INSTALL_ROOT/maps
 		                              #to store maps.  (e.g. "download")
 my(%OPTIONS)=(
+	lobby		=> '',			#Lobby map for this server
 	updateMapList	=> 1,               #Let alti+server change the mapList
 	enableTalk	=> 0,			#Enable server aided direct player chat
 	hitchThreshold	=> 0.6,			#Length of serverHitch to report
@@ -236,7 +237,7 @@ delete($ENV{'COLUMNS'});
 
 		chomp($entry);
 
-		next unless($entry);
+		return unless($entry);
 
 		rename($Outfile, $Outfile_o) if(-s $Outfile > 1048576);
 
@@ -748,7 +749,7 @@ L<perl(1)> should be used to ensure basic operation.
 		} elsif($time>($now-86400)) {
 			return(POSIX::strftime("today at %H:%M", gmtime($time)));
 		} else {
-			return(POSIX::strftime("%Y-%m-%d %H:%M", gmtime($time)));
+			return(POSIX::strftime("%Y-%m-%d", gmtime($time)));
 		}
 	}
 
@@ -1180,7 +1181,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 my(@ALTIPLUS)=(
 	{
 		'name'			=> 'help',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'altitudegame', 'ladder', 'url', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'required'		=> 1,
 	},
@@ -1669,10 +1670,21 @@ my(@ALTIPLUS)=(
 		return(@Maps);
 	}
 
+	sub lobby {
+		return(config::option('lobby'));
+	}
+
 	sub random_map {
 		my($rotation)=config::option('rotationRE');
 		my(@candidates)=grep(m/($rotation)/, @Maps);
-		return($candidates[int(rand(@candidates))]);
+		my($next)=stash::get('nextMap', 'admin');
+
+		if($next) {
+			stash::delete('nextMap', 'admin');
+			return($next);
+		} else {
+			return($candidates[int(rand(@candidates))]);
+		}
 	}
 
 	sub admin_vip {
@@ -2063,6 +2075,7 @@ directly with it to manage the instance.
 			return();
 		}
 	}
+
 }
 
 =head1 Maps
@@ -2393,6 +2406,7 @@ types which alter the normal behavior.
 
 		ui::slog('INFO  : CPU used by', &name, ':', utils::secs2mins($cpu));
 	}
+
 
 }
 
@@ -2934,10 +2948,12 @@ play though extended interfaces and server support.
 	my(%Stats)=();
 	my(%Reset)=();
 	my($Hunted)=undef;
+	my($Active)=0;
 
 	sub new {
 		%Stats=();
 		$Hunted=undef;
+		$Active=0;
 
 		foreach my $player (player::list) {
 			delete($player->{'team'});
@@ -2962,6 +2978,12 @@ play though extended interfaces and server support.
 		} else {
 			return(0);
 		}
+	}
+
+	sub active {
+		my($old)=$Active;
+		$Active=1;
+		return($old);
 	}
 
 	sub playing {
@@ -4324,8 +4346,6 @@ core protecting the flag.
 		}
 
 		chat::all('Server configured for map:', $e->{'map'});
-
-		records::mark($e);
 	},
 
 	'help gravity'	=> sub {
@@ -5689,6 +5709,14 @@ core protecting the flag.
 
 		plus::check_spawn($p);
 
+		unless(plus::active) {
+			if(map::name eq config::lobby) {
+				server::send('changeMap', config::random_map);
+			} else {
+				records::mark($e);
+			}
+		}
+
 		if(chat::snarky) {
 			foreach my $snark (List::Util::shuffle(keys(%SNARKS))) {
 				$match=1;
@@ -6381,6 +6409,10 @@ if(config::option('updateMapList')) {
 	config::read_maps;
 }
 
+if(config::lobby) {
+	stash::set('nextMap', 'admin', config::lobby);
+}
+
 config::write_launcher_config;
 
 server::start;
@@ -6439,7 +6471,8 @@ while(1) {
 
 				if(player::none) {
 					if(map::idle > config::option('timeIdleChange')) {
-						server::send('changeMap', config::random_map);
+						server::send('changeMap',
+							config::lobby || config::random_map);
 						map::end;
 						altbouncer::upload;
 					}
