@@ -31,6 +31,7 @@ my(%OPTIONS)=(
 	bullyKick		=> 1,               #Kick repeated aggressive language
 	infractions	=> 10,			#10 infractions gets players kicked
 	debug		=> 0,			#Debug is on(1) or off(0)
+	awards		=> 1,			#Give out awards at the end of a round
 	recordsTypes	=> 'coop,race',     #Which map types to keep records on
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
@@ -1048,6 +1049,44 @@ stash are automatically saved to disk.
 					}
 				}
 			}
+
+			if(exists($Stash->{$key}{'zones'})) {		##Upgrade zones##
+				foreach my $team (values(%{$Stash->{$key}{'zones'}})) {
+					next if(exists($team->{'zones'}));
+		
+					foreach my $zone (keys(%$team)) {
+						$team->{'zones'}{$zone}=$team->{$zone};
+						delete($team->{$zone});
+						$changes=1;
+					}
+				}
+			}
+
+		}
+
+		if($changes) {
+			&_write($Stash, $Stashfile);
+			ui::slog('Stash upgraded');
+		}
+	}
+
+	sub fix_doors {
+		my($map, $left, $right)=@_;
+		my($changes)=0;
+
+		if(exists($Stash->{$map}{'door'}{'doors'})) {
+			$Stash->{$map}{'door'}{$left}{'doors'}=$Stash->{$map}{'door'}{'doors'};
+			$Stash->{$map}{'door'}{$right}{'doors'}=$Stash->{$map}{'door'}{'doors'};
+			delete($Stash->{$map}{'door'}{'doors'});
+
+			$changes=1;
+		}
+		if(exists($Stash->{$map}{'door'}{'keys'})) {
+			$Stash->{$map}{'door'}{$left}{'keys'}=$Stash->{$map}{'door'}{'keys'};
+			$Stash->{$map}{'door'}{$right}{'keys'}=$Stash->{$map}{'door'}{'keys'};
+			delete($Stash->{$map}{'door'}{'keys'});
+
+			$changes=1;
 		}
 
 		if($changes) {
@@ -1596,11 +1635,15 @@ my(@ALTIPLUS)=(
 	}
 
 	sub find_maps {
-		my($packet_space)=1450-220-21*$Maxp-$Reserve;
+		my($packet_space)=1450-250-20*$Maxp-$Reserve;
 
 		ui::slog('Space reserved for maps:', $packet_space);
 
 		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$MAPDIR/*_*.altx>);
+
+		if(&option('lobby')) {
+			@Maps=grep($_ ne &option('lobby'), @Maps);
+		}
 
 		foreach(@Maps) {
 			s|^$INSTALL_ROOT/maps/+||;
@@ -2950,16 +2993,6 @@ play though extended interfaces and server support.
 	my($Hunted)=undef;
 	my($Active)=0;
 
-	sub new {
-		%Stats=();
-		$Hunted=undef;
-		$Active=0;
-
-		foreach my $player (player::list) {
-			delete($player->{'team'});
-		}
-	}
-
 	sub round {
 		ball::new;		#Can ball have multiple rounds?
 		#$Hunted=undef;	#Should hunted change per round?
@@ -3125,7 +3158,7 @@ play though extended interfaces and server support.
 
 	sub spawn_near {
 		my($p, $x, $y)=@_;
-		my($zones)=stash::get($p->{'team'}, 'zones', map::name);
+		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name);
 		my($spawn_mode)=stash::get('spawnMode', map::name);
 		my($near, $delta, $try)=('far', 2**20, 0);
 
@@ -3229,19 +3262,42 @@ play though extended interfaces and server support.
 	}
 
 	sub door_open {
-		my($team, $door)=@_;
+		my($p, $door)=@_;
 
-		return($Stats{$team}{'door'}{$door});
+		return($Stats{$p->{'team'}}{'door'}{$door});
 	}
 
-	sub knock {
+	sub zone_open {
+		my($p, $zone)=@_;
+
+		return($Stats{$p->{'team'}}{'zone'}{$zone});
+	}
+
+	sub zone_init {
+		my($zones)=stash::get('zones', map::name);
+
+		foreach my $team (keys(%$zones)) {
+			#Initialize all zones to open:
+			foreach my $name (keys(%{$zones->{$team}{'zones'}})) {
+				$Stats{$team}{'zone'}{$name}=1;
+			}
+
+			#If a zone has a key, close it:
+			foreach my $name (values(%{$zones->{$team}{'keys'}})) {
+				$Stats{$team}{'zone'}{$name}=0;
+			}
+		}
+	}
+
+	sub key {
 		my($e, $p)=@_;
-		my($door)=stash::get('door', map::name);
+		my($door)=stash::get($p->{'team'}, 'door', map::name);
+		my($zone)=stash::get($p->{'team'}, 'zones', map::name);
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($keys, $color);
 
 		if($door->{'doors'}{$pickup} && &no_repeats($e, $p)) {
-			unless(&door_open($p->{'team'}, $door->{'doors'}{$pickup})) {
+			unless(&door_open($p, $door->{'doors'}{$pickup})) {
 				plus::bench($p);
 				chat::whisper($p, $door->{'doors'}{$pickup}, 'is locked');
 			}
@@ -3260,7 +3316,7 @@ play though extended interfaces and server support.
 				$p->{'stats'}{'keys'}++;
 			}
 
-			$keys=utils::invert(stash::get('keys', 'door', map::name));
+			$keys=utils::invert(stash::get('keys', $p->{'team'}, 'door', map::name));
 
 			foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
 				unless($Stats{$p->{'team'}}{'key'}{$key}) {
@@ -3271,6 +3327,30 @@ play though extended interfaces and server support.
 			$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
 
 			chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
+		} elsif($zone->{'keys'}{$pickup} && &no_repeats($e, $p)) {
+			if($Stats{$p->{'team'}}{'zone'}{$zone->{'keys'}{$pickup}}) {
+				return(0);
+			}
+
+			if($Stats{$p->{'team'}}{'key'}{$pickup}) {
+				return(0);
+			} else {
+				chat::team($p, $p->{'nickname'}, 'found a key to zone:', $zone->{'keys'}{$pickup});
+				$Stats{$p->{'team'}}{'key'}{$pickup}=1;
+				$p->{'stats'}{'keys'}++;
+			}
+
+			$keys=utils::invert(stash::get('keys', $p->{'team'}, 'zones', map::name));
+
+			foreach my $key (@{$keys->{$zone->{'keys'}{$pickup}}}) {
+				unless($Stats{$p->{'team'}}{'key'}{$key}) {
+					return(0);
+				}
+			}
+
+			$Stats{$p->{'team'}}{'zone'}{$zone->{'keys'}{$pickup}}=1;
+
+			chat::team($p, 'Zone unlocked:', $zone->{'keys'}{$pickup});
 		}
 
 		return(0);
@@ -3331,6 +3411,19 @@ play though extended interfaces and server support.
 			chat::all($text, $p->{'nickname'}) unless($p->{'isBot'});
 		}
 	}
+
+	sub new {
+		%Stats=();
+		$Hunted=undef;
+		$Active=0;
+
+		foreach my $player (player::list) {
+			delete($player->{'team'});
+		}
+
+		&zone_init;
+	}
+
 }
 
 =head2 Downloading Maps
@@ -3395,7 +3488,7 @@ with their name.
 		s|^$MAPDIR/?||;
 
 		return(0) unless(m/^[\w.?!%:=+-]{5,}$/);
-		return(0) unless(m/^(1bd|1de|1dm|ball|ffa|tbd|tdm)_/);
+		return(0) unless(m/^(1bd|1de|1dm|ball|ffa|tbd|tdm)_|^lobby/);
 		return(0) if(m/\.\./);
 
 		return(1);
@@ -3986,7 +4079,7 @@ core protecting the flag.
 		my($e, $p, $name)=@_;
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($url)="http://maps.altitudegame.com/";
-		my($mapname, $file, $key);
+		my($mapname, $file, $key, $mapconfig);
 		local($_);
 
 		$name=~s|^$MAPDIR/|| if($MAPDIR);
@@ -4026,6 +4119,10 @@ core protecting the flag.
 			if(config::new_maps($mapname)) {
 				chat::whisper($p,
 					"Map added to config, you must /restartServer");
+
+				if($mapconfig=stash::retrieve($mapname)) {
+					stash::set($mapname, $mapconfig);
+				}
 			}
 			chat::all("$mapname updated");
 		}
@@ -4043,7 +4140,7 @@ core protecting the flag.
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		#my($url)="http://altituderank.com/mapdownloads/%s.altx";
 		my($url)="http://maps.planeball.com/%s.altx";
-		my($mapname, $file);
+		my($mapname, $file, $mapconfig);
 
 		$name=~s|^$MAPDIR/|| if($MAPDIR);
 		$name=~s|\.altx$||;
@@ -4077,6 +4174,10 @@ core protecting the flag.
 			if(config::new_maps($mapname)) {
 				chat::whisper($p,
 					"Map added to config, you must /restartServer");
+
+				if($mapconfig=stash::retrieve($mapname)) {
+					stash::set($mapname, $mapconfig);
+				}
 			}
 			chat::all("$mapname updated");
 		}
@@ -4093,7 +4194,7 @@ core protecting the flag.
 		my($e, $p, $key)=@_;
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
 		my($url)='http://s000.tinyupload.com/';
-		my($name, $next, $mapname, $file);
+		my($name, $next, $mapname, $file, $mapconfig);
 		local($_);
 
 		return(0) unless($key=~m/^\d+$/);
@@ -4128,6 +4229,10 @@ core protecting the flag.
 				if(config::new_maps($mapname)) {
 					chat::whisper($p,
 						"Map added to config, you must /restartServer");
+
+					if($mapconfig=stash::retrieve($mapname)) {
+						stash::set($mapname, $mapconfig);
+					}
 				}
 				chat::all("$mapname updated");
 			}
@@ -4146,7 +4251,7 @@ core protecting the flag.
 	'upload url'		=> sub {
 		my($e, $p, $name, $url)=@_;
 		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
-		my($mapname, $file);
+		my($mapname, $file, $mapconfig);
 
 		$name=~s|^$MAPDIR/|| if($MAPDIR);
 		$name=~s|\.altx$||;
@@ -4175,6 +4280,10 @@ core protecting the flag.
 			if(config::new_maps($mapname)) {
 				chat::whisper($p,
 					"Map added to config, you must /restartServer");
+
+				if($mapconfig=stash::retrieve($mapname)) {
+					stash::set($mapname, $mapconfig);
+				}
 			}
 			chat::all("$mapname updated");
 		}
@@ -4331,6 +4440,8 @@ core protecting the flag.
 			maxPlayers
 			gameType
 		);
+
+		stash::fix_doors($e->{'map'}, $e->{'leftTeam'}, $e->{'rightTeam'});
 
 		map::new($e);
 		plus::new;
@@ -5097,36 +5208,47 @@ core protecting the flag.
 
 		chat::whisper($p, 'Doors disable planes to pass through a pickup until all keys are found');
 		chat::whisper($p, '/list doors');
-		chat::whisper($p, '/add door <name> <dx>,<dy>');
-		chat::whisper($p, '/del door <name>');
-	},
-
-	'help keys'	=> sub {
-		my($e, $p)=@_;
-
-		chat::whisper($p, 'Keys unlock doors, see /help doors');
-		chat::whisper($p, '/list keys');
-		chat::whisper($p, '/add key <door_name> <kx>,<ky>');
-		chat::whisper($p, '/del key <door_name>');
+		chat::whisper($p, '/add door <name> <team> <dx>,<dy>');
+		chat::whisper($p, '/del door <name> <team>');
 	},
 
 	'list doors'	=> sub {
 		my($e, $p)=@_;
-		my($doors)=utils::invert(stash::get('doors', 'door', map::name));
-		my($keys)=utils::invert(stash::get('keys', 'door', map::name));
 		my($any)=0;
-		my($status);
+		my(@teams)=();
+		my($sep)=':';
+		my($doors, $keys, $status);
 
-		foreach my $door (sort(keys(%$doors))) {
-			if(plus::door_open($p->{'team'}, $door)) {
-				$status='(open)';
-			} else {
-				$status='(locked)';
+		if($e->{'admin'}) {
+			@teams=(map::left, map::right);
+		} elsif(team::left($p->{'team'})) {
+			@teams=(map::left);
+		} elsif(team::right($p->{'team'})) {
+			@teams=(map::right);
+		}
+		foreach my $team (@teams) {
+			$doors=utils::invert(stash::get('doors', $team, 'door', map::name));
+			$keys=utils::invert(stash::get('keys', $team, 'door', map::name));
+
+			if(@teams==2) {
+				if(map::left($team)) {
+					$sep='<';
+				} else {
+					$sep='>';
+				}
 			}
-			chat::whisper($p, $door, ':', @{$doors->{$door}}, '<=',
-				@{$keys->{$door}}, $status);
-			delete($keys->{$door});
-			$any=1;
+
+			foreach my $door (sort(keys(%$doors))) {
+				if(plus::door_open($p, $door)) {
+					$status='(open)';
+				} else {
+					$status='(locked)';
+				}
+				chat::whisper($p, $door, $sep, @{$doors->{$door}}, '<=',
+					@{$keys->{$door}}, $status);
+				delete($keys->{$door});
+				$any=1;
+			}
 		}
 
 		foreach my $key (sort(keys(%$keys))) {
@@ -5137,44 +5259,55 @@ core protecting the flag.
 		chat::whisper($p, 'No doors defined') unless($any);
 	},
 
-	'list keys'	=> sub {
-		$HOOKS{'list doors'}->(@_);
-	},
-
 	'add door'	=> sub {
-		my($e, $p, $name, $dx, $dy)=@_;
+		my($e, $p, $name, $team, $dx, $dy)=@_;
 
 		if(map::mode('ffa')) {
 			chat::whisper($p, 'Doors cannot function in FFA games');
 			return;
 		}
 
-		stash::set("$dx,$dy", 'doors', 'door', map::name, $name);
-		chat::all('Added door:', $name, "($dx,$dy)");
-	},
+		$team='*' unless($team);
 
-	'add key'	=> sub {
-		my($e, $p, $name, $kx, $ky)=@_;
-
-		if(map::mode('ffa')) {
-			chat::whisper($p, 'Doors cannot function in FFA games');
-			return;
+		if(map::left($team)) {
+			stash::set("$dx,$dy", 'doors', map::left, 'door', map::name, $name);
+			chat::all('Added left door:', $name, "($dx,$dy)");
 		}
 
-		stash::set("$kx,$ky", 'keys', 'door', map::name, $name);
-		chat::all('Added key for door:', $name, "($kx,$ky)");
+		if(map::right($team)) {
+			stash::set("$dx,$dy", 'doors', map::right, 'door', map::name, $name);
+			chat::all('Added right door:', $name, "($dx,$dy)");
+		}
 	},
 
 	'del door'	=> sub {
-		my($e, $p, $name)=@_;
-		my($doors)=stash::get('doors', 'door', map::name);
+		my($e, $p, $name, $team)=@_;
 		my($any)=0;
+		my($doors);
 
-		foreach my $door (keys(%$doors)) {
-			if($doors->{$door} eq $name) {
-				stash::delete($door, 'doors', 'door', map::name);
-				chat::all('Deleted door:', $name, "($door)");
-				$any=1;
+		$team='*' unless($team);
+
+		if(map::left($team)) {
+			$doors=stash::get('doors', map::left, 'door', map::name);
+
+			foreach my $door (keys(%$doors)) {
+				if($doors->{$door} eq $name) {
+					stash::delete($door, 'doors', map::left, 'door', map::name);
+					chat::all('Deleted left door:', $name, "($door)");
+					$any=1;
+				}
+			}
+		}
+
+		if(map::right($team)) {
+			$doors=stash::get('doors', map::right, 'door', map::name);
+
+			foreach my $door (keys(%$doors)) {
+				if($doors->{$door} eq $name) {
+					stash::delete($door, 'doors', map::right, 'door', map::name);
+					chat::all('Deleted right door:', $name, "($door)");
+					$any=1;
+				}
 			}
 		}
 
@@ -5183,21 +5316,103 @@ core protecting the flag.
 		}
 	},
 
-	'del key'	=> sub {
-		my($e, $p, $name)=@_;
-		my($keys)=stash::get('keys', 'door', map::name);
-		my($any)=0;
+	'help keys'	=> sub {
+		my($e, $p)=@_;
 
-		foreach my $key (keys(%$keys)) {
-			if($keys->{$key} eq $name) {
-				stash::delete($key, 'keys', 'door', map::name);
-				chat::all('Deleted key for door:', $name, "($key)");
-				$any=1;
+		chat::whisper($p, 'Keys unlock doors and zones, see /help doors or /help zones');
+		chat::whisper($p, '/list keys');
+		chat::whisper($p, '/add key <door|zone> <team> <kx>,<ky>');
+		chat::whisper($p, '/del key <door|zone> <team>');
+	},
+
+	'list keys'	=> sub {
+		if(stash::get('door', map::name)) {
+			$HOOKS{'list doors'}->(@_);
+		}
+		if(stash::get('zones', map::name)) {
+			$HOOKS{'list zones'}->(@_);
+		}
+	},
+
+	'add key'	=> sub {
+		my($e, $p, $name, $team, $kx, $ky)=@_;
+
+		$team='*' unless($team);
+
+		if(map::left($team)) {
+			if(stash::get("$kx,$ky", 'doors', map::left, 'door', map::name)) {
+				stash::set("$kx,$ky", 'keys', map::left, 'door', map::name, $name);
+				chat::all('Added left key for door:', $name, "($kx,$ky)");
+			} elsif(stash::get($name, 'zones', map::left, 'zones', map::name)) {
+				stash::set("$kx,$ky", 'keys', map::left, 'zones', map::name, $name);
+				chat::all('Added left key for zone:', $name, "($kx,$ky)");
+			} else {
+				chat::whisper($p, 'You must define the left door or zone first');
+			}
+		}
+
+		if(map::right($team)) {
+			if(stash::get("$kx,$ky", 'doors', map::right, 'door', map::name)) {
+				stash::set("$kx,$ky", 'keys', map::right, 'door', map::name, $name);
+				chat::all('Added right key for door:', $name, "($kx,$ky)");
+			} elsif(stash::get($name, 'zones', map::right, 'zones', map::name)) {
+				stash::set("$kx,$ky", 'keys', map::right, 'zones', map::name, $name);
+				chat::all('Added right key for zone:', $name, "($kx,$ky)");
+			} else {
+				chat::whisper($p, 'You must define the right door or zone first');
+			}
+		}
+	},
+
+	'del key'	=> sub {
+		my($e, $p, $name, $team)=@_;
+		my($any)=0;
+		my($keys);
+
+		$team='*' unless($team);
+
+		if(map::left($team)) {
+			$keys=stash::get('keys', map::left, 'door', map::name);
+			foreach my $key (keys(%$keys)) {
+				if($keys->{$key} eq $name) {
+					stash::delete($key, 'keys', 'door', map::name);
+					chat::all('Deleted key for door:', $name, "($key)");
+					$any=1;
+				}
+			}
+
+			$keys=stash::get('keys', map::left, 'zones', map::name);
+			foreach my $key (keys(%$keys)) {
+				if($keys->{$key} eq $name) {
+					stash::delete($key, 'keys', 'zones', map::name);
+					chat::all('Deleted key for zone:', $name, "($key)");
+					$any=1;
+				}
+			}
+		}
+
+		if(map::right($team)) {
+			$keys=stash::get('keys', map::right, 'door', map::name);
+			foreach my $key (keys(%$keys)) {
+				if($keys->{$key} eq $name) {
+					stash::delete($key, 'keys', 'door', map::name);
+					chat::all('Deleted key for door:', $name, "($key)");
+					$any=1;
+				}
+			}
+
+			$keys=stash::get('keys', map::right, 'zones', map::name);
+			foreach my $key (keys(%$keys)) {
+				if($keys->{$key} eq $name) {
+					stash::delete($key, 'keys', 'zones', map::name);
+					chat::all('Deleted key for door:', $name, "($key)");
+					$any=1;
+				}
 			}
 		}
 
 		unless($any) {
-			chat::whisper($p, 'No keys for door named:', $name);
+			chat::whisper($p, 'No keys for door or zone named:', $name);
 		}
 	},
 
@@ -5282,31 +5497,54 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($spawn_mode)=stash::get('spawnMode', map::name);
 		my($any)=0;
-		my($zones);
-
-		chat::whisper($p, 'start: default spawn zone for this map');
+		my(@teams)=();
+		my($sep)=':';
+		my($zones, $keys, $status);
 
 		if($e->{'admin'}) {
-			$zones=stash::get(map::left, 'zones', map::name);
-			foreach my $zone (sort(keys(%$zones))) {
-				chat::whisper($p,
-					sprintf('%s < %d,%d @%s', $zone, @{$zones->{$zone}}));
-				$any=1;
+			@teams=(map::left, map::right);
+		} elsif(team::left($p->{'team'})) {
+			@teams=(map::left);
+		} elsif(team::right($p->{'team'})) {
+			@teams=(map::right);
+		}
+		foreach my $team (@teams) {
+			$zones=stash::get('zones', $team, 'zones', map::name);
+			$keys=utils::invert(stash::get('keys', $team, 'zones', map::name));
+
+			if(@teams==2) {
+				if(map::left($team)) {
+					$sep='<';
+				} else {
+					$sep='>';
+				}
 			}
 
-			$zones=stash::get(map::right, 'zones', map::name);
 			foreach my $zone (sort(keys(%$zones))) {
-				chat::whisper($p,
-					sprintf('%s > %d,%d @%s', $zone, @{$zones->{$zone}}));
+				if(plus::zone_open($p, $zone)) {
+					$status='(open)';
+				} else {
+					$status='(closed)';
+				}
+				if(exists($keys->{$zone})) {
+					chat::whisper($p,
+						sprintf("%s $sep %d,%d @%s <=", $zone, @{$zones->{$zone}}),
+						@{$keys->{$zone}},
+						$status
+					);
+				} else {
+					chat::whisper($p,
+						sprintf("%s $sep %d,%d @%s", $zone, @{$zones->{$zone}})
+					);
+				}
+				delete($keys->{$zone});
 				$any=1;
 			}
-		} else {
-			$zones=stash::get($p->{'team'}, 'zones', map::name);
-			foreach my $zone (sort(keys(%$zones))) {
-				chat::whisper($p,
-					sprintf('%s: %d,%d @%s', $zone, @{$zones->{$zone}}));
-				$any=1;
-			}
+		}
+
+		foreach my $key (sort(keys(%$keys))) {
+			chat::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
+			$any=1;
 		}
 
 		if($spawn_mode eq 'zone' || $spawn_mode eq 'near') {
@@ -5322,12 +5560,12 @@ core protecting the flag.
 		$team='*' unless($team);
 
 		if(map::left($team)) {
-			stash::set($zone, map::left, 'zones', map::name, [$sx, $sy, $sa]);
+			stash::set($zone, 'zones', map::left, 'zones', map::name, [$sx, $sy, $sa]);
 			chat::all('Added left zone:', $zone, "($sx,$sy)");
 		}
 
 		if(map::right($team)) {
-			stash::set($zone, map::right, 'zones', map::name, [$sx, $sy, $sa]);
+			stash::set($zone, 'zones', map::right, 'zones', map::name, [$sx, $sy, $sa]);
 			chat::all('Added right zone:', $zone, "($sx,$sy)");
 		}
 	},
@@ -5338,7 +5576,7 @@ core protecting the flag.
 		$team='*' unless($team);
 
 		if(map::left($team)) {
-			if(stash::delete($zone, map::left, 'zones', map::name)) {
+			if(stash::delete($zone, 'zones', map::left, 'zones', map::name)) {
 				chat::all('Deleted left zone:', $zone);
 			} else {
 				chat::whisper($p, 'No left zone', $zone);
@@ -5346,7 +5584,7 @@ core protecting the flag.
 		}
 
 		if(map::right($team)) {
-			if(stash::delete($zone, map::right, 'zones', map::name)) {
+			if(stash::delete($zone, 'zones', map::right, 'zones', map::name)) {
 				chat::all('Deleted right zone:', $zone);
 			} else {
 				chat::whisper($p, 'No right zone', $zone);
@@ -5443,7 +5681,7 @@ core protecting the flag.
 	'spawnZone'	=> sub {
 		my($e, $p)=@_;
 		my($zone)=@{$e->{'arguments'}};
-		my($coords)=stash::get($zone, $p->{'team'}, 'zones', map::name);
+		my($coords)=stash::get($zone, 'zones', $p->{'team'}, 'zones', map::name);
 		my($spawn_mode)=stash::get('spawnMode', map::name);
 
 		if($zone=~m/^start$/i) {
@@ -5452,13 +5690,16 @@ core protecting the flag.
 		} elsif($spawn_mode ne 'zone') {
 			chat::whisper($p, "Zone spawning not allowed in mode: $spawn_mode");
 		} elsif(ref($coords) eq 'ARRAY') {
-			
-			if(map::mode('ffa')) {
-				chat::whisper($p, 'Next spawn will be in', $zone);
+			if(plus::zone_open($p, $zone)) {
+				if(map::mode('ffa')) {
+					chat::whisper($p, 'Next spawn will be in', $zone);
+				} else {
+					plus::bench($p);
+				}
+				plus::spawn_here($p, @$coords);
 			} else {
-				plus::bench($p);
+				chat::whisper($p, "Zone '$zone' is not yet open");
 			}
-			plus::spawn_here($p, @$coords);
 		} else {
 			chat::whisper($p, "No zone named '$zone'");
 		}
@@ -5563,7 +5804,7 @@ core protecting the flag.
 	'teamChange'		=> sub {
 		my($e, $p)=@_;
 		my($map_team)=stash::get('assignTeam', map::name);
-		my($zones)=stash::get($p->{'team'}, 'zones', map::name);
+		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name);
 		my($minlvl)=0;
 		my(@badge)=();
 		my($planes, $intro);
@@ -5662,7 +5903,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($planere)=stash::get('planes', map::name);
 		my($map_team)=stash::get('assignTeam', map::name);
-		my($zones)=stash::get($p->{'team'}, 'zones', map::name);
+		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name);
 		my($match);
 
 		$p->{'plane'}=$e->{'plane'};
@@ -5850,7 +6091,7 @@ core protecting the flag.
 			chat::whisper($p, $pickup,':',join(', ', map::powerup($pickup)));
 		}
 
-		return if(plus::knock($e, $p));
+		return if(plus::key($e, $p));
 
 		if(plus::teleport($e, $p)) {
 			if($spawn_mode!~m/died|powerup|health|portal/) {
@@ -6057,7 +6298,7 @@ core protecting the flag.
 		my($keys)=[];
 		my($player);
 
-		if(player::count>2) {
+		if(config::option('awards') && player::count>2) {
 			if($stats{'Crashes'}) {
 				plus::most('Training Wheels Award: ', $stats{'Crashes'}, $pls);
 			}

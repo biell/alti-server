@@ -83,8 +83,44 @@ override what is present in the %OPTIONS hash.
 If you are placing these values directly into the code, edit and save this file,
 it is configured and ready for your use.  If you used the "/server" command
 to set these values on a running instance, the values take automatic effect
-and the server is configured for use.
+and the server is configured for use.  There a number of options, but you
+really should consider taking immediate action on configuring the following:
 
+
+  * altBouncer  -  Setting this to 1 will tell your server to upload players
+    seen to Tec27's altBouncer.  This is an important resource in the Altitude
+    community to find players when they change their names.  This setting
+    is only disabled by default because it generates network traffic to
+    Tec27's server (it sends an XML stream) and something like that shouldn't
+    be on without the server administrator's knowledge.  Unless you have a
+    good reason, you should run "/server set altBouncer 1" from console.
+
+  * noviceLevel & aceLevel  -  Altitude allows you to specify a minimum level
+    to join a server.  But, that level applies to all ace levels.  Depending on
+    how you designed your server, an aceLevel (Ace 1 - Ace 10) of 21
+    (unlocked all planes) might be sufficient to join the server.  But, new
+    players may still need to be restricted.  Under this situation, you could
+    set noviceLevel to 35 to ensure they have the extra skills required to
+    participate on the server.  The defaults for these values is set to
+    noviceLevel=8 (unlock blue perk) and aceLevel=3 to illustrate the
+    concept.  It is entirely possible you wish to set these values to
+    1 (or even 0), and you should strongly review these settings.  To disable
+    from console, run: "/server set aceLevel 0" and "/server set noviceLevel 0".
+
+  * snarkChance  -  This is set to the liklihood that the server makes a
+    snarky comment.  It defaults to 16, meaning there is a 1 in 16 chance.
+    You can disable this useless server chatter by setting snarkChance to 0.
+    If you want some server chatter, but not a lot, you could also set it
+    very high, setting it to 100 would make comments very infrequent.  If you
+    don't want your server talking to players, then set this to 0.
+
+  * allowUploads  -  One of the aspects of the alti+server wrapper is its
+    ability to help server administrators upload maps.  This is on by default
+    if your server has the "curl" program installed.  If you only want to add
+    maps the old fashioned way, you should disable this.  There are other
+    settings (superAdmin and superAdmins) which allow you to control who
+    and from where these commands work.  Look into those if you wish to keep
+    this functionality in a restricted fashion.
 
 =========================
 Step 2, Start alti+server

@@ -319,9 +319,9 @@ manage Alti+ game maps.
     Delete the special powerup `name` for `team`.
 
   * **/! [command] [arg1] [arg2] [...]**<br>
-    This special admin command is only availble when using the
-    `tiny_custom_json_commands.txt` file.  All administrative commands
-    are removed from the tiny custom commands file.  Access to these funcions
+    This special admin command is only availble when the server option 
+    `configSize` is set to `tiny`.  All administrative commands are removed
+    from the generated custom commands file.  Access to these funcions
     go through this command.  Enter `/!`, then a space, then the admin command
     as it would otherwise be (e.g. `/! set gravity 3`).  This command can also
     be used to access super admin funcitonality.  No help is given on this
@@ -599,7 +599,12 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     library will now send messages to console, and to all admins
     who are playing the game.
  
-  * **recordsTypes [type1;type2;...]**<br>
+  * **awards [0|1]**<br>
+    At the end of a game, custom awards are provided.  This feature
+    can be disabled by setting `awards` to `0`.
+    See [Custom Awards](#custom-awards) for more information.
+
+  * **recordsTypes [type1,type2,...]**<br>
     Keep records of game types `type1`, `type2`, and so on.  This is
     a commonly desired feature on coop and race map types, and not
     so much on other map types.  If this string is set to non-empty,
@@ -707,6 +712,11 @@ allowed values:
     The long names of `center`, `horizontal`, and `vertical` are also allowed.
 
 ## Custom Awards
+At the end of a game, give out additional awards.  Awards are only
+given if there are enough human players to make them not pointless,
+and only if a human player is deserving of the award.
+Providing custom awards can be disabled with the `awards` server option.  They
+are on by default, and are defined as such:
 
   * **Training Wheels Award**<br>
     This award goes to the player who crashes the most. 
