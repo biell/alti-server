@@ -10,9 +10,12 @@ alti+server - Altitude server designed to support extended game types
 
 my($INSTALL_ROOT)="$ENV{'HOME'}/altitude";
 
-my($MAPDIR)='';                         #Directory under $INSTALL_ROOT/maps
-		                              #to store maps.  (e.g. "download")
+#$MAPDIR moved to 'mapDir' in OPTIONS just below.  Now, you can
+#use "/server set mapDir download" to have this option persist across upgrades!
+
 my(%OPTIONS)=(
+	mapDir		=> '',			#Directory under $INSTALL_ROOT/maps
+								#to store maps. (e.g. "download")
 	lobby		=> '',			#Lobby map for this server
 	updateMapList	=> 1,               #Let alti+server change the mapList
 	enableTalk	=> 0,			#Enable server aided direct player chat
@@ -1357,7 +1360,7 @@ my(@ALTIPLUS)=(
 	stash::set('uuid', 'server', $Uuid=utils::uuid) unless($Uuid);
 	stash::set('uuid', 'server', $Uuid=utils::uuid) if($Uuid=~m/-0000-/);
 
-	$MAPDIR=~s|/+$|| if($MAPDIR);
+	$OPTIONS{'mapDir'}=~s|/+$|| if($OPTIONS{'mapDir'});
 
 	sub option_exists {
 		return(exists($OPTIONS{$_[0]}));
@@ -1636,10 +1639,11 @@ my(@ALTIPLUS)=(
 
 	sub find_maps {
 		my($packet_space)=1450-250-20*$Maxp-$Reserve;
+		my($mapdir)=config::option('mapDir');
 
 		ui::slog('Space reserved for maps:', $packet_space);
 
-		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$MAPDIR/*_*.altx>);
+		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$mapdir/*_*.altx>);
 
 		if(&option('lobby')) {
 			@Maps=grep($_ ne &option('lobby'), @Maps);
@@ -1672,6 +1676,7 @@ my(@ALTIPLUS)=(
 
 	sub new_maps {
 		my($lconfig)=IO::Handle->new;
+		my($mapdir)=config::option('mapDir');
 		my(%maps)=();
 		local($_);
 
@@ -1683,7 +1688,7 @@ my(@ALTIPLUS)=(
 
 		open($lconfig, '<', $Conffile);
 		while(<$lconfig>) {
-			delete($maps{$1}) if(m| <String value="($MAPDIR.*?)" />|);
+			delete($maps{$1}) if(m| <String value="($mapdir.*?)" />|);
 		}
 		close($lconfig);
 
@@ -2008,7 +2013,7 @@ directly with it to manage the instance.
 		if(@streams || time()<$hang) {
 			return(@streams);
 		} else {
-			return(-1);
+			return(0xDEAD);
 		}
 	}
 
@@ -2157,8 +2162,10 @@ types which alter the normal behavior.
 	my($Color_re)=join('|', grep(length>2, keys(%Teams)));
 
 	sub file {
-		if($MAPDIR) {
-			return("$INSTALL_ROOT/maps/$MAPDIR/$Map->{'map'}.altx");
+		my($mapdir)=config::option('mapDir');
+
+		if($mapdir) {
+			return("$INSTALL_ROOT/maps/$mapdir/$Map->{'map'}.altx");
 		} else {
 			return("$INSTALL_ROOT/maps/$Map->{'map'}.altx");
 		}
@@ -2166,7 +2173,8 @@ types which alter the normal behavior.
 
 	sub definition {
 		my($map)=@_;
-		my($cache)="$INSTALL_ROOT/maps/cache/$MAPDIR";
+		my($mapdir)=config::option('mapDir');
+		my($cache)="$INSTALL_ROOT/maps/cache/$mapdir";
 		my(%parser)=(
 			'SuppressEmpty'	=> 1,
 			'ForceArray'		=> ['View', 'powerupSpawner', 'String'],
@@ -3483,9 +3491,10 @@ with their name.
 
 	sub name_ok {
 		local($_)=@_;
+		my($mapdir)=config::option('mapDir');
 
-		s|^$INSTALL_ROOT/maps/$MAPDIR/?||;
-		s|^$MAPDIR/?||;
+		s|^$INSTALL_ROOT/maps/$mapdir/*||;
+		s|^$mapdir/*||;
 
 		return(0) unless(m/^[\w.?!%:=+-]{5,}$/);
 		return(0) unless(m/^(1bd|1de|1dm|ball|ffa|tbd|tdm)_|^lobby/);
@@ -4025,10 +4034,11 @@ core protecting the flag.
 
 	'upload altitudegame'	=> sub {
 		my($e, $p, $name)=@_;
-		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($mapdir)=config::option('mapDir');
+		my($maps)="$INSTALL_ROOT/maps/$mapdir";
 		my($mapname, $file, $mapconfig);
 
-		$name=~s|^$MAPDIR/|| if($MAPDIR);
+		$name=~s|^$mapdir/*|| if($mapdir);
 		$name=~s|\.altx$||;
 		$name=~s|\s+|_|g;
 
@@ -4037,8 +4047,8 @@ core protecting the flag.
 			return(0);
 		}
 
-		if($MAPDIR) {
-			$mapname="$MAPDIR/$name";
+		if($mapdir) {
+			$mapname="$mapdir/$name";
 		} else {
 			$mapname=$name;
 		}
@@ -4077,12 +4087,13 @@ core protecting the flag.
 
 	'upload official'	=> sub {
 		my($e, $p, $name)=@_;
-		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($mapdir)=config::option('mapDir');
+		my($maps)="$INSTALL_ROOT/maps/$mapdir";
 		my($url)="http://maps.altitudegame.com/";
 		my($mapname, $file, $key, $mapconfig);
 		local($_);
 
-		$name=~s|^$MAPDIR/|| if($MAPDIR);
+		$name=~s|^$mapdir/*|| if($mapdir);
 		$name=~s|\.altx$||;
 		$name=~s|\s+|_|g;
 
@@ -4091,8 +4102,8 @@ core protecting the flag.
 			return(0);
 		}
 
-		if($MAPDIR) {
-			$mapname="$MAPDIR/$name";
+		if($mapdir) {
+			$mapname="$mapdir/$name";
 		} else {
 			$mapname=$name;
 		}
@@ -4137,12 +4148,13 @@ core protecting the flag.
 
 	'upload ladder'	=> sub {
 		my($e, $p, $name)=@_;
-		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($mapdir)=config::option('mapDir');
+		my($maps)="$INSTALL_ROOT/maps/$mapdir";
 		#my($url)="http://altituderank.com/mapdownloads/%s.altx";
 		my($url)="http://maps.planeball.com/%s.altx";
 		my($mapname, $file, $mapconfig);
 
-		$name=~s|^$MAPDIR/|| if($MAPDIR);
+		$name=~s|^$mapdir/*|| if($mapdir);
 		$name=~s|\.altx$||;
 		$name=~s|\s+|_|g;
 
@@ -4151,8 +4163,8 @@ core protecting the flag.
 			return(0);
 		}
 
-		if($MAPDIR) {
-			$mapname="$MAPDIR/$name";
+		if($mapdir) {
+			$mapname="$mapdir/$name";
 		} else {
 			$mapname=$name;
 		}
@@ -4192,7 +4204,8 @@ core protecting the flag.
 
 	'upload tinyupload'		=> sub {
 		my($e, $p, $key)=@_;
-		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($mapdir)=config::option('mapDir');
+		my($maps)="$INSTALL_ROOT/maps/$mapdir";
 		my($url)='http://s000.tinyupload.com/';
 		my($name, $next, $mapname, $file, $mapconfig);
 		local($_);
@@ -4208,8 +4221,8 @@ core protecting the flag.
 		return(0) unless(file::name_ok($name));
 		return(0) unless(file::url_ok("$url$next"));
 
-		if($MAPDIR) {
-			$mapname="$MAPDIR/$name";
+		if($mapdir) {
+			$mapname="$mapdir/$name";
 		} else {
 			$mapname=$name;
 		}
@@ -4250,18 +4263,19 @@ core protecting the flag.
 
 	'upload url'		=> sub {
 		my($e, $p, $name, $url)=@_;
-		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($mapdir)=config::option('mapDir');
+		my($maps)="$INSTALL_ROOT/maps/$mapdir";
 		my($mapname, $file, $mapconfig);
 
-		$name=~s|^$MAPDIR/|| if($MAPDIR);
+		$name=~s|^$mapdir/*|| if($mapdir);
 		$name=~s|\.altx$||;
 		$name=~s|\s+|_|g;
 
 		return(0) unless(file::name_ok($name));
 		return(0) unless(file::url_ok($url));
 
-		if($MAPDIR) {
-			$mapname="$MAPDIR/$name";
+		if($mapdir) {
+			$mapname="$mapdir/$name";
 		} else {
 			$mapname=$name;
 		}
@@ -4298,18 +4312,19 @@ core protecting the flag.
 
 	'removeMap'		=> sub {
 		my($e, $p)=@_;
-		my($maps)="$INSTALL_ROOT/maps/$MAPDIR";
+		my($mapdir)=config::option('mapDir');
+		my($maps)="$INSTALL_ROOT/maps/$mapdir";
 		my($mapname, $file);
 
 		return(0) unless($e->{'superAdmin'});
 
-		$e->{'arguments'}[0]=~s|^$MAPDIR/|| if($MAPDIR);
+		$e->{'arguments'}[0]=~s|^$mapdir/*|| if($mapdir);
 		$e->{'arguments'}[0]=~s|\.altx$||;
 		$e->{'arguments'}[0]=~s|\s+|_|g;
 
 		return(0) unless(file::name_ok($e->{'arguments'}[0]));
 
-		$mapname="$MAPDIR/$e->{'arguments'}[0]";
+		$mapname="$mapdir/$e->{'arguments'}[0]";
 		$mapname=~s|^/+||;
 		$file="$maps/$mapname.altx";
 
@@ -4407,7 +4422,8 @@ core protecting the flag.
 
 	'mapLoading'	=> sub {
 		my($e, $p)=@_;
-		my($map)="$INSTALL_ROOT/maps/$MAPDIR/$e->{'map'}.altx";
+		my($mapdir)=config::option('mapDir');
+		my($map)="$INSTALL_ROOT/maps/$mapdir/$e->{'map'}.altx";
 		my($next)=stash::get('nextMap', 'admin');
 
 		if($next && $e->{'map'} ne $next) {
@@ -6725,7 +6741,7 @@ while(1) {
 			}
 
 			ui::slog($SOUT);
-		} elsif($fh==-1) {
+		} elsif($fh==0xDEAD) {
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
 			ui::slog('!!   Server is hung, restarting   !!');
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');

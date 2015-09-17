@@ -62,13 +62,6 @@ installed the altitude server.  This defaults to ~/altitude, as that is
 what the altitude.sh program defaults to.  If you chaned this value when
 you installed altitude, then change it here too.
 
-Some people like to install server maps in a seperate location like
-~/altitude/maps/download.  If this is the case for you, set $MAPDIR
-to be the part of that location past "maps/".  In our example, you would
-set $MAPDIR to 'download'.  It is recommended that you only change this
-if you must.  You can server more maps, and it is easier on server users
-to server files from the root maps directory.
-
 You have to options to configure how the software works.  One method is to
 edit the defaults in %OPTIONS at the top of the script.  This is nice,
 because it ensures these settings even on first boot.  The downside is that
@@ -86,6 +79,13 @@ to set these values on a running instance, the values take automatic effect
 and the server is configured for use.  There a number of options, but you
 really should consider taking immediate action on configuring the following:
 
+
+  * mapDir  -  Some people like to install server maps in a seperate location
+    like ~/altitude/maps/download.  If this is the case for you, set "mapDir"
+    to be the part of that location past "maps/".  In our example, you would
+    set "mapDir" to 'download'.  It is recommended that you only change this
+    if you must.  You can serve more maps, and it is easier on server users
+    to serve files from the root maps directory.
 
   * altBouncer  -  Setting this to 1 will tell your server to upload players
     seen to Tec27's altBouncer.  This is an important resource in the Altitude
