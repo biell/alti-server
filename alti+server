@@ -2175,6 +2175,7 @@ types which alter the normal behavior.
 		my($map)=@_;
 		my($mapdir)=config::option('mapDir');
 		my($cache)="$INSTALL_ROOT/maps/cache/$mapdir";
+		my($file)=<$cache/$map.altx/*.alte>;
 		my(%parser)=(
 			'SuppressEmpty'	=> 1,
 			'ForceArray'		=> ['View', 'powerupSpawner', 'String'],
@@ -2186,7 +2187,33 @@ types which alter the normal behavior.
 			}
 		);
 
-		return(xml::decode(<$cache/$map.altx/*.alte>, %parser));
+		if(-r $file) {
+			return(xml::decode($file, %parser));
+		} else {
+			ui::slog("!!!  I could not find a .alte file in your  !!!");
+			ui::slog("!!!  $cache  !!!");
+			ui::slog("!!!  Your map cache is broken, this is bad  !!!");
+			ui::slog("!!!  I will do my best, but without seeing  !!!");
+			ui::slog("!!!  the map definition, I am blind to the  !!!");
+			ui::slog("!!!  location of pickups.                   !!!");
+
+			if(-d "$cache/$map.altx") {
+				if(-w "$cache/$map.altx") {
+					ui::slog("Your cache directory exists, why isn't there .alte file?");
+				} else {
+					ui::slog("$cache/$map.altx isn't writable");
+				}
+			} else {
+				ui::slog("$cache/$map.altx does not exist");
+				if(-d $cache) {
+					ui::slog("$cache isn't writable") unless(-w $cache);
+				} else {
+					ui::slog("$cache does not exist");
+				}
+			}
+
+			return(undef);
+		}
 	}
 
 	sub set_type {
@@ -2337,7 +2364,8 @@ types which alter the normal behavior.
 	}
 
 	sub powerup {
-		my($xy, $type)=@_;
+		my($e, $type)=@_;
+		my($xy)=join(',', @$e{'positionX','positionY'});
 
 		if(exists($Pickups{$xy})) {
 			if($type) {
@@ -2348,6 +2376,20 @@ types which alter the normal behavior.
 				}
 			} else {
 				return(@{$Pickups{$xy}});
+			}
+		} elsif(!defined($Ds)) {
+			return(undef) if($e->{'velocityX'} || $e->{'velocityY'});
+			return(undef) if($e->{'positionX'}=~m/\./);
+			return(undef) if($e->{'positionY'}=~m/\./);
+
+			if($type) {
+				if($e->{'powerup'}=~m/$type/i) {
+					return($e->{'powerup'});
+				} else {
+					return(undef);
+				}
+			} else {
+				return($e->{'powerup'});
 			}
 		} else {
 			return(undef);
@@ -2429,8 +2471,10 @@ types which alter the normal behavior.
 		$Map->{'idle'}=time();
 
 		$Cpu=List::Util::sum(server::cpu_secs);
-
 		$Ds=&definition($Map->{'map'});
+		%Pickups=();
+		%Goals=();
+
 		$Xmid=$Ds->{'views'}{'Game'}{'bounds'}{'maxX'}/2;
 		$Ymid=$Ds->{'views'}{'Game'}{'bounds'}{'maxY'}/2;
 
@@ -6103,8 +6147,8 @@ core protecting the flag.
 			}
 		}
 
-		if($p->{'logPickups'} && map::powerup($pickup)) {
-			chat::whisper($p, $pickup,':',join(', ', map::powerup($pickup)));
+		if($p->{'logPickups'} && map::powerup($e)) {
+			chat::whisper($p, $pickup,':',join(', ', map::powerup($e)));
 		}
 
 		return if(plus::key($e, $p));
@@ -6119,11 +6163,11 @@ core protecting the flag.
 		if(stash::get($pickup, 'oneways', map::name)) {
 			server::trigger('logPlanePositions', 'oneway', $e, $p);
 		} elsif($spawn_mode eq 'health') {
-			if(map::powerup($pickup, 'Health')) {
+			if(map::powerup($e, 'Health')) {
 				server::trigger('logPlanePositions', 'powerup', $e, $p)
 			}
 		} elsif($spawn_mode eq 'powerup') {
-			if(map::powerup($pickup)) {
+			if(map::powerup($e)) {
 				server::trigger('logPlanePositions', 'powerup', $e, $p)
 			}
 		}
