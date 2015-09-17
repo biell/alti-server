@@ -8,7 +8,7 @@ alti+server - Altitude server designed to support extended game types
 
 =cut
 
-my($INSTALL_ROOT)="$ENV{'HOME'}/altitude";
+my($INSTALL_ROOT)=$ENV{'ALTITUDE_ROOT'} || "$ENV{'HOME'}/altitude";
 
 #$MAPDIR moved to 'mapDir' in OPTIONS just below.  Now, you can
 #use "/server set mapDir download" to have this option persist across upgrades!
