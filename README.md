@@ -267,6 +267,12 @@ manage Alti+ game maps.
   * **/del door [name]**<br>
     Delete the door named `name`.
 
+  * **/set keys [team|personal]**<br>
+    Set if keys apply to an entire team, or to just one player.
+
+  * **/unset keys**<br>
+    Unset all keys flags and return to default behavior.
+
   * **/add key [name] [x],[y]**<br>
     Create a key for the door named `name` at coordinates `x`,`y`.
 
