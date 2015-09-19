@@ -11,7 +11,7 @@ alti+server - Altitude server designed to support extended game types
 my($INSTALL_ROOT)=$ENV{'ALTITUDE_ROOT'} || "$ENV{'HOME'}/altitude";
 
 #$MAPDIR moved to 'mapDir' in OPTIONS just below.  Now, you can
-#use "/server set mapDir download" to have this option persist across upgrades!
+#use "/server set mapDir ..." to have this option persist across upgrades!
 #Set mapDir the first time you upgrade to this version, then it will be stored
 #in your json stash, you won't ever have to set it again.
 
@@ -1248,13 +1248,13 @@ my(@ALTIPLUS)=(
 	},
 	{
 		'name'			=> 'set',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'intro'], 'string'],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'intro', 'keys'], 'string'],
 		'voteThreshold'	=> 100,
 		'required'		=> 1,
 	},
 	{
 		'name'			=> 'unset',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'intro']],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'intro', 'keys']],
 		'voteThreshold'	=> 100,
 		'required'		=> 1,
 	},
@@ -1361,6 +1361,8 @@ my(@ALTIPLUS)=(
 	our($Ping)=500; #reset from launcher_config.xml
 	our($Goals)=6;  #reset from launcher_config.xml
 	our($Maxp)=14;  #reset from launcher_config.xml
+
+	our($Clock)=1000;  #Clock is in milliseconds
 
 	our($Uuid)=stash::get('uuid', 'server');
 
@@ -2834,7 +2836,7 @@ they make the top 5.
 	sub mark {
 		my($e)=@_;
 
-		$Start=$e->{'time'}/1000;
+		$Start=$e->{'time'}/$config::Clock;
 	}
 
 	sub enter {
@@ -2848,7 +2850,7 @@ they make the top 5.
 
 		$records=[] unless(ref($records) eq 'ARRAY');
 
-		$time=sprintf("%0.1f", $e->{'time'}/1000 - $Start);
+		$time=sprintf("%0.1f", $e->{'time'}/$config::Clock - $Start);
 
 		for(my $i=0; $i<@$records; $i++) {
 			if($time<$records->[$i][0]) {
@@ -3055,21 +3057,6 @@ play though extended interfaces and server support.
 	sub round {
 		ball::new;		#Can ball have multiple rounds?
 		#$Hunted=undef;	#Should hunted change per round?
-	}
-
-	sub enter {
-		my($p)=@_;
-		my($max)=stash::get('maxPlayers', map::name) || $config::Maxp;
-
-		if($Stats{'players'}{'playing'}{$p}) {
-			return(1);
-		} elsif($Stats{'players'}{'count'}<$max) {
-			$Stats{'players'}{'playing'}{$p}=1;
-			$Stats{'players'}{'count'}++;
-			return(1);
-		} else {
-			return(0);
-		}
 	}
 
 	sub active {
@@ -3322,28 +3309,56 @@ play though extended interfaces and server support.
 
 	sub door_open {
 		my($p, $door)=@_;
+		my($team)=$p->{'team'};
 
-		return($Stats{$p->{'team'}}{'door'}{$door});
+		return(
+			$Stats{$p}{$team}{'door'}{$door}
+			||  $Stats{$team}{'door'}{$door}
+		);
 	}
 
 	sub zone_open {
 		my($p, $zone)=@_;
+		my($team)=$p->{'team'};
 
-		return($Stats{$p->{'team'}}{'zone'}{$zone});
+		return(
+			$Stats{$p}{$team}{'zone'}{$zone}
+			||  $Stats{$team}{'zone'}{$zone}
+		);
 	}
 
+	sub key_found {
+		my($p, $key)=@_;
+		my($team)=$p->{'team'};
+
+		return(
+			$Stats{$p}{$team}{'key'}{$key}
+			||  $Stats{$team}{'key'}{$key}
+		);
+	}
+
+
 	sub zone_init {
+		my($p)=@_;
 		my($zones)=stash::get('zones', map::name);
+		my($stats);
+
+		if($p) {
+			$stats=$Stats{$p};
+			return if(exists($stats->{map::left}{'zones'}));
+		} else {
+			$stats=\%Stats;
+		}
 
 		foreach my $team (keys(%$zones)) {
 			#Initialize all zones to open:
 			foreach my $name (keys(%{$zones->{$team}{'zones'}})) {
-				$Stats{$team}{'zone'}{$name}=1;
+				$stats->{$team}{'zone'}{$name}=1;
 			}
 
 			#If a zone has a key, close it:
 			foreach my $name (values(%{$zones->{$team}{'keys'}})) {
-				$Stats{$team}{'zone'}{$name}=0;
+				$stats->{$team}{'zone'}{$name}=0;
 			}
 		}
 	}
@@ -3352,6 +3367,7 @@ play though extended interfaces and server support.
 		my($e, $p)=@_;
 		my($door)=stash::get($p->{'team'}, 'door', map::name);
 		my($zone)=stash::get($p->{'team'}, 'zones', map::name);
+		my($personal)=stash::get('keys', map::name) & 1;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($keys, $color);
 
@@ -3363,53 +3379,70 @@ play though extended interfaces and server support.
 
 			return(1);
 		} elsif($door->{'keys'}{$pickup} && &no_repeats($e, $p)) {
-			if($Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}) {
+			if(&door_open($p, $door->{'keys'}{$pickup})) {
 				return(0);
 			}
 
-			if($Stats{$p->{'team'}}{'key'}{$pickup}) {
+			if(&key_found($p, $pickup)) {
 				return(0);
 			} else {
 				chat::team($p, $p->{'nickname'}, 'found a key to door:', $door->{'keys'}{$pickup});
-				$Stats{$p->{'team'}}{'key'}{$pickup}=1;
-				$p->{'stats'}{'keys'}++;
+				if($personal) {
+					$Stats{$p}{$p->{'team'}}{'key'}{$pickup}=1;
+				} else {
+					$Stats{$p->{'team'}}{'key'}{$pickup}=1;
+					$p->{'stats'}{'keys'}++;
+				}
 			}
 
 			$keys=utils::invert(stash::get('keys', $p->{'team'}, 'door', map::name));
 
 			foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
-				unless($Stats{$p->{'team'}}{'key'}{$key}) {
+				unless(&key_found($p, $key)) {
 					return(0);
 				}
 			}
 
-			$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+			if($personal) {
+				$Stats{$p}{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+				chat::whisper($p, 'Door unlocked:', $door->{'keys'}{$pickup});
+			} else {
+				$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+				chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
+			}
 
-			chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
 		} elsif($zone->{'keys'}{$pickup} && &no_repeats($e, $p)) {
-			if($Stats{$p->{'team'}}{'zone'}{$zone->{'keys'}{$pickup}}) {
+			if(&zone_open($p, $zone->{'keys'}{$pickup})) {
 				return(0);
 			}
 
-			if($Stats{$p->{'team'}}{'key'}{$pickup}) {
+			if(&key_found($p, $pickup)) {
 				return(0);
 			} else {
 				chat::team($p, $p->{'nickname'}, 'found a key to zone:', $zone->{'keys'}{$pickup});
-				$Stats{$p->{'team'}}{'key'}{$pickup}=1;
-				$p->{'stats'}{'keys'}++;
+				if($personal) {
+					$Stats{$p}{$p->{'team'}}{'key'}{$pickup}=1;
+				} else {
+					$Stats{$p->{'team'}}{'key'}{$pickup}=1;
+					$p->{'stats'}{'keys'}++;
+				}
 			}
 
 			$keys=utils::invert(stash::get('keys', $p->{'team'}, 'zones', map::name));
 
 			foreach my $key (@{$keys->{$zone->{'keys'}{$pickup}}}) {
-				unless($Stats{$p->{'team'}}{'key'}{$key}) {
+				unless(&key_found($p, $key)) {
 					return(0);
 				}
 			}
 
-			$Stats{$p->{'team'}}{'zone'}{$zone->{'keys'}{$pickup}}=1;
-
-			chat::team($p, 'Zone unlocked:', $zone->{'keys'}{$pickup});
+			if($personal) {
+				$Stats{$p}{$p->{'team'}}{'zone'}{$zone->{'keys'}{$pickup}}=1;
+				chat::whisper($p, 'Zone unlocked:', $zone->{'keys'}{$pickup});
+			} else {
+				$Stats{$p->{'team'}}{'zone'}{$zone->{'keys'}{$pickup}}=1;
+				chat::team($p, 'Zone unlocked:', $zone->{'keys'}{$pickup});
+			}
 		}
 
 		return(0);
@@ -3471,6 +3504,22 @@ play though extended interfaces and server support.
 		}
 	}
 
+	sub enter {
+		my($p)=@_;
+		my($max)=stash::get('maxPlayers', map::name) || $config::Maxp;
+
+		if($Stats{'players'}{'playing'}{$p}) {
+			return(1);
+		} elsif($Stats{'players'}{'count'}<$max) {
+			&zone_init($p) if(stash::get('keys', map::name) & 1);
+			$Stats{'players'}{'playing'}{$p}=1;
+			$Stats{'players'}{'count'}++;
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
 	sub new {
 		%Stats=();
 		$Hunted=undef;
@@ -3480,7 +3529,7 @@ play though extended interfaces and server support.
 			delete($player->{'team'});
 		}
 
-		&zone_init;
+		&zone_init() unless(stash::get('keys', map::name) & 1);
 	}
 
 }
@@ -3634,6 +3683,10 @@ sub event {
 	my($event)=@_;
 	my($player)=undef;
 	
+	unless($config::Clock==1000) {
+		$event->{'time'}*=1000/$config::Clock;
+	}
+
 	if($event->{'group'} eq 'server') {
 		$player=player::server;
 	} else {
@@ -5390,6 +5443,9 @@ core protecting the flag.
 		chat::whisper($p, '/list keys');
 		chat::whisper($p, '/add key <door|zone> <team> <kx>,<ky>');
 		chat::whisper($p, '/del key <door|zone> <team>');
+		chat::whisper($p, '/set keys team <team|personal>');
+		chat::whisper($p, '/unset keys <team|personal>');
+		chat::whisper($p, 'The default for keys team is 1, set to 0 for personal keys');
 	},
 
 	'list keys'	=> sub {
@@ -5401,7 +5457,27 @@ core protecting the flag.
 		}
 	},
 
-	'add key'	=> sub {
+	'set keys'	=> sub {
+		my($e, $p, $flag)=@_;
+		#We can OR these later if we add more flags.
+
+		if($flag=~m/0|team/i) {
+			stash::set('keys', map::name, 0);
+			chat::whisper($p, 'Keys are team-wide as of the next map load');
+		} elsif($flag=~m/1|personal|single/) {
+			stash::set('keys', map::name, 1);
+			chat::whisper($p, 'Keys will be personal on next map load');
+		}
+	},
+
+	'unset keys'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('keys', map::name);
+		chat::whisper($p, 'Keys are team-wide as of the next map load');
+	},
+
+	'add key'		=> sub {
 		my($e, $p, $name, $team, $kx, $ky)=@_;
 
 		$team='*' unless($team);
@@ -6104,7 +6180,7 @@ core protecting the flag.
 
 		if($e->{'powerup'} eq 'Ball') {
 			ball::shoot($e);
-		} elsif($diff<2000) {
+		} elsif(0<$diff && $diff<2000) {
 			$p->{$e->{'powerup'}}{'count'}++;
 		} else {
 			$p->{$e->{'powerup'}}{'time'}=$e->{'time'};
@@ -6114,7 +6190,7 @@ core protecting the flag.
 		if($p->{'Homing Missile'}{'count'} > 12) {
 			chat::snark($p, 'Hwacha');
 		}
-		if($p->{'Bomb'}{'count'} > 10) {
+		if($p->{'Bomb'}{'count'} > 8) {
 			chat::snark($p, "$p->{'nickname'} bombs with extreme prejudice");
 		}
 	},
@@ -6496,9 +6572,9 @@ core protecting the flag.
 		my($lag);
 
 		return if($e->{'changedMap'});
-		return if(($e->{'time'}-map::start)<10000);	#10 seconds
+		return if(($e->{'time'}-map::start)<10*$config::Clock);
 
-		$lag=$e->{'duration'}/1000;
+		$lag=$e->{'duration'}/$config::Clock;
 		if($lag > config::option('hitchThreshold')) {
 			chat::all(sprintf('Server lag: %.2f seconds', $lag));
 		}
@@ -6611,7 +6687,7 @@ also only available from the console.
 			chat::whisper($s, "$key:", $player->{$key});
 		}
 		chat::whisper($s, 'joined:',
-			scalar(localtime($server::Start + $player->{'time'}/1000)));
+			scalar(localtime($server::Start + $player->{'time'}/$config::Clock)));
 	},
 
 	'showTeams'		=> sub {
@@ -6641,7 +6717,7 @@ also only available from the console.
 			chat::whisper($s, sprintf('%-20s  %36s  %s',
 					$player->{'nickname'},
 					$player->{'vaporID'},
-					utils::date($player->{'lastPlayedWithTime'}/1000),
+					utils::date($player->{'lastPlayedWithTime'}/$config::Clock),
 				));
 			$found=1;
 		}
