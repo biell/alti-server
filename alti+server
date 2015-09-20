@@ -2,7 +2,6 @@
 
 use strict;
 
-
 =head1 NAME
 
 alti+server - Altitude server designed to support extended game types
