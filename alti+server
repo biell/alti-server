@@ -13,7 +13,7 @@ my($INSTALL_ROOT)=$ENV{'ALTITUDE_ROOT'} || "$ENV{'HOME'}/altitude";
 #$MAPDIR moved to 'mapDir' in OPTIONS just below.  Now, you can use
 #"/server set mapDir ..." to have this option persist across upgrades!
 #Set mapDir the first time you upgrade to this version, then it will be stored
-#in your json stash, you won't ever have to set it again.
+#in your json stash, you won't ever have to set it here again.
 
 my(%OPTIONS)=(
 	mapDir		=> '',			#Directory under $INSTALL_ROOT/maps
