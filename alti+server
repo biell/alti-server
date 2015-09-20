@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
 =head1 NAME
 
@@ -6890,7 +6890,6 @@ END {
 	ui::shutdown;
 	exit(0);
 }
-
 
 =head1 NOTES
 
