@@ -5369,11 +5369,11 @@ core protecting the flag.
 				delete($keys->{$door});
 				$any=1;
 			}
-		}
 
-		foreach my $key (sort(keys(%$keys))) {
-			chat::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
-			$any=1;
+			foreach my $key (sort(keys(%$keys))) {
+				chat::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
+				$any=1;
+			}
 		}
 
 		chat::whisper($p, 'No doors defined') unless($any);
@@ -5683,11 +5683,11 @@ core protecting the flag.
 				delete($keys->{$zone});
 				$any=1;
 			}
-		}
 
-		foreach my $key (sort(keys(%$keys))) {
-			chat::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
-			$any=1;
+			foreach my $key (sort(keys(%$keys))) {
+				chat::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
+				$any=1;
+			}
 		}
 
 		if($spawn_mode eq 'zone' || $spawn_mode eq 'near') {
