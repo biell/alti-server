@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
-#use strict;
+use strict;
+
 
 =head1 NAME
 
@@ -10,8 +11,8 @@ alti+server - Altitude server designed to support extended game types
 
 my($INSTALL_ROOT)=$ENV{'ALTITUDE_ROOT'} || "$ENV{'HOME'}/altitude";
 
-#$MAPDIR moved to 'mapDir' in OPTIONS just below.  Now, you can
-#use "/server set mapDir ..." to have this option persist across upgrades!
+#$MAPDIR moved to 'mapDir' in OPTIONS just below.  Now, you can use
+#"/server set mapDir ..." to have this option persist across upgrades!
 #Set mapDir the first time you upgrade to this version, then it will be stored
 #in your json stash, you won't ever have to set it again.
 
