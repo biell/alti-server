@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-#use strict;
+use strict;
 
 =head1 NAME
 
@@ -5341,9 +5341,9 @@ core protecting the flag.
 
 		if($e->{'admin'} || map::spec($p->{'team'})) {
 			@teams=(map::left, map::right);
-		} elsif(team::left($p->{'team'})) {
+		} elsif(map::left($p->{'team'})) {
 			@teams=(map::left);
-		} elsif(team::right($p->{'team'})) {
+		} elsif(map::right($p->{'team'})) {
 			@teams=(map::right);
 		}
 		foreach my $team (@teams) {
@@ -5646,9 +5646,9 @@ core protecting the flag.
 
 		if($e->{'admin'} || team::spec($p->{'team'})) {
 			@teams=(map::left, map::right);
-		} elsif(team::left($p->{'team'})) {
+		} elsif(map::left($p->{'team'})) {
 			@teams=(map::left);
-		} elsif(team::right($p->{'team'})) {
+		} elsif(map::right($p->{'team'})) {
 			@teams=(map::right);
 		}
 		foreach my $team (@teams) {
