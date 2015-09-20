@@ -5644,7 +5644,7 @@ core protecting the flag.
 		my($sep)=':';
 		my($zones, $keys, $status);
 
-		if($e->{'admin'}) {
+		if($e->{'admin'} || team::spec($p->{'team'})) {
 			@teams=(map::left, map::right);
 		} elsif(team::left($p->{'team'})) {
 			@teams=(map::left);
