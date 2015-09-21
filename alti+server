@@ -5478,9 +5478,8 @@ core protecting the flag.
 		chat::whisper($p, '/list keys');
 		chat::whisper($p, '/add key <door|zone> <team> <kx>,<ky>');
 		chat::whisper($p, '/del key <door|zone> <team>');
-		chat::whisper($p, '/set keys team <team|personal>');
-		chat::whisper($p, '/unset keys <team|personal>');
-		chat::whisper($p, 'The default for keys team is 1, set to 0 for personal keys');
+		chat::whisper($p, '/set keys <team|personal>');
+		chat::whisper($p, '/unset keys');
 	},
 
 	'list keys'	=> sub {
