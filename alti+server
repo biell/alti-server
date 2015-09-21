@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-#use strict;
+use strict;
 
 =head1 NAME
 
@@ -3985,7 +3985,11 @@ core protecting the flag.
 		my($type, $args)=@{$e->{'arguments'}};
 		my(@args);
 
-		@args=($args=~m/(".*?"|".*$|[^\s,]+)/g);
+		if($type=~m/intro/) {
+			@args=($args);
+		} else {
+			@args=($args=~m/(".*?"|".*$|[^\s,]+)/g);
+		}
 
 		return unless($e->{'admin'});
 
@@ -4469,6 +4473,7 @@ core protecting the flag.
 			assignTeam
 			planes
 			spawnMode
+			keys
 			maxPlayers
 			gameType
 			intro
@@ -4557,6 +4562,7 @@ core protecting the flag.
 			assignTeam
 			planes
 			spawnMode
+			keys
 			maxPlayers
 			gameType
 		);
@@ -4591,8 +4597,9 @@ core protecting the flag.
 	'list gravity'	=> sub {
 		my($e, $p)=@_;
 		my($gravity)=stash::get('gravity', map::name);
+		my(@table)=('0 (default)', '1 (no plane gravity)', '2 (no ball gravity)', '3 (no gravity)');
 
-		chat::whisper($p, 'gravity:', $gravity || 'default');
+		chat::whisper($p, 'gravity:', $table[$gravity]);
 	},
 
 	'enable gravity'	=> sub {
@@ -4642,8 +4649,9 @@ core protecting the flag.
 	'list weapons'	=> sub {
 		my($e, $p)=@_;
 		my($weapons)=stash::get('weapons', map::name);
+		my(@table)=('0 (default)', '1 (secondary only)', '2 (primary only)', '3 (no weapons)');
 
-		chat::whisper($p, 'weapons:', $weapons || 'default');
+		chat::whisper($p, 'weapons:', $table[$weapons]);
 	},
 
 	'enable weapons'	=> sub {
@@ -4693,8 +4701,17 @@ core protecting the flag.
 	'list spawnHealth'	=> sub {
 		my($e, $p)=@_;
 		my($health)=stash::get('spawnHealth', map::name);
+		my($msg);
 
-		chat::whisper($p, 'spawnHealth:', $health || 'default');
+		if(!defined($health) || $health==100) {
+			$msg='100 (default)';
+		} elsif($health<100) {
+			$msg="$health (fragile)";
+		} elsif($health>100) {
+			$msg="$health (strong)";
+		}
+
+		chat::whisper($p, 'spawnHealth:', $msg);
 	},
 
 	'enable spawnHealth'	=> sub {
@@ -4744,8 +4761,17 @@ core protecting the flag.
 	'list cameraScale'	=> sub {
 		my($e, $p)=@_;
 		my($scale)=stash::get('cameraScale', map::name);
+		my($msg);
 
-		chat::whisper($p, 'cameraScale:', $scale || '100');
+		if(!defined($scale) || $scale==100) {
+			$msg='100 (default)';
+		} elsif($scale<100) {
+			$msg="$scale (zoom in)";
+		} elsif($scale>100) {
+			$msg="$scale (zoom out)";
+		}
+
+		chat::whisper($p, 'cameraScale:', $msg);
 	},
 
 	'enable cameraScale'	=> sub {
@@ -4794,8 +4820,17 @@ core protecting the flag.
 	'list planeScale'	=> sub {
 		my($e, $p)=@_;
 		my($scale)=stash::get('planeScale', map::name);
+		my($msg);
 
-		chat::whisper($p, 'planeScale:', $scale || 100);
+		if(!defined($scale) || $scale==100) {
+			$msg='100 (default)';
+		} elsif($scale<100) {
+			$msg="$scale (smaller)";
+		} elsif($scale>100) {
+			$msg="$scale (bigger)";
+		}
+
+		chat::whisper($p, 'planeScale:', $msg);
 	},
 
 	'enable planeScale'	=> sub {
@@ -5449,11 +5484,42 @@ core protecting the flag.
 	},
 
 	'list keys'	=> sub {
-		if(stash::get('door', map::name)) {
-			$HOOKS{'list doors'}->(@_);
+		my($e, $p)=@_;
+		my($keys)=stash::get('keys', map::name);
+		my(@flags)=();
+		my($locked)=	stash::get('keys', map::left, 'door', map::name)	||
+					stash::get('keys', map::right, 'door', map::name)	||
+					stash::get('keys', map::left, 'zones', map::name)	||
+					stash::get('keys', map::right, 'zones', map::name);
+
+		if(defined($keys)) {
+			push(@flags, 'personal') if($keys & 1);
+
+			@flags=('team') unless(@flags);
+
+			chat::whisper($p, 'keys:', @flags);
+		} elsif($locked) {
+			chat::whisper($p, 'keys:', 'team');
 		}
-		if(stash::get('zones', map::name)) {
-			$HOOKS{'list zones'}->(@_);
+	},
+
+	'enable keys'	=> sub {
+		my($e, $p)=@_;
+		my($keys)=stash::get('keys', map::name);
+		my(@flags)=();
+		my($locked)=	stash::get('keys', map::left, 'door', map::name)	||
+					stash::get('keys', map::right, 'door', map::name)	||
+					stash::get('keys', map::left, 'zones', map::name)	||
+					stash::get('keys', map::right, 'zones', map::name);
+
+		if(defined($keys)) {
+			push(@flags, 'personal') if($keys & 1);
+
+			@flags=('team') unless(@flags);
+
+			chat::all('keys:', @flags);
+		} elsif($locked) {
+			chat::all('keys:', 'team');
 		}
 	},
 
