@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
 =head1 NAME
 
@@ -5644,7 +5644,7 @@ core protecting the flag.
 		my($sep)=':';
 		my($zones, $keys, $status);
 
-		if($e->{'admin'} || team::spec($p->{'team'})) {
+		if($e->{'admin'} || map::spec($p->{'team'})) {
 			@teams=(map::left, map::right);
 		} elsif(map::left($p->{'team'})) {
 			@teams=(map::left);
