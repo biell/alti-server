@@ -23,6 +23,7 @@ my(%OPTIONS)=(
 	enableTalk	=> 0,			#Enable server aided direct player chat
 	hitchThreshold	=> 0.6,			#Length of serverHitch to report
 	timeIdleChange	=> 7200,			#changeMap when server is idle for 2hrs
+	cpuUsedChange	=> 300,			#changeMap idle servers at 5min CPU used
 	allowUploads	=> 1,			#Allow superAdmins to upload maps
 	ulSizeLimit	=> 10485760,        #Max allowed download size
 	altBouncer	=> 0,			#Upload users to AltBouncer, 0=no/1=yes
@@ -2471,6 +2472,10 @@ types which alter the normal behavior.
 		return(0);
 	}
 
+	sub cpu {
+		return(List::Util::sum(server::cpu_secs)-$Cpu);
+	}
+
 	sub new {
 		my($mapref)=@_;
 		my(@views)=();
@@ -2506,9 +2511,7 @@ types which alter the normal behavior.
 	}
 
 	sub end {
-		my($cpu)=List::Util::sum(server::cpu_secs)-$Cpu;
-
-		ui::slog('INFO  : CPU used by', &name, ':', utils::secs2mins($cpu));
+		ui::slog('INFO  : CPU used by', &name, ':', utils::secs2mins(&cpu));
 	}
 
 
@@ -6919,7 +6922,10 @@ while(1) {
 					server::cpu_hrs);
 
 				if(player::none) {
-					if(map::idle > config::option('timeIdleChange')) {
+					if(
+						map::idle > config::option('timeIdleChange') ||
+						map::cpu  > config::option('cpuUsedChange')
+					) {
 						server::send('changeMap',
 							config::lobby || config::random_map);
 						map::end;
