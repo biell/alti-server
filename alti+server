@@ -21,6 +21,7 @@ my(%OPTIONS)=(
 	lobby		=> '',			#Lobby map for this server
 	updateMapList	=> 1,               #Let alti+server change the mapList
 	enableTalk	=> 0,			#Enable server aided direct player chat
+	changePlane	=> 1,			#Default changePlane value
 	hitchThreshold	=> 0.6,			#Length of serverHitch to report
 	timeIdleChange	=> 7200,			#changeMap when server is idle for 2hrs
 	cpuUsedChange	=> 300,			#changeMap idle servers at 5min CPU used
@@ -1231,7 +1232,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 my(@ALTIPLUS)=(
 	{
 		'name'			=> 'help',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'required'		=> 1,
 	},
@@ -1243,19 +1244,19 @@ my(@ALTIPLUS)=(
 	},
 	{
 		'name'			=> 'list',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'required'		=> 1,
 	},
 	{
 		'name'			=> 'set',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'intro', 'keys'], 'string'],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys'], 'string'],
 		'voteThreshold'	=> 100,
 		'required'		=> 1,
 	},
 	{
 		'name'			=> 'unset',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'maxPlayers', 'gameType', 'intro', 'keys']],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys']],
 		'voteThreshold'	=> 100,
 		'required'		=> 1,
 	},
@@ -1300,6 +1301,18 @@ my(@ALTIPLUS)=(
 		'name'			=> 'sz',
 		'arguments'		=> ['string'],
 		'argumentDescriptions' => ['Zone name'],
+		'voteThreshold'	=> 0,
+		'required'		=> 1,
+	},
+	{
+		'name'			=> 'changePlane',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'required'		=> 1,
+	},
+	{
+		'name'			=> 'cp',
+		'arguments'		=> [],
 		'voteThreshold'	=> 0,
 		'required'		=> 1,
 	},
@@ -2136,7 +2149,7 @@ directly with it to manage the instance.
 
 }
 
-=head1 Maps
+=head2 Maps
 
 Altitude maps are the playing surfaces for each game.  Each one has
 different modes, characteristics, and design.  Beyond what is supported
@@ -3166,7 +3179,16 @@ play though extended interfaces and server support.
 
 	sub spawn_reset {
 		my($p)=@_;
-		server::send('overrideSpawnPoint', $p->{'nickname'}, 0, 0, 0);
+
+		if(exists($p->{'stats'}{'spawns'}) && @{$p->{'stats'}{'spawns'}}>1) {
+			pop(@{$p->{'stats'}{'spawns'}});
+			server::send('overrideSpawnPoint', $p->{'nickname'},
+				@{$p->{'stats'}{'spawns'}[-1]}
+			);
+		} else {
+			server::send('overrideSpawnPoint', $p->{'nickname'}, 0, 0, 0);
+			delete($p->{'stats'}{'spawns'});
+		}
 	}
 
 	sub spawn_here {
@@ -3185,6 +3207,7 @@ play though extended interfaces and server support.
 		}
 
 		server::send('overrideSpawnPoint', $p->{'nickname'}, $x, $y, $angle);
+		push(@{$p->{'stats'}{'spawns'}}, [$x, $y, $angle]);
 	}
 
 	sub clear_spawn {
@@ -3525,6 +3548,7 @@ play though extended interfaces and server support.
 
 	sub new {
 		%Stats=();
+		%Reset=();
 		$Hunted=undef;
 		$Active=0;
 
@@ -4069,6 +4093,8 @@ core protecting the flag.
 
 		if(map::mode('ffa')) {
 			chat::whisper($p, '/switch does not function in ffa');
+		} elsif($p->{'carrier'}) {
+			chat::whisper($p, 'You cannot /switch as a carrier');
 		} else {
 			server::send('assignTeam', $p->{'nickname'}, -1);
 			chat::whisper($p, 'Spectating, press `t` to join a team');
@@ -4476,6 +4502,7 @@ core protecting the flag.
 			assignTeam
 			planes
 			spawnMode
+			changePlane
 			keys
 			maxPlayers
 			gameType
@@ -4565,6 +4592,7 @@ core protecting the flag.
 			assignTeam
 			planes
 			spawnMode
+			changePlane
 			keys
 			maxPlayers
 			gameType
@@ -5176,6 +5204,59 @@ core protecting the flag.
 		} else {
 			chat::whisper($p, 'Enhanced spawn locations not set');
 		}
+	},
+
+	'help changePlane'	=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, 'Specify if players can change planes mid-map, defaults to 1 (ON)');
+		chat::whisper($p, '/list changePlane');
+		chat::whisper($p, '/set changePlane [0|1]');
+		chat::whisper($p, '/unset changePlane');
+	},
+
+	'list changePlane'	=> sub {
+		my($e, $p)=@_;
+		my($cp)=stash::get('changePlane', map::name) // config::option('changePlane');
+
+		if($cp) {
+			chat::whisper($p, 'changePlane: 1 (enabled)');
+		} else {
+			chat::whisper($p, 'changePlane: 0 (disabled)');
+		}
+	},
+
+	'enable changePlane'	=> sub {
+		my($e, $p)=@_;
+		my($cp)=stash::get('changePlane', map::name) // config::option('changePlane');
+
+		if($cp) {
+			chat::all('changePlane: 1 (enabled)');
+		} else {
+			chat::all('changePlane: 0 (disabled)');
+		}
+	},
+
+	'set changePlane'	=> sub {
+		my($e, $p, $cp)=@_;
+
+		stash::set('changePlane', map::name, $cp);
+
+		if($cp) {
+			chat::all('Changing planes is enabled');
+		} else {
+			chat::all('Changing planes is only possible after dying');
+		}
+	},
+
+	'unset changePlane'	=> sub {
+		my($e, $p)=@_;
+		my($cp)=config::option('changePlane');
+
+		stash::delete('changePlane', map::name);
+
+		chat::all('Changing planes is set to default',
+				$cp?'(enabled)':'(disabled)', 'state');
 	},
 
 	'help gameType'	=> sub {
@@ -5895,7 +5976,9 @@ core protecting the flag.
 		my($coords)=stash::get($zone, 'zones', $p->{'team'}, 'zones', map::name);
 		my($spawn_mode)=stash::get('spawnMode', map::name);
 
-		if($zone=~m/^start$/i) {
+		if($p->{'carrier'}) {
+			chat::whisper($p, 'You cannot /spawnZone as a carrier');
+		} elsif($zone=~m/^start$/i) {
 			plus::bench($p);
 			plus::spawn_reset($p);
 		} elsif($spawn_mode ne 'zone') {
@@ -5918,6 +6001,35 @@ core protecting the flag.
 
 	'sz'			=> sub {
 		$HOOKS{'spawnZone'}->(@_);
+	},
+
+	'changePlane'	=> sub {
+		my($e, $p)=@_;
+
+		if($p->{'carrier'}) {
+			chat::whisper($p, 'You cannot /changePlane as a carrier');
+		} else {
+			server::trigger('logPlanePositions', 'changePlane', $e, $p);
+		}
+	},
+
+	'cp'			=> sub {
+		$HOOKS{'changePlane'}->(@_);
+	},
+
+	'logPlanePositions:changePlane'	=> sub {
+		my($e1, $p1, $e2, $p2)=@_;
+		server::trigger('logPlanePositions', 'logPlanePositions:changePlane', $e1, $p1, $e2, $p2);
+	},
+
+	'logPlanePositions:logPlanePositions:changePlane'	=> sub {
+		my($e1, $p1, $e2, $p2, $e3, $p3)=@_;
+		my(@pos1)=split(m/,/, $e2->{'positionByPlayer'}{$p3->{'player'}});
+		my(@pos2)=split(m/,/, $e1->{'positionByPlayer'}{$p3->{'player'}});
+
+		plus::bench($p3);
+		plus::spawn_here($p3, @pos1, $pos2[0]-$pos1[0], $pos2[1]-$pos1[1]);
+		plus::clear_spawn($p3);
 	},
 
 	'sum'		=> sub {
@@ -6373,6 +6485,8 @@ core protecting the flag.
 		ball::drop;
 
 		return if($v->{'isBot'});
+
+		plus::check_spawn($v);
 
 		if($spawn_mode eq 'died') {
 			if($e->{'player'}==-1 && $e->{'source'} eq 'plane') { #crash

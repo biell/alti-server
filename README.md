@@ -90,6 +90,18 @@ manage Alti+ game maps.
   * **/sz [zone]**<br>
     This is an alias for `/spawnZone`
 
+  * **/changePlane**<br>
+    Change plane without having to die.  If you run `/changePlane`, then your
+    plane will be removed from the map and you will have the opportunity to
+    choose a different plane and respawn when you left off.  This feature
+    can be turned off on a map-by-map basis, so it may not always be enabled.
+    The purpose of this map is mainly for coop maps which require multiple
+    planes for specific parts, but where there are not enough players to
+    fill each part.
+
+  * **/cp**<br>
+    This is an alias for `/changePlane`
+
   * **/restartMap**<br>
     This command is a front-end to `/balanceTeams`. If you are the only
     person on a map, it will balanceTeams without the need for a vote. If
@@ -229,6 +241,14 @@ manage Alti+ game maps.
     or *normal* (at the normal, map defined start).
     If users get into a bind, they can use `/sz start` to spawn in the
     normal location.
+
+  * **/set changePlane [0|1]**<br>
+    Enable (1, the default) or disable (0) the ability for players to use the
+    `/changePlane` and `/cp` commands to respawn in their current location with
+    a different plane.  This feature is mainly for coop maps, but can be
+    used (and abused) on all game types.  Players will not record a death for
+    their action, and they will be able to respawn at the same place they
+    were when they ran the `/changePlane` command.
 
   * **/set maxPlayers [#]**<br>
     Set the maximum number of players who can spawn simultaneously on the
@@ -488,6 +508,12 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     limiting the number of maps the server can load.  Not enabling this feature
     results in enough space for an additional couple maps to be run by
     the server.
+
+  * **changePlane [0|1]**<br>
+    Set the server wide default value for `changePlane`.  This can be
+    overridden on a per map basis, but if not set, this will be the default.
+    The code default is `1` (allowing use of the `/changePlane` and `/cp`
+    commands.)  Setting this to `0` will reverse that behaviour.
 
   * **allowUploads [0|1]**<br>
     Allow uploads to the server by admins (assuming the user fits the criteria
