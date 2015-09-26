@@ -1,0 +1,442 @@
+#!/usr/bin/perl
+
+use strict;
+
+my($VERSION)='1.27';
+
+=head1 NAME
+
+altx-tool - Access and manipulate Altitude map files
+
+=cut
+
+use IO::Handle;
+use Getopt::Long;
+use File::Find;
+use File::Path;
+use File::Basename;
+use Pod::Usage;
+
+=head1 SYNOPSIS
+
+altx-tool <-xcutphHV> <-d dir> <file> [name1] [name2] [...]
+
+=head2 Options
+
+=over 8
+
+=item --extract or -x
+
+Extract the contents of the altx file, starting in the current directory and
+keeping the archive's directory structure thereafter.  Any leading slashes
+are removed.
+
+=item --create or -c
+
+Create a new map archive file from the arguments placed on the command line.
+If any arguments are directories, they will be descended into and all contents
+will be included.
+
+=item --update or -u
+
+Updated by appending the files listed on the command line to an existing map
+archive file.
+
+=item --list or -t
+
+Display the table of contents of the map archive file.
+
+=item --plus or -p
+
+Edit the Altitude+ configuration file.  This file will be created if it does
+not already exist in the map archive.  Use this file to indicate to the
+C<alti+server> what the default settings should be for this map.
+
+=item --directory=dir or -d dir
+
+Specify the working directory to be C<dir>.  If it does not exist, it will
+be created.
+
+=item --help or -h
+
+Display the synopsis of this tool (the part you are reading right now.)
+
+=item --manual or -H
+
+Display the full manual for B<altx-tool>.
+
+=item --version or -V
+
+Display the version and exit.
+
+=back
+
+=cut
+
+my(@OPTIONS)=qw(
+	extract|x
+	create|c
+	update|u
+	list|t
+	plus|p
+	directory|d=s
+	help|h
+	manual|H
+	version|V
+);
+
+my(%ARG);
+
+Getopt::Long::Configure('gnu_compat', 'no_ignore_case');
+
+unless(GetOptions(\%ARG, @OPTIONS)) {
+	pod2usage(-verbose => 1, -exitval => 1);
+}
+
+if($ARG{'help'}) {
+	pod2usage(-verbose => 1, -exitval => 0);
+} elsif($ARG{'manual'}) {
+	pod2usage(-verbose => 2, -exitval => 0);
+} elsif($ARG{'version'}) {
+	print 'altx-tool: ', $VERSION, "\n";
+	exit(0);
+}
+
+=head1 DESCRIPTION
+
+Altitude stores maps in an LZMA compressed archive file format.  The format
+is not a general archive format, and so normal tools do not allow for
+manipulation of the archive.  B<altx-tool> provides the standard functions
+expected in an archive tool.  Additionally, it also supports extended
+functionality to support C<alti+server> systems.
+
+=head2 Archive File Format
+
+A file consists of the following sections:
+
+ +-----+-----------------------+-----------+------------------------------+
+ |COUNT|FILES                  |LENGTHS    |DATA                          |
+ +-----+---+-----+---+---+-----+---+---+---+----------+--------+----------+
+ |int  |ln1|file1|...|lnN|fileN|sz1|...|szN|data1     |...     |dataN     |
+ +-----+---+-----+---+---+-----+---+---+---+----------+--------+----------+
+            \_ _/         \_ _/             \___  ___/          \___  ___/
+              V             V                   \/                  \/
+             ln1           lnN                  sz1                 szN
+ 
+Which are defined as such:
+
+=over 8
+
+=item COUNT
+
+A 32-bit integer in little-endian format using the first 4 bytes of the file.
+This value is the total number of files contained in the archive.  The next
+two sections will each contain exactly as many entries as is equal to COUNT.
+
+=item FILES
+
+Files are represented as pairs.  The first item of the pair is a 16-bit integer
+in little-endian format which requires the next 2 bytes of the file.  The
+second element of the pair is a filename of exactly the number of bytes just
+specified.  This string is lenght specified, and does not contain a string
+termination character.
+
+=item LENGTHS
+
+The file lengths are stored as a series if 32-bit integers in little-endian
+format.  There are exactly as many lenghts as is equal to COUNT, and there
+is no alignment.
+
+=item DATA1, DATA2, ..., DATAN
+
+Data files are packed exactly by lenght with no start or end boundaries.  There
+is neither alignment nor padding.
+
+=back
+
+=cut
+
+sub open_archive {
+	my($archive)=@_;
+	my($read)=IO::Handle->new;
+	my($files)=[];
+	my($sizes)=[];
+	my($count, $length, $file);
+
+	open($read, '-|', 'lzma', '-dc', $archive);
+	read($read, $count, 4);
+	$count=unpack('V', $count);
+
+	foreach(1 .. $count) {
+		read($read, $length, 2);
+		$length=unpack('v', $length);
+
+		read($read, $file, $length);
+		push(@$files, $file);
+	}
+
+	foreach(1 .. $count) {
+		read($read, $length, 4);
+		$length=unpack('V', $length);
+
+		push(@$sizes, $length);
+	}
+
+	return($read, $files, $sizes);
+}
+
+=head2 Displaying the Table of Contents
+
+The F<altx> map archive file format does not contain attributes.  The
+path of each file, it's size, and it's contents are the only data stored
+within the archive.  When displaying an archive, the total number of
+file is printed first, followed by successive lines of the file name and
+size.  There are 60 columns reserved for the file name, and 7 reserved
+for the file size.  If a file name is longer than 60 bytes, then the output
+will be shifted.
+
+=cut
+
+sub list {
+	my($archive, @list)=@_;
+	my(%select)=();
+	my($files, $sizes);
+
+	(undef, $files, $sizes)=&open_archive($archive);
+
+	print 'Total files: ', scalar(@$files), "\n";
+
+	foreach my $file (@$files) {
+		$select{$file}=1;
+	}
+
+	while(@$files) {
+		if(!@list || $select{$files->[0]}) {
+			printf("%-60s %7d\n", shift(@$files), shift(@$sizes));
+		}
+	}
+}
+
+=head2 Creating altx Archives
+
+When creating a new F<altx> map archive file, the first file you specify
+should be the map archive name itself.  This should be followed by files
+and directories to include in the archive.  B<altx-tool> is recursive by
+nature, so all directories will be descended and all files will be
+included.  The Altitude C<map_editor> application tends to include the
+F<.alte> file first, F<_derived> second, and F<_config> third.  It isn't
+clear that this is a requirement, but just in case, you may want to include
+the files in that order.
+
+=cut
+
+sub create {
+	my($archive, @sources)=@_;
+	my($read, $write)=(IO::Handle->new, IO::Handle->new);
+	my(@files, @sizes)=();
+	my($buf);
+
+	$archive=~s/\.altx$//;
+
+	find(sub { push(@files, $File::Find::name) if(-f $_) }, @sources);
+	open($write, '>', $archive);
+
+	print $write pack('V', scalar(@files));
+
+	foreach my $file (@files) {
+		$file=~s|^\./||;
+		print $write pack('v', length($file)), $file;
+	}
+	foreach my $file (@files) {
+		print $write pack('V', -s $file);
+	}
+	foreach my $file (@files) {
+		open($read, '<', $file);
+		while(read($read, $buf, 8192)) {
+			print $write $buf;
+		}
+		close($read);
+	}
+
+	close($write);
+	system('lzma', '-zf', '-S', '.altx', $archive);
+}
+
+=head2 Updating (Appending) to archive files
+
+While it is hard to see how this function will help manage Altitude map
+files, it is here for completness; most archiving tools contain an append
+function.  From a command-line perspective, this function works the same
+as creating an archive, except that the contents of the existing archive
+are kept, and the command-line files are appended after them.
+
+=cut
+
+sub update {
+	my($archive, @sources)=@_;
+	my($read, $write)=(IO::Handle->new, IO::Handle->new);
+	my($newfiles)=[];
+	my($oldfiles, $oldsizes);
+	my($buf);
+
+	find(sub { push(@$newfiles, $File::Find::name) if(-f $_) }, @sources);
+
+	return unless(@$newfiles);
+
+	($read, $oldfiles, $oldsizes)=&open_archive($archive);
+
+	$archive=~s/\.altx$//;
+
+	open($write, '>', $archive);
+
+	print $write pack('V', scalar(@$oldfiles)+scalar(@$newfiles));
+
+	foreach my $file (@$oldfiles, @$newfiles) {
+		$file=~s|^\./||;
+		print $write pack('v', length($file)), $file;
+	}
+	foreach my $size (@$oldsizes) {
+		print $write pack('V', $size);
+	}
+	foreach my $file (@$newfiles) {
+		print $write pack('V', -s $file);
+	}
+
+	while(read($read, $buf, 8192)) {
+		print $write $buf;
+	}
+	close($read);
+
+	foreach my $file (@$newfiles) {
+		open($read, '<', $file);
+		while(read($read, $buf, 8192)) {
+			print $write $buf;
+		}
+		close($read);
+	}
+
+	close($write);
+	system('lzma', '-zf', '-S', '.altx', $archive);
+}
+
+=head2 Extracting
+
+When extracting F<altx> map archive files, remember that they do not
+have a common root directory.  You may wish to create a directory, and
+extract from in there.  An alternative is to use the C<-d> or C<--directory>
+command-line arguments to let B<altx-tool> do it for you.
+
+=cut
+
+sub extract {
+	my($archive, @list)=@_;
+	my($read, $write)=(IO::Handle->new, IO::Handle->new);
+	my(%select)=();
+	my($files, $sizes);
+	my($file, $length, $buf);
+
+	($read, $files, $sizes)=&open_archive($archive);
+
+	foreach(@$files) {
+		$select{$_}=1;
+		s|^/+||;
+		$select{$_}=1;
+	}
+
+	while(@$files) {
+		$file=shift(@$files);
+		$length=shift(@$sizes);
+
+		if(!@list || $select{$file}) {
+			File::Path::make_path(dirname($file)) if($file=~m|/|);
+			open($write, '>', $file);
+
+			while($length>8192) {
+				$length-=read($read, $buf, 8192);
+				print $write $buf;
+			}
+			read($read, $buf, $length);
+			print $write $buf;
+
+			close($write);
+		} else {
+			seek($read, $length, 1);
+		}
+	}
+	close($read);
+}
+
+=head2 Altitude+ config file
+
+When run with the C<--plus> or C<-p> command-line options, B<altx-tool> opens
+a file in the map archive called F<plus.txt> (it will create the file if it
+doesn't yet exist) using your C<EDITOR> or C<VISUAL> environment variables.
+If neither is present, it will execute C<vi> and allow the shell to find it
+using your C<PATH> environment variable.
+
+=cut
+
+sub plus {
+	print "Not yet implemented\n";
+}
+
+if($ARG{'directory'} && ! -d $ARG{'directory'}) {
+	File::Path::make_path($ARG{'directory'});
+}
+
+=head1 NOTES
+
+B<altx-tool> can only perform one operation at a time.  Trying to combine
+multiple lists, extracts, etc. into one command-line will fail.
+
+=cut
+
+if($ARG{'list'}+$ARG{'create'}+$ARG{'extract'}+$ARG{'update'} > 1) {
+	pod2usage(-verbose => 1, -exitval => 1);
+}
+
+if($ARG{'list'}) {
+	&list(@ARGV);
+} elsif($ARG{'create'}) {
+	&create(@ARGV);
+} elsif($ARG{'extract'}) {
+	&extract(@ARGV);
+} elsif($ARG{'update'}) {
+	&update(@ARGV);
+} elsif($ARG{'plus'}) {
+	&plus;
+}
+
+=head1 AUTHOR
+
+biell @ pobox . com 
+
+=head1 PUBLIC DOMAIN NOTICE
+
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org/>
+
+=cut
+

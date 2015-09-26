@@ -1,7 +1,8 @@
 #!/usr/bin/perl
 
 #use strict;
-my($VERSION)='1.26';
+
+my($VERSION)='1.27';
 
 =head1 NAME
 
@@ -4489,6 +4490,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		chat::whisper($p, '/list map');
 		chat::whisper($p, 'List the name and settings for the current map');
+		chat::whisper($p, 'alti+server version:', $VERSION);
 	},
 
 	'list map'	=> sub {
@@ -6084,10 +6086,6 @@ core protecting the flag.
 			ui::display('', '', "< $p->{'nickname'} entered from $p->{'country'} >");
 		} else {
 			ui::display('', '', "< $p->{'nickname'} entered >");
-		}
-
-		if($p->{'superAdmin'} || $p->{'vaporId'}=~m/397643c60a7a/) {
-			chat::whisper($p, 'alti+server version:', $VERSION);
 		}
 
 		foreach my $statement (split(m/;/, config::option('motd'))) {
