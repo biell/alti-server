@@ -2,7 +2,7 @@
 
 use strict;
 
-my($VERSION)='1.27';
+my($VERSION)='1.28';
 
 =head1 NAME
 

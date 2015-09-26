@@ -13,6 +13,8 @@ Altitude game server wrapper to enable enhanced modes of game play.
   * **alti+server**  The perl code which starts the altitude game engine
     and monitors it for events.
 
+  * **altx-tool**  Manipulate Altitude map archive files.
+
 ## Alti+ game types
 
 ### Normal Games
