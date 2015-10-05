@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.30';
+my($VERSION)='1.31';
 
 =head1 NAME
 
@@ -1238,13 +1238,13 @@ has occured.  After too many infractions, the player is kicked by the server.
 my(@ALTIPLUS)=(
 	{
 		'name'			=> 'help',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'msgs', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'msgs', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'required'		=> 1,
 	},
 	{
 		'name'			=> 'upload',
-		'arguments'		=> [['official', 'altitudegame', 'ladder', 'tinyupload', 'url'], 'string'],
+		'arguments'		=> [['official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url'], 'string'],
 		'voteThreshold'	=> 100,
 		'required'		=> 1,
 	},
@@ -4267,7 +4267,7 @@ core protecting the flag.
 
 	'help official'	=> sub {
 		my($e, $p)=@_;
-		chat::whisper($p, '/upload ladder <map>');
+		chat::whisper($p, '/upload official <map>');
 		chat::whisper($p, ' map: name of official map');
 		chat::whisper($p, ' Upload maps FROM http://maps.altitudegame.com/');
 	},
@@ -4326,18 +4326,72 @@ core protecting the flag.
 		}
 	},
 
+	'help alti+'	=> sub {
+		my($e, $p)=@_;
+		chat::whisper($p, '/upload alti+ <map>');
+		chat::whisper($p, ' map: name of Alti+ map');
+		chat::whisper($p, ' Upload maps FROM https://github.com/biell/alti-maps/blob/master/maps/');
+	},
+
+	'upload alti+'	=> sub {
+		my($e, $p, $name)=@_;
+		my($mapdir)=config::option('mapDir');
+		my($maps)="$INSTALL_ROOT/maps/$mapdir";
+		my($url)="https://github.com/biell/alti-maps/blob/master/maps/%s.altx";
+		my($mapname, $file, $mapconfig);
+
+		$name=~s|^$mapdir/*|| if($mapdir);
+		$name=~s|\.altx$||;
+		$name=~s|\s+|_|g;
+
+		unless(file::name_ok($name)) {
+			chat::whisper($p, "map name $name does not follow standard");
+			return(0);
+		}
+
+		if($mapdir) {
+			$mapname="$mapdir/$name";
+		} else {
+			$mapname=$name;
+		}
+		$file="$maps/$mapname.altx";
+
+		file::download('-L', '-o', $file, sprintf($url, $name));
+
+		if(-s $file < 1024) {
+			unlink($file);
+			chat::whisper($p, "Could not find $name on Alti+ maps github site");
+		} elsif(-s $file > config::option('ulSizeLimit')) {
+			unlink($file);
+			chat::whisper($p, "$mapname too big");
+		} elsif(file::type($file)!~m/LZMA compressed data/) {
+			unlink($file);
+			chat::whisper($p, "$mapname is not the right type");
+			chat::whisper($p, "maybe redirect failure, or a javascript enabled download");
+		} else {
+			if(config::new_maps($mapname)) {
+				chat::whisper($p,
+					"Map added to config, you must /restartServer");
+
+				if($mapconfig=stash::retrieve($mapname)) {
+					stash::set($mapname, $mapconfig);
+				}
+			}
+			chat::all("$mapname updated");
+		}
+	},
+
 	'help ladder'	=> sub {
 		my($e, $p)=@_;
 		chat::whisper($p, '/upload ladder <map>');
 		chat::whisper($p, ' map: name is exactly as it when running in ladder');
-		chat::whisper($p, ' Upload maps FROM http://altituderank.com/mapdownloads/');
+		chat::whisper($p, ' Upload maps FROM http://maps.planeball.com/');
 	},
 
 	'upload ladder'	=> sub {
 		my($e, $p, $name)=@_;
 		my($mapdir)=config::option('mapDir');
 		my($maps)="$INSTALL_ROOT/maps/$mapdir";
-		#my($url)="http://altituderank.com/mapdownloads/%s.altx";
 		my($url)="http://maps.planeball.com/%s.altx";
 		my($mapname, $file, $mapconfig);
 
@@ -4361,7 +4415,7 @@ core protecting the flag.
 
 		if(-s $file < 1024) {
 			unlink($file);
-			chat::whisper($p, "Could not find $name on altituderank.com/mapdownloads/");
+			chat::whisper($p, "Could not find $name on maps.planeball.com");
 		} elsif(-s $file > config::option('ulSizeLimit')) {
 			unlink($file);
 			chat::whisper($p, "$mapname too big");

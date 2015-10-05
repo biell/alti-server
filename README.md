@@ -397,6 +397,23 @@ file to save space for more maps.
     This will not be fully implemented until the server is restarted,
     which should always be done after removing a `map`.
 
+  * **/upload official [map]**<br>
+    Upload the map `map` FROM http://maps.altitudegame.com/ and save it
+    on the server in the maps directory.  The name `map` must be exactly
+    the name of the map file without the *.altx* extension.  If the
+    uploaded map is not currently listed in the server configuration
+    file, it will be added.  However, the server must be restarted for
+    the map to be added to the maplist and rotation.
+
+  * **/upload alti+ [map]**<br>
+    Upload the map `map` FROM
+    https://github.com/biell/alti-maps/blob/master/maps
+    and save it on the server in the maps directory.  The name `map` must be
+    exactly the name of the map file without the *.altx* extension.  If the
+    uploaded map is not currently listed in the server configuration
+    file, it will be added.  However, the server must be restarted for
+    the map to be added to the maplist and rotation.
+
   * **/upload altitudegame [map]**<br>
     Upload the map `map` FROM http://altitudegame.com/map/ and save it on
     the server in the maps directory. The name `map` must be exacly the
@@ -407,7 +424,7 @@ file to save space for more maps.
     must be restarted for the map to be added to the maplist and rotation.
 
   * **/upload ladder [map]**<br>
-    Upload the map `map` FROM http://altituderank.com/ and save it to
+    Upload the map `map` FROM http://maps.planeball.com/ and save it to
     the server in the maps directory. The name `map` must be exacly the
     same as the name of the file but without the *.altx* extension.
     If the uploaded map is not currently listed in the server configuration
