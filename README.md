@@ -150,7 +150,9 @@ manage Alti+ game maps.
 
   * **/list [setting]**<br>
     Display the current value or values for `setting`.  For a list of
-    settings, see the `/set` and `/add` commands below.
+    settings, see the `/set` and `/add` commands below.  You should specify
+    `setting` exactly as named for `/set` commands.  For `/add` commands
+    you should pluralize the the `setting` name.
 
   * **/unset [setting]**<br>
     Remove current value or values for `setting` and restore them to the
@@ -335,7 +337,7 @@ manage Alti+ game maps.
     `left`, `right`, `<`, `>`, or `*` for the team.  `*` means both
     teams.
 
-  * **/add powerup [name] [team] [x] [y]**<br>
+  * **/add powerup [name] [team] [x],[y]**<br>
     Specify that a special powerup for `team` should be at the coordinates
     `x`,`y`. If this is picked up by the correct `team`, then that
     `team` the behaviour is defined based on *gameType*. `team` can be one of
@@ -345,6 +347,15 @@ manage Alti+ game maps.
 
   * **/del powerup [name] [team]**<br>
     Delete the special powerup `name` for `team`.
+
+  * **/add msg [x],[y] [message text]**<br>
+    Create a message associated with the powerup at coordinates `x`,`y`.
+    Whenever a player trips this powerup, the message will be displayed to
+    them.  This can be used to offer help to players, make fun of them, or
+    congratulate them on meeting a certain objective.
+
+  * **/del msg [x],[y]**<br>
+    Remove the message associated with the powerup at coordinates `x`,`y`.
 
   * **/! [command] [arg1] [arg2] [...]**<br>
     This special admin command is only availble when the server option 
@@ -449,6 +460,10 @@ file to save space for more maps.
   * **/showSeen**<br>
     If user information is being kept per the "altBouncer" option, then
     display the users currently queued for the next altbouncer update.
+
+  * **/showPowerups**<br>
+    List all the powerups defined for the current map.  This is useful for
+    finding powerup coordinates to specify Alti+ powerup overloading.
 
   * **/chatLeft [message]**<br>
     Send `message` to all members of the left team.

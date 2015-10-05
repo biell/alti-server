@@ -2,7 +2,7 @@
 
 use strict;
 
-my($VERSION)='1.28';
+my($VERSION)='1.29';
 
 =head1 NAME
 
@@ -15,6 +15,7 @@ use Getopt::Long;
 use File::Find;
 use File::Path;
 use File::Basename;
+use File::Temp;
 use Pod::Usage;
 
 =head1 SYNOPSIS
@@ -109,6 +110,21 @@ is not a general archive format, and so normal tools do not allow for
 manipulation of the archive.  B<altx-tool> provides the standard functions
 expected in an archive tool.  Additionally, it also supports extended
 functionality to support C<alti+server> systems.
+
+=cut
+
+sub pipe_seek {
+	my($fh, $seek)=@_;
+	my($seek)=$_[1];
+	my($buf);
+
+	while($seek>4096) {
+		$seek-=read($_[0], $buf, 4096);
+	}
+	if($seek>0) {
+		read($_[0], $buf, $seek);
+	}
+}
 
 =head2 Archive File Format
 
@@ -360,7 +376,7 @@ sub extract {
 
 			close($write);
 		} else {
-			seek($read, $length, 1);
+			&pipe_seek($read, $length);
 		}
 	}
 	close($read);
@@ -374,10 +390,110 @@ doesn't yet exist) using your C<EDITOR> or C<VISUAL> environment variables.
 If neither is present, it will execute C<vi> and allow the shell to find it
 using your C<PATH> environment variable.
 
+The file format is simple, all lines beginning with
+C</set>, C</unset>, C</add>, and C</del> (after trimming initial whitespace)
+are executed as if typed on console.  All other lines are ignored.
+
+
+=head1 ENVIRONMENT
+
+=over 8
+
+=item EDITOR
+
+If this variable is set, the contents are used to execute the text editor
+for Altitude+ configuration.
+
+=item VISUAL
+
+If this variable is set and the C<EDITOR> variable is not set, the contents
+are used to execute the text editor for Altitude+ configuration.
+
+=back
+
 =cut
 
 sub plus {
-	print "Not yet implemented\n";
+	my($archive)=@_;
+	my($editor)=$ENV{'EDITOR'} || $ENV{'VISUAL'} || 'vi';
+	my($write, $tmpfile)=File::Temp::tempfile('plusXXXXXXXX', DIR => '/var/tmp');
+	my($plusfile)='plus.txt';
+	my($read)=IO::Handle->new;
+	my($found)=0;
+	my($files, $sizes, $plus);
+	my($buf);
+
+	($read, $files, $sizes)=&open_archive($archive);
+
+	for($plus=0; $plus<@$files; $plus++) {
+		if($files->[$plus] eq $plusfile) {
+			$found=1;
+			last;
+		}
+
+		&pipe_seek($read, $sizes->[$plus]);
+	}
+
+	if($found) {
+		read($read, $buf, $sizes->[$plus]);
+		$buf=~s/\s*$/\n/s;
+		print $write $buf;
+
+		close($read);
+		($read, $files, $sizes)=&open_archive($archive);
+
+		$files->[$plus]=undef;
+		$sizes->[$plus]*=-1;
+	} else {
+		close($read);
+		($read, $files, $sizes)=&open_archive($archive);
+	}
+	close($write);
+
+	system($editor, $tmpfile);
+
+	return unless(-s $tmpfile || $found);
+
+
+	$archive=~s/\.altx$//;
+
+	open($write, '>', $archive);
+
+	print $write pack('V', scalar(@$files)-$found+1);
+
+	foreach my $file (@$files, $plusfile) {
+		next unless($file);
+
+		$file=~s|^\./||;
+		print $write pack('v', length($file)), $file;
+	}
+	foreach my $size (@$sizes, -s $tmpfile) {
+		print $write pack('V', $size) unless($size<0);
+	}
+
+	foreach my $size (@$sizes) {
+		if($size<0) {
+			&pipe_seek($read, -$size);
+		} else {
+			while($size>8192) {
+				$size-=read($read, $buf, 8192);
+				print $write $buf;
+			}
+			read($read, $buf, $size);
+			print $write $buf;
+		}
+	}
+	close($read);
+
+	open($read, '<', $tmpfile);
+	while(read($read, $buf, 8192)) {
+		print $write $buf;
+	}
+	close($read);
+	unlink($tmpfile);
+
+	close($write);
+	system('lzma', '-zf', '-S', '.altx', $archive);
 }
 
 if($ARG{'directory'} && ! -d $ARG{'directory'}) {
@@ -404,7 +520,7 @@ if($ARG{'list'}) {
 } elsif($ARG{'update'}) {
 	&update(@ARGV);
 } elsif($ARG{'plus'}) {
-	&plus;
+	&plus(@ARGV);
 }
 
 =head1 AUTHOR
