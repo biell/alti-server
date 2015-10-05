@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.29';
+my($VERSION)='1.30';
 
 =head1 NAME
 
@@ -4544,19 +4544,19 @@ core protecting the flag.
 	'list map'	=> sub {
 		my($e, $p)=@_;
 		my(@settings)=qw(
+			gameType
+			maxPlayers
+			changePlane
 			ballScore
+			keys
+			planes
+			assignTeam
+			spawnMode
+			spawnHealth
 			gravity
 			weapons
-			spawnHealth
 			cameraScale
 			planeScale
-			assignTeam
-			planes
-			spawnMode
-			changePlane
-			keys
-			maxPlayers
-			gameType
 			intro
 		);
 
@@ -4634,19 +4634,19 @@ core protecting the flag.
 	'mapChange'	=> sub {
 		my($e, $p)=@_;
 		my(@settings)=qw(
+			gameType
+			maxPlayers
+			changePlane
 			ballScore
+			keys
+			planes
+			assignTeam
+			spawnMode
+			spawnHealth
 			gravity
 			weapons
-			spawnHealth
 			cameraScale
 			planeScale
-			assignTeam
-			planes
-			spawnMode
-			changePlane
-			keys
-			maxPlayers
-			gameType
 		);
 
 		stash::fix_doors($e->{'map'}, $e->{'leftTeam'}, $e->{'rightTeam'});
