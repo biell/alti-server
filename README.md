@@ -68,11 +68,7 @@ team to be boxed up like a coop game.  Here, any Bots can be seperated
 from the rest of the game.  In 1-life games, this box should have a turret
 to clean up the Bots.
 
-## Additional Commands
-The below list of commands are available to players to interface with and
-manage Alti+ game maps.
-
-### Map Integration
+## Map Integration
 Altitude maps end with a `.altx` extension.  These are simple archive files
 which contain all the necessary information for game play.  A tool is
 included with `alti+server` called `altx-tool`.  This tool allows you
@@ -91,6 +87,10 @@ old ones which are no longer valid.
 
 See [Extended Commands for Admins and Map Makers](#extended-commands-for-admins-and-map-makers)
 for more information.
+
+## Additional Commands
+The below list of commands are available to players to interface with and
+manage Alti+ game maps.
 
 ### Extended Commands for Players
 
