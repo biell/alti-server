@@ -72,6 +72,26 @@ to clean up the Bots.
 The below list of commands are available to players to interface with and
 manage Alti+ game maps.
 
+### Map Integration
+Altitude maps end with a `.altx` extension.  These are simple archive files
+which contain all the necessary information for game play.  A tool is
+included with `alti+server` called `altx-tool`.  This tool allows you
+to list, extract, update, and create `.altx` archive files (i.e. map files).
+It has a special `-p` option which allows users to edit a special file
+in the root of the archive called `plus.txt`.  This file may contain
+directives to any `alti+server` to configure the map per the authors defaults.
+
+This tool is increadibly useful.  If the author designs a coop map where
+users should be defaulted to a specific side, gravity should be disabled,
+initial goal scores should be set, map introductions are necessary, or any
+other settable Alti+ attribute; those can be put here. Only the commands
+*set*, *unset*, *add*, and *del* are allowed in this file.  Any line containing
+anything else will be ignored.  Use this file to set new attributes, or unset
+old ones which are no longer valid.
+
+See [Extended Commands for Admins and Map Makers](#extended-commands-for-admins-and-map-makers)
+for more information.
+
 ### Extended Commands for Players
 
   * **/switch**<br>
@@ -467,6 +487,15 @@ file to save space for more maps.
     they persist across software updates.  See
     [Server Options](#server-options) below for a full list of options
     with descriptions.
+
+  * **/importDefaults**<br>
+    If the `.altx` map file for the currently loaded map contains a file
+    called `plus.txt`, then execute the commands in that file to set the
+    authors defaults.  This function is automatically initiated if a map
+    is uploaded using one of the `/upload` commands, or if the map is
+    being loaded for the first time and has never been initialized.  If
+    you need to load the defaults at any other time, use this console
+    command to initiate that task.
 
   * **/showPlayer [player]**<br>
     Print information on `player`

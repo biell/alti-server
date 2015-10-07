@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.32';
+my($VERSION)='1.33';
 
 =head1 NAME
 
@@ -1621,6 +1621,7 @@ my(@ALTIPLUS)=(
 				[sort(keys(%OPTIONS))],
 				'string',
 			];
+		$Commands{'importDefaults'}=undef;
 		$Commands{'showPlayer'}=['player'];
 		$Commands{'showTeams'}=undef;
 		$Commands{'showSeen'}=undef;
@@ -2239,7 +2240,6 @@ types which alter the normal behavior.
 		my($mapdir)=config::option('mapDir');
 		my($cache)="$INSTALL_ROOT/maps/cache/$mapdir";
 		my($file)=<$cache/$map.altx/*.alte>;
-		my($plus)="$cache/$map.altx/plus.txt";
 		my(%parser)=(
 			'SuppressEmpty'	=> 1,
 			'ForceArray'		=> ['View', 'powerupSpawner', 'String'],
@@ -3611,6 +3611,29 @@ play though extended interfaces and server support.
 		}
 	}
 
+	sub import_defaults {
+		my($tmpl)="$INSTALL_ROOT/maps/cache/%s/%s.altx/plus.txt";
+		my($plus)=sprintf($tmpl, config::option('mapDir'), map::name);
+		my($read)=IO::Handle->new;
+		my(@config)=();
+		local($_);
+
+		if(-r $plus) {
+			open($read, '<', $plus);
+			while(<$read>) {
+				s|^\s*/?||;
+
+				next unless(m/^(set|unset|add|del)\s/);
+				next unless(length()<256);
+
+				push(@config, $_);
+			}
+			close($read);
+		}
+
+		return(@config);
+	}
+
 	sub new {
 		%Stats=();
 		%Reset=();
@@ -3619,6 +3642,13 @@ play though extended interfaces and server support.
 
 		foreach my $player (player::list) {
 			delete($player->{'team'});
+		}
+
+		if(!stash::get(map::name) || stash::get('INIT', map::name)) {
+			foreach my $command (&import_defaults) {
+				server::send($command);
+			}
+			stash::delete('INIT', map::name);
 		}
 
 		&zone_init() unless(stash::get('keys', map::name) & 1);
@@ -4273,6 +4303,7 @@ core protecting the flag.
 						stash::set($mapname, $mapconfig);
 					}
 				}
+				stash::set('INIT', $mapname, 1);
 				chat::all("$mapname updated");
 			}
 		} else {
@@ -4337,6 +4368,7 @@ core protecting the flag.
 					stash::set($mapname, $mapconfig);
 				}
 			}
+			stash::set('INIT', $mapname, 1);
 			chat::all("$mapname updated");
 		}
 	},
@@ -4345,14 +4377,14 @@ core protecting the flag.
 		my($e, $p)=@_;
 		chat::whisper($p, '/upload alti+ <map>');
 		chat::whisper($p, ' map: name of Alti+ map');
-		chat::whisper($p, ' Upload maps FROM https://github.com/biell/alti-maps/blob/master/maps/');
+		chat::whisper($p, ' Upload maps FROM https://github.com/biell/alti-maps/raw/master/maps/');
 	},
 
 	'upload alti+'	=> sub {
 		my($e, $p, $name)=@_;
 		my($mapdir)=config::option('mapDir');
 		my($maps)="$INSTALL_ROOT/maps/$mapdir";
-		my($url)="https://github.com/biell/alti-maps/blob/master/maps/%s.altx";
+		my($url)='https://github.com/biell/alti-maps/raw/master/maps/%s.altx';
 		my($mapname, $file, $mapconfig);
 
 		$name=~s|^$mapdir/*|| if($mapdir);
@@ -4392,6 +4424,7 @@ core protecting the flag.
 					stash::set($mapname, $mapconfig);
 				}
 			}
+			stash::set('INIT', $mapname, 1);
 			chat::all("$mapname updated");
 		}
 	},
@@ -4447,6 +4480,7 @@ core protecting the flag.
 					stash::set($mapname, $mapconfig);
 				}
 			}
+			stash::set('INIT', $mapname, 1);
 			chat::all("$mapname updated");
 		}
 	},
@@ -4503,6 +4537,7 @@ core protecting the flag.
 						stash::set($mapname, $mapconfig);
 					}
 				}
+				stash::set('INIT', $mapname, 1);
 				chat::all("$mapname updated");
 			}
 		} else {
@@ -4555,6 +4590,7 @@ core protecting the flag.
 					stash::set($mapname, $mapconfig);
 				}
 			}
+			stash::set('INIT', $mapname, 1);
 			chat::all("$mapname updated");
 		}
 	},
@@ -7051,6 +7087,13 @@ also only available from the console.
 		foreach my $entry (split(m/;/, $current)) {
 			chat::whisper($s, "$name:", $entry);
 		}
+	},
+
+	'importDefaults'	=> sub {
+		foreach my $command (plus::import_defaults) {
+			server::send($command);
+		}
+		stash::delete('INIT', map::name);
 	},
 
 	'showPlayer'		=> sub {
