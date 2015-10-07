@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.31';
+my($VERSION)='1.32';
 
 =head1 NAME
 
@@ -989,16 +989,30 @@ stash are automatically saved to disk.
 	}
 
 	sub delete {
-		my($value);
+		my(@hist)=();
+		my($next, $value);
 
 		$Stash=&_read($Stashfile) unless($Stash);
 
 		$value=$Stash;
 		while(@_>1) {
-			$value=$value->{pop(@_)};
+			$next=pop(@_);
+
+			push(@hist, [$value, $next]);
+			$value=$value->{$next};
 		}
 
 		if(delete($value->{$_[0]})) {
+			while(@hist) {
+				($value, $next)=@{pop(@hist)};
+				if(	ref($value) eq 'HASH'			&&
+					ref($value->{$next}) eq 'HASH'	&&
+					!%{$value->{$next}}
+				) {
+					delete($value->{$next});
+				}
+			}
+
 			&_write($Stash, $Stashfile);
 			return(1);
 		} else {
@@ -2225,6 +2239,7 @@ types which alter the normal behavior.
 		my($mapdir)=config::option('mapDir');
 		my($cache)="$INSTALL_ROOT/maps/cache/$mapdir";
 		my($file)=<$cache/$map.altx/*.alte>;
+		my($plus)="$cache/$map.altx/plus.txt";
 		my(%parser)=(
 			'SuppressEmpty'	=> 1,
 			'ForceArray'		=> ['View', 'powerupSpawner', 'String'],
@@ -3439,7 +3454,7 @@ play though extended interfaces and server support.
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($keys, $color);
 
-		if($door->{'doors'}{$pickup} && &no_repeats($e, $p)) {
+		if($door && $door->{'doors'}{$pickup} && &no_repeats($e, $p)) {
 			unless(&door_open($p, $door->{'doors'}{$pickup})) {
 				&bench($p);
 				chat::whisper($p, $door->{'doors'}{$pickup}, 'is locked');
@@ -3479,7 +3494,7 @@ play though extended interfaces and server support.
 				chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
 			}
 
-		} elsif($zone->{'keys'}{$pickup} && &no_repeats($e, $p)) {
+		} elsif($zone && $zone->{'keys'}{$pickup} && &no_repeats($e, $p)) {
 			if(&zone_open($p, $zone->{'keys'}{$pickup})) {
 				return(0);
 			}
@@ -5582,21 +5597,25 @@ core protecting the flag.
 				}
 			}
 
-			foreach my $door (sort(keys(%$doors))) {
-				if(plus::door_open($p, $door)) {
-					$status='(open)';
-				} else {
-					$status='(locked)';
+			if($doors) {
+				foreach my $door (sort(keys(%$doors))) {
+					if(plus::door_open($p, $door)) {
+						$status='(open)';
+					} else {
+						$status='(locked)';
+					}
+					chat::whisper($p, $door, $sep, @{$doors->{$door}}, '<=',
+						@{$keys->{$door}}, $status);
+					delete($keys->{$door});
+					$any=1;
 				}
-				chat::whisper($p, $door, $sep, @{$doors->{$door}}, '<=',
-					@{$keys->{$door}}, $status);
-				delete($keys->{$door});
-				$any=1;
 			}
 
-			foreach my $key (sort(keys(%$keys))) {
-				chat::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
-				$any=1;
+			if($keys) {
+					foreach my $key (sort(keys(%$keys))) {
+					chat::whisper($p, 'orphaned key', $key ,':', @{$keys->{$key}});
+					$any=1;
+				}
 			}
 		}
 
@@ -5634,11 +5653,13 @@ core protecting the flag.
 		if(map::left($team)) {
 			$doors=stash::get('doors', map::left, 'door', map::name);
 
-			foreach my $door (keys(%$doors)) {
-				if($doors->{$door} eq $name) {
-					stash::delete($door, 'doors', map::left, 'door', map::name);
-					chat::all('Deleted left door:', $name, "($door)");
-					$any=1;
+			if($doors) {
+				foreach my $door (keys(%$doors)) {
+					if($doors->{$door} eq $name) {
+						stash::delete($door, 'doors', map::left, 'door', map::name);
+						chat::all('Deleted left door:', $name, "($door)");
+						$any=1;
+					}
 				}
 			}
 		}
@@ -5646,11 +5667,13 @@ core protecting the flag.
 		if(map::right($team)) {
 			$doors=stash::get('doors', map::right, 'door', map::name);
 
-			foreach my $door (keys(%$doors)) {
-				if($doors->{$door} eq $name) {
-					stash::delete($door, 'doors', map::right, 'door', map::name);
-					chat::all('Deleted right door:', $name, "($door)");
-					$any=1;
+			if($doors) {
+				foreach my $door (keys(%$doors)) {
+					if($doors->{$door} eq $name) {
+						stash::delete($door, 'doors', map::right, 'door', map::name);
+						chat::all('Deleted right door:', $name, "($door)");
+						$any=1;
+					}
 				}
 			}
 		}
@@ -5770,40 +5793,48 @@ core protecting the flag.
 
 		if(map::left($team)) {
 			$keys=stash::get('keys', map::left, 'door', map::name);
-			foreach my $key (keys(%$keys)) {
-				if($keys->{$key} eq $name) {
-					stash::delete($key, 'keys', 'door', map::name);
-					chat::all('Deleted key for door:', $name, "($key)");
-					$any=1;
+			if($keys) {
+				foreach my $key (keys(%$keys)) {
+					if($keys->{$key} eq $name) {
+						stash::delete($key, 'keys', 'door', map::name);
+						chat::all('Deleted key for door:', $name, "($key)");
+						$any=1;
+					}
 				}
 			}
 
 			$keys=stash::get('keys', map::left, 'zones', map::name);
-			foreach my $key (keys(%$keys)) {
-				if($keys->{$key} eq $name) {
-					stash::delete($key, 'keys', 'zones', map::name);
-					chat::all('Deleted key for zone:', $name, "($key)");
-					$any=1;
+			if($keys) {
+				foreach my $key (keys(%$keys)) {
+					if($keys->{$key} eq $name) {
+						stash::delete($key, 'keys', 'zones', map::name);
+						chat::all('Deleted key for zone:', $name, "($key)");
+						$any=1;
+					}
 				}
 			}
 		}
 
 		if(map::right($team)) {
 			$keys=stash::get('keys', map::right, 'door', map::name);
-			foreach my $key (keys(%$keys)) {
-				if($keys->{$key} eq $name) {
-					stash::delete($key, 'keys', 'door', map::name);
-					chat::all('Deleted key for door:', $name, "($key)");
-					$any=1;
+			if($keys) {
+				foreach my $key (keys(%$keys)) {
+					if($keys->{$key} eq $name) {
+						stash::delete($key, 'keys', 'door', map::name);
+						chat::all('Deleted key for door:', $name, "($key)");
+						$any=1;
+					}
 				}
 			}
 
 			$keys=stash::get('keys', map::right, 'zones', map::name);
-			foreach my $key (keys(%$keys)) {
-				if($keys->{$key} eq $name) {
-					stash::delete($key, 'keys', 'zones', map::name);
-					chat::all('Deleted key for door:', $name, "($key)");
-					$any=1;
+			if($keys) {
+				foreach my $key (keys(%$keys)) {
+					if($keys->{$key} eq $name) {
+						stash::delete($key, 'keys', 'zones', map::name);
+						chat::all('Deleted key for door:', $name, "($key)");
+						$any=1;
+					}
 				}
 			}
 		}
