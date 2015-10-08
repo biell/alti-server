@@ -2,7 +2,7 @@
 
 use strict;
 
-my($VERSION)='1.29';
+my($VERSION)='1.36';
 
 =head1 NAME
 
@@ -20,7 +20,7 @@ use Pod::Usage;
 
 =head1 SYNOPSIS
 
-altx-tool <-xcutphHV> <-d dir> <file> [name1] [name2] [...]
+altx-tool <-xcutphHV> <-I exe> <-d dir> <file> [name1] [name2] [...]
 
 =head2 Options
 
@@ -53,6 +53,13 @@ Edit the Altitude+ configuration file.  This file will be created if it does
 not already exist in the map archive.  Use this file to indicate to the
 C<alti+server> what the default settings should be for this map.
 
+=item --lzma=/path/to/lzma  or -I /path/to/lzma
+
+Specify the path to the C<lzma> binary (which comes with the xz compression
+package) to use.  This binary must be present for B<altx-tool> to function.
+If not specified here, the program will be searched for in your C<PATH>
+environment variable.
+
 =item --directory=dir or -d dir
 
 Specify the working directory to be C<dir>.  If it does not exist, it will
@@ -80,13 +87,17 @@ my(@OPTIONS)=qw(
 	update|u
 	list|t
 	plus|p
+	lzma|use-compress-program|I=s
 	directory|d=s
 	help|h
 	manual|H
 	version|V
 );
 
-my(%ARG);
+my(%ARG)=(
+	'lzma'		=> undef,
+	'directory'	=> undef,
+);
 
 Getopt::Long::Configure('gnu_compat', 'no_ignore_case');
 
@@ -101,6 +112,15 @@ if($ARG{'help'}) {
 } elsif($ARG{'version'}) {
 	print 'altx-tool: ', $VERSION, "\n";
 	exit(0);
+}
+
+unless($ARG{'lzma'}) {
+	foreach my $dir (split(m/:+/, $ENV{'PATH'}), qw(/bin /usr/bin /usr/local/bin)) {
+		if(-x "$dir/lzma") {
+			$ARG{'lzma'}="$dir/lzma";
+			last;
+		}
+	}
 }
 
 =head1 DESCRIPTION
@@ -179,7 +199,7 @@ sub open_archive {
 	my($sizes)=[];
 	my($count, $length, $file);
 
-	open($read, '-|', 'lzma', '-dc', $archive);
+	open($read, '-|', $ARG{'lzma'}, '-dc', $archive);
 	read($read, $count, 4);
 	$count=unpack('V', $count);
 
@@ -222,13 +242,18 @@ sub list {
 
 	print 'Total files: ', scalar(@$files), "\n";
 
-	foreach my $file (@$files) {
-		$select{$file}=1;
+	foreach(@list) {
+		$select{$_}=1;
+		s|^/+||;
+		$select{$_}=1;
 	}
 
 	while(@$files) {
 		if(!@list || $select{$files->[0]}) {
 			printf("%-60s %7d\n", shift(@$files), shift(@$sizes));
+		} else {
+			shift(@$files);
+			shift(@$sizes);
 		}
 	}
 }
@@ -257,6 +282,8 @@ sub create {
 	find(sub { push(@files, $File::Find::name) if(-f $_) }, @sources);
 	open($write, '>', $archive);
 
+	chdir($ARG{'directory'}) if($ARG{'directory'});
+
 	print $write pack('V', scalar(@files));
 
 	foreach my $file (@files) {
@@ -275,7 +302,7 @@ sub create {
 	}
 
 	close($write);
-	system('lzma', '-zf', '-S', '.altx', $archive);
+	system($ARG{'lzma'}, '-zf', '-S', '.altx', $archive);
 }
 
 =head2 Updating (Appending) to archive files
@@ -322,7 +349,8 @@ sub update {
 		print $write $buf;
 	}
 	close($read);
-
+	
+	chdir($ARG{'directory'}) if($ARG{'directory'});
 	foreach my $file (@$newfiles) {
 		open($read, '<', $file);
 		while(read($read, $buf, 8192)) {
@@ -332,7 +360,7 @@ sub update {
 	}
 
 	close($write);
-	system('lzma', '-zf', '-S', '.altx', $archive);
+	system($ARG{'lzma'}, '-zf', '-S', '.altx', $archive);
 }
 
 =head2 Extracting
@@ -353,7 +381,7 @@ sub extract {
 
 	($read, $files, $sizes)=&open_archive($archive);
 
-	foreach(@$files) {
+	foreach(@list) {
 		$select{$_}=1;
 		s|^/+||;
 		$select{$_}=1;
@@ -365,7 +393,11 @@ sub extract {
 
 		if(!@list || $select{$file}) {
 			File::Path::make_path(dirname($file)) if($file=~m|/|);
-			open($write, '>', $file);
+			if($ARG{'directory'}) {
+				open($write, '>', "$ARG{'directory'}/$file");
+			} else {
+				open($write, '>', $file);
+			}
 
 			while($length>8192) {
 				$length-=read($read, $buf, 8192);
@@ -493,7 +525,7 @@ sub plus {
 	unlink($tmpfile);
 
 	close($write);
-	system('lzma', '-zf', '-S', '.altx', $archive);
+	system($ARG{'lzma'}, '-zf', '-S', '.altx', $archive);
 }
 
 if($ARG{'directory'} && ! -d $ARG{'directory'}) {
@@ -507,7 +539,12 @@ multiple lists, extracts, etc. into one command-line will fail.
 
 =cut
 
-if($ARG{'list'}+$ARG{'create'}+$ARG{'extract'}+$ARG{'update'} > 1) {
+unless($ARG{'lzma'}) {
+	print "Cannot find required 'lzma' executable program, exiting.\n";
+	exit(1);
+}
+
+if($ARG{'list'}+$ARG{'create'}+$ARG{'extract'}+$ARG{'update'}+$ARG{'plus'}>1) {
 	pod2usage(-verbose => 1, -exitval => 1);
 }
 
