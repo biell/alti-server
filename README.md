@@ -497,6 +497,17 @@ file to save space for more maps.
     you need to load the defaults at any other time, use this console
     command to initiate that task.
 
+  * **/stashDisplay [map]**<br>
+    Print the stash object in memory for `map`.
+
+  * **/stashClearSettings [map]**<br>
+    Clear all settings for `map`.  Afterwards, only records (if any) will
+    be left in the settings cache for this map.
+
+  * **/stashClearRecords [map]**<br>
+    Clear all records for `map`.  Afterwards, records will be started fresh
+    if the map is played again and `recordTypes` is set to include `map`.
+
   * **/showPlayer [player]**<br>
     Print information on `player`
 

@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='1.33';
+my($VERSION)='1.35';
 
 =head1 NAME
 
@@ -1622,6 +1622,9 @@ my(@ALTIPLUS)=(
 				'string',
 			];
 		$Commands{'importDefaults'}=undef;
+		$Commands{'stashDisplay'}=['map'];
+		$Commands{'stashClearSettings'}=['map'];
+		$Commands{'stashClearRecords'}=['map'];
 		$Commands{'showPlayer'}=['player'];
 		$Commands{'showTeams'}=undef;
 		$Commands{'showSeen'}=undef;
@@ -7094,6 +7097,33 @@ also only available from the console.
 			server::send($command);
 		}
 		stash::delete('INIT', map::name);
+	},
+
+	'stashDisplay'		=> sub {
+		my($map)=@_;
+		my($stash)=stash::get($map);
+		my($s)=player::server;
+
+		chat::whisper($s, '{ "'.$map.'"', ':', json::encode($stash), '}');
+	},
+
+	'stashClearSettings'	=> sub {
+		my($map)=@_;
+		my($stash)=stash::get($map);
+
+		return unless($stash);
+
+		foreach my $key (keys(%$stash)) {
+			next if($key eq 'records');
+
+			stash::delete($key, $map);
+		}
+	},
+
+	'stashClearRecords'	=> sub {
+		my($map)=@_;
+
+		stash::delete('records', $map);
 	},
 
 	'showPlayer'		=> sub {
