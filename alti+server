@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='1.35';
+my($VERSION)='1.37';
 
 =head1 NAME
 
@@ -21,6 +21,7 @@ my(%OPTIONS)=(
 	mapDir		=> '',			#Directory under $INSTALL_ROOT/maps
 								#to store maps. (e.g. "download")
 	lobby		=> '',			#Lobby map for this server
+	secretCode	=> undef,			#The secret required to join the server
 	updateMapList	=> 1,               #Let alti+server change the mapList
 	enableTalk	=> 0,			#Enable server aided direct player chat
 	changePlane	=> 0,			#Default changePlane value is disabled
@@ -1492,21 +1493,30 @@ my(@ALTIPLUS)=(
 	}
 
 	sub write_launcher_config {
+		my(%override)=@_;
 		my($lconfig)=IO::Handle->new;
 		my($maplist, $adminlist)=(0, 0);
 		my($admins)=config::option('admins');
 		my($rotation)=config::option('rotationRE');
+		my($secret_code)=config::option('secretCode');
 		my($update_maps)=config::option('updateMapList');
 		my($update_admins)=($admins=~m/[1-9a-f]/);
+		my($over)=join('|', keys(%override));
 		my(@xml);
-
-		return unless($update_maps || $update_admins);
 
 		open($lconfig, '<', $Conffile);
 		@xml=<$lconfig>;
 		close($lconfig);
 
 		foreach(@xml) {
+			if(defined($secret_code)) {
+				s/\bsecretCode=".*?"/secretCode="$secret_code"/;
+			}
+
+			if($over) {
+				s/\b($over)=".*?"/$1="$override{$1}"/;
+			}
+
 			if($update_maps) {
 				if(m{</mapList>}i) {
 					foreach my $map (@Maps) {
@@ -1558,6 +1568,7 @@ my(@ALTIPLUS)=(
 		my($server)=xml::decode($Conffile);
 		my($fh)=IO::Handle->new;
 		my(@filter)=();
+		my($secret_cf, $secret_opt);
 		local($_);
 
 		foreach my $admin (@{$server->
@@ -1572,6 +1583,18 @@ my(@ALTIPLUS)=(
 		$Port=$server->{'servers'}{'AltitudeServerConfig'}{'port'};
 		$Ping=$server->{'servers'}{'AltitudeServerConfig'}{'maxPing'};
 		$Maxp=$server->{'servers'}{'AltitudeServerConfig'}{'maxPlayerCount'};
+
+		$secret_cf=$server->{'servers'}{'AltitudeServerConfig'}{'secretCode'};
+		$secret_opt=config::option('secretCode');
+		if($secret_cf && !defined($secret_opt)) {
+			config::option_set('secretCode', $secret_cf);
+		} elsif(!$secret_cf && defined($secret_opt)) {
+			$server->{'servers'}{'AltitudeServerConfig'}{'secretCode'}=
+				$secret_opt;
+		} elsif($secret_cf && $secret_opt && $secret_cf ne $secret_opt) {
+			$server->{'servers'}{'AltitudeServerConfig'}{'secretCode'}=
+				$secret_opt;
+		}
 
 		$Goals=POSIX::ceil(($server->
 						{'servers'}
@@ -1852,6 +1875,7 @@ my(@ALTIPLUS)=(
 			return(0);
 		}
 	}
+
 }
 
 =head2 AltBouncer
@@ -7050,11 +7074,19 @@ also only available from the console.
 			config::option_set($name, $value);
 
 			ui::setup_screen if($name=~m/^ui|Color$/i);
+			if($name=~m/secretCode/) {
+				config::write_launcher_config;
+				chat::whisper($s, 'run /restartServer to complete change');
+			}
 		} elsif($action eq 'unset') {
 			config::option_del($name);
 			chat::whisper($s, $name, 'restored to default');
 
 			ui::setup_screen if($name=~m/^ui|Color$/i);
+
+			if($name=~m/secretCode/) {
+				config::write_launcher_config($name => '');
+			}
 		} elsif($action eq 'add') {
 			unless(config::option_exists($name)) {
 				chat::whisper($s, 'Invalid option name', $name);

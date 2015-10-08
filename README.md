@@ -747,6 +747,12 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     exact syntax.  For any setting here, use of the `/help` command is
     especially helpful.
 
+  * **secretCode [password]**<br>
+    Altitude servers can be configured using the `server_configurator` program
+    to require a passcode to join the server.  This setting allows you to
+    perform the same function on the `alti+server` console, saving you
+    from having to run a gui or edit an XML file directly.
+
   * **superAdmin [admin|console|list]**<br>
     Some servers have two levels of admins.  Admins whose job
     it is to keep the peace, and admins who support the server.
