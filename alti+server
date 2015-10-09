@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.37';
+my($VERSION)='1.38';
 
 =head1 NAME
 
@@ -26,6 +26,7 @@ my(%OPTIONS)=(
 	enableTalk	=> 0,			#Enable server aided direct player chat
 	changePlane	=> 0,			#Default changePlane value is disabled
 	hitchThreshold	=> 0.6,			#Length of serverHitch to report
+	restartMap	=> 25,			#restart map if downloads succeed in 25s
 	timeIdleChange	=> 7200,			#changeMap when server is idle for 2hrs
 	cpuUsedChange	=> 300,			#changeMap idle servers at 5min CPU used
 	allowUploads	=> 1,			#Allow superAdmins to upload maps
@@ -1396,6 +1397,7 @@ my(@ALTIPLUS)=(
 	our($Ping)=500; #reset from launcher_config.xml
 	our($Goals)=6;  #reset from launcher_config.xml
 	our($Maxp)=14;  #reset from launcher_config.xml
+	our(%Warmup)=();  #set from launcher_config.xml
 
 	our($Clock)=1000;  #Clock is in milliseconds
 
@@ -1493,28 +1495,34 @@ my(@ALTIPLUS)=(
 	}
 
 	sub write_launcher_config {
-		my(%override)=@_;
+		my(%config)=@_;
 		my($lconfig)=IO::Handle->new;
 		my($maplist, $adminlist)=(0, 0);
 		my($admins)=config::option('admins');
 		my($rotation)=config::option('rotationRE');
-		my($secret_code)=config::option('secretCode');
 		my($update_maps)=config::option('updateMapList');
 		my($update_admins)=($admins=~m/[1-9a-f]/);
-		my($over)=join('|', keys(%override));
 		my(@xml);
 
 		open($lconfig, '<', $Conffile);
 		@xml=<$lconfig>;
 		close($lconfig);
 
-		foreach(@xml) {
-			if(defined($secret_code)) {
-				s/\bsecretCode=".*?"/secretCode="$secret_code"/;
-			}
+		$config{'secretCode'}//=config::option('secretCode');
 
-			if($over) {
-				s/\b($over)=".*?"/$1="$override{$1}"/;
+		foreach my $key (keys(%config)) {
+			delete($config{$key}) unless(defined($config{$key}));
+		}
+
+		return unless($update_maps || $update_admins || %config);
+
+		foreach(@xml) {
+			if(m/<AltitudeServerConfig /) {
+				foreach my $key (keys(%config)) {
+					unless(s/\b$key=".*?"/$key="$config{$key}"/) {
+						s/>/ $key="$config{$key}">/;
+					}
+				}
 			}
 
 			if($update_maps) {
@@ -1564,49 +1572,57 @@ my(@ALTIPLUS)=(
 		close($lconfig);
 	}
 
+	sub reconcile_option {
+		my($config, $key)=@_;
+		my($value)=config::option($key);
+
+		if($config->{$key} && !defined($value)) {
+			config::option_set($key, $config->{$key});
+		} elsif(!$config->{$key} && defined($value)) {
+			$config->{$key}=$value;
+		} elsif($config->{$key} && $value && $config->{$key} ne $value) {
+			$config->{$key}=$value;
+		}
+	}
+
 	sub launcher {
-		my($server)=xml::decode($Conffile);
+		my($server)=xml::decode($Conffile)->{'servers'};
 		my($fh)=IO::Handle->new;
 		my(@filter)=();
-		my($secret_cf, $secret_opt);
+		my($config);
 		local($_);
 
-		foreach my $admin (@{$server->
-							{'servers'}
-							{'AltitudeServerConfig'}
-							{'adminsByVaporID'}
-							{'UUID'}
-						}) {
+		if(ref($server) eq 'ARRAY') {
+			$config=$server->[0]{'AltitudeServerConfig'};
+			ui::slog('!! You have more than one server defined !!');
+			ui::slog('!! alti+server only supports 1 server    !!');
+			ui::slog('!! Managing only the first instance      !!');
+			sleep(1);
+		} else {
+			$config=$server->{'AltitudeServerConfig'};
+		}
+
+		foreach my $admin (@{$config->{'adminsByVaporID'}{'UUID'}}) {
 			$Admins{$admin->{'UUID'}}=1;
 		}
 
-		$Port=$server->{'servers'}{'AltitudeServerConfig'}{'port'};
-		$Ping=$server->{'servers'}{'AltitudeServerConfig'}{'maxPing'};
-		$Maxp=$server->{'servers'}{'AltitudeServerConfig'}{'maxPlayerCount'};
+		$Port=$config->{'port'};
+		$Ping=$config->{'maxPing'};
+		$Maxp=$config->{'maxPlayerCount'};
 
-		$secret_cf=$server->{'servers'}{'AltitudeServerConfig'}{'secretCode'};
-		$secret_opt=config::option('secretCode');
-		if($secret_cf && !defined($secret_opt)) {
-			config::option_set('secretCode', $secret_cf);
-		} elsif(!$secret_cf && defined($secret_opt)) {
-			$server->{'servers'}{'AltitudeServerConfig'}{'secretCode'}=
-				$secret_opt;
-		} elsif($secret_cf && $secret_opt && $secret_cf ne $secret_opt) {
-			$server->{'servers'}{'AltitudeServerConfig'}{'secretCode'}=
-				$secret_opt;
-		}
+		&reconcile_option($config, 'secretCode');
 
-		$Goals=POSIX::ceil(($server->
-						{'servers'}
-						{'AltitudeServerConfig'}
-						{'PlaneBallGameMode'}
-						{'goalsPerRound'}
-					)/2
-			);
+		$Goals=POSIX::ceil($config->{'PlaneBallGameMode'}{'goalsPerRound'}/2);
 
-		%Commands=map(($_->{'ConsoleCommand'} => undef), @{$server->
-				{'servers'}
-				{'AltitudeServerConfig'}
+		$Warmup{'1bd'}=$config->{'ObjectiveGameMode'}{'warmupTimeSeconds'};
+		$Warmup{'1de'}=$config->{'ObjectiveGameMode'}{'warmupTimeSeconds'};
+		$Warmup{'1dm'}=$config->{'ObjectiveGameMode'}{'warmupTimeSeconds'};
+		$Warmup{'ball'}=$config->{'PlaneBallGameMode'}{'warmupTimeSeconds'};
+		$Warmup{'ffa'}=$config->{'FreeForAllGameMode'}{'warmupTimeSeconds'};
+		$Warmup{'tbd'}=$config->{'BaseDestroyGameMode'}{'warmupTimeSeconds'};
+		$Warmup{'tdm'}=$config->{'TeamDeathMatchGameMode'}{'warmupTimeSeconds'};
+
+		%Commands=map(($_->{'ConsoleCommand'} => undef), @{$config->
 				{'consoleCommandPermissions'}
 				{'AltitudeServerConsoleCommandPermissions'}
 			});
@@ -3816,6 +3832,106 @@ with their name.
 		}
 		return(0);
 	}
+}
+
+=head2 Join Timing
+
+Some users take longer to join a server becuase they must first download the
+map archive file.  This creates an imbalance in game objective and in teams.
+As such, if download times are considered excessive for the game mode or type,
+the B<alti+server> will restart the map.  For this to happen, the server
+option C<restartMap> must be set to a value greater than 0, more than 1 player
+must be downloading the map file, and the server will not wait longer than
+the value of C<restartMap> in seconds for downloads to complete.
+
+=cut
+
+{	package dlfmhs;
+
+	my(%Client)=();
+	my($Map)=undef;
+	my($Time)=undef;
+	my($Count)=0;
+	my($Max)=0;
+
+	sub change_map {
+		my($map)=@_;
+
+		if(config::option('restartMap')) {
+			%Client=();
+			$Map=$map;
+			$Time=time();
+			$Count=0;
+			$Max=0;
+		}
+	}
+
+	sub prepare {
+		my($map)=@_;
+
+		return unless($Time);
+
+		if(time()-$Time > 10) {
+			$Map=undef;
+			$Time=undef;
+		}
+	}
+
+	sub request {
+		my($client)=@_;
+
+		if($Map) {
+			$Client{$client}=1;
+			$Count++;
+			$Max=$Count if($Max<$Count);
+		}
+	}
+
+	sub complete {
+		my($client)=@_;
+		my($delta)=time()-$Time;
+
+		if(delete($Client{$client})) {
+			$Count--;
+
+			if(	$Count==1							&&
+				$Max>3							&&
+				$delta > $config::Warmup{map::mode}	&&
+				$delta > config::option('restartMap')/2
+			) {
+				chat::all('Map downloads mostly complete, restarting map...');
+				server::send('changeMap', $Map);
+			}
+		}
+	}
+
+	sub remove {
+		my($client)=@_;
+
+		if(delete($Client{$client})) {
+			$Count--;
+			$Max--;
+		}
+	}
+
+	sub release {
+		my($map)=@_;
+		my($delta)=time()-$Time;
+		my($warmup)=$config::Warmup{map::mode};
+		my($limit)=config::option('restartMap');
+
+		return unless($map eq $Map);
+		return unless($Time);
+
+		if($Max>1 && $warmup < $delta && $delta < $limit) {
+			chat::all('Map downloads complete, restarting map...');
+			server::send('changeMap', $map);
+		}
+
+		$Map=undef;
+		$Time=undef;
+	}
+
 }
 
 =head2 Normalized Hook Management
@@ -7318,6 +7434,18 @@ while(1) {
 
 			if($SOUT=~m/Starting server on port $config::Port/) {
 				server::reopen_log;
+			} elsif($SOUT=~m/Changing map: (.*)/) {
+				dlfmhs::change_map($1);
+			} elsif($SOUT=~m/DLFMHS caching file data for (.*)\.altx/) {
+				dlfmhs::prepare($1);
+			} elsif($SOUT=~m/Got initiate download request from ([\d.:]+)/) {
+				dlfmhs::request($1);
+			} elsif($SOUT=~m/DLFMHS sending send-complete to ([\d.:]+)/) {
+				dlfmhs::complete($1);
+			} elsif($SOUT=~m/Removing client '.*?' from ([\d.:]+)/) {
+				dlfmhs::remove($1);
+			} elsif($SOUT=~m/DLFMHS releasing file data for (.*)\.altx/) {
+				dlfmhs::release($1);
 			} elsif($SOUT=~m/BindException: Address already in use/) {
 				ui::slog('Another instance is already running');
 
