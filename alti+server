@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.39';
+my($VERSION)='1.40';
 
 =head1 NAME
 
@@ -6830,11 +6830,11 @@ core protecting the flag.
 		my($direction)=plus::angle($x2, $y2, $x1-$x2, $y1-$y2);
 		my($wrong_way)=0;
 
-		if($allowed>80 && $direction<0) {
-			$wrong_way=1 if(plus::angle($x2, $y2, $allowed+80)<$direction);
-		} elsif($allowed<=-80 && $direction>0) {
-			$wrong_way=1 if(plus::angle($x2, $y2, $allowed-80)>$direction);
-		} elsif($direction<($allowed-80) || ($allowed+80)<$direction) {
+		if($allowed>90 && $direction<0) {
+			$wrong_way=1 if(plus::angle($x2, $y2, $allowed+90)<$direction);
+		} elsif($allowed<=-90 && $direction>0) {
+			$wrong_way=1 if(plus::angle($x2, $y2, $allowed-90)>$direction);
+		} elsif($direction<($allowed-90) || ($allowed+90)<$direction) {
 			$wrong_way=1;
 		}
 
