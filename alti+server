@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.40';
+my($VERSION)='1.41';
 
 =head1 NAME
 
@@ -3398,6 +3398,7 @@ play though extended interfaces and server support.
 		my($t_stats, $p_stats);
 
 		return unless(defined($cp));
+		return if($Stats{'winner'});
 
 		@powerups=utils::uniq(values(%$checkpoints));
 
@@ -3425,6 +3426,7 @@ play though extended interfaces and server support.
 				chat::all($p->{'nickname'}, 'reached checkpoint', $cp);
 
 				shift(@$t_stats);
+				$Stats{'winner'}=$p->{'team'} unless(@$t_stats);
 			}
 
 			shift(@$p_stats);
