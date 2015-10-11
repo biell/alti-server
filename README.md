@@ -37,13 +37,16 @@ pickup. This would hopefully get teams to work together better, instead
 of people grabbing the bomb and flying off by themselves without support.
 
 ### Races
-Races use specially assigne powerups to act as checkpoints.  Each time
+Races use specially assigned powerups to act as checkpoints.  Each time
 the first player on a team crosses a checkpoint, a goal is scored.  For
 this reason, the map must be configured for game type *ball*.  Most servers
 are setup to have 6 goal win.  Races are best accomplished with 2 laps and
 3 checkpoints, with players starting so that they cannot easilly access
 the winning (6th) checkpoint until the end of their first lap (starting in
-a pit row might work).
+a pit row might work).  Checkpoints must be crossed in alphabetical order,
+all powerups are sorted, and the sort order is used to ensure players
+cross checkpoints in the correct order.  Keep this in mind when creating
+checkpoint names.
 
 A to B races would also be easy, with checkpoints along the way, and the
 6th checkpoint at the end.  If a final (winning) checkpoint is all that
