@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.38';
+my($VERSION)='1.39';
 
 =head1 NAME
 
@@ -632,16 +632,13 @@ L<perl(1)> should be used to ensure basic operation.
 	}
 
 	sub uniq {
-		my(@ary)=sort(@_);
+		my(%uniq)=();
 
-		for(my $i=1; $i<@ary; $i++) {
-			if($ary[$i]==$ary[$i-1]) {
-				splice(@ary, $i, 1);
-				redo;
-			}
+		foreach my $elt (@_) {
+			$uniq{$elt}=1;
 		}
 
-		return(@ary);
+		return(sort(keys(%uniq)));
 	}
 
 	sub invert {
@@ -3068,7 +3065,7 @@ and provide slightly enhanced game play.
 	sub score {
 		my($p)=@_;
 
-		&update_score(map::left($p->{'team'})?'left':'right');
+		&update_score($p->{'team'});
 		&set_score(@Score);
 	}
 
@@ -3367,13 +3364,12 @@ play though extended interfaces and server support.
 		my($e, $p)=@_;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($time)=$e->{'time'};
+		my($rv)=1;
 
-		if($time<$p->{'stats'}{'timer'}{$pickup}) {
-			return(0);
-		} else {
-			$p->{'stats'}{'timer'}{$pickup}=$time+800;
-			return(1);
-		}
+		$rv=0 if($time<$p->{'stats'}{'timer'}{$pickup});
+			
+		$p->{'stats'}{'timer'}{$pickup}=$time+800;
+		return($rv);
 	}
 
 	sub capture {
@@ -3398,39 +3394,43 @@ play though extended interfaces and server support.
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($checkpoints)=stash::get($p->{'team'}, 'powerups', map::name);
 		my($cp)=$checkpoints->{$pickup};
-		my($teamstats, $t_all, $t_lap, $p_all, $p_lap);
+		my(@powerups)=();
+		my($t_stats, $p_stats);
 
 		return unless(defined($cp));
 
+		@powerups=utils::uniq(values(%$checkpoints));
+
 		#Initialize team stats:
 		unless($Stats{$p->{'team'}}{'cp'}) {
-			foreach my $key (values(%$checkpoints)) {
-				$Stats{$p->{'team'}}{'cp'}{$key}=0;
+			for(my $i=0; $i<$config::Goals; $i++) {
+				$Stats{$p->{'team'}}{'cp'}[$i]=$powerups[$i%@powerups];
 			}
 		}
 
 		#Initialize player stats:
 		unless($p->{'stats'}{'cp'}) {
-			foreach my $key (values(%$checkpoints)) {
-				$p->{'stats'}{'cp'}{$key}=0;
+			for(my $i=0; $i<$config::Goals; $i++) {
+				$p->{'stats'}{'cp'}[$i]=$powerups[$i%@powerups];
 			}
 		}
 
-		$teamstats=$Stats{$p->{'team'}}{'cp'};
-		($t_all, $t_lap)=utils::minmax(values(%$teamstats));
-		($p_all, $p_lap)=utils::minmax(values(%{$p->{'stats'}{'cp'}}));
+		$t_stats=$Stats{$p->{'team'}}{'cp'};
+		$p_stats=$p->{'stats'}{'cp'};
 
-		if($p->{'stats'}{'cp'}{$cp}<$p_lap || $p_all==$p_lap) {
-			$p->{'stats'}{'cp'}{$cp}++;
+		if($p_stats->[0] eq $cp) {
+			if($t_stats->[0] eq $cp && @$p_stats == @$t_stats) {
+				&score($p);
+				$p->{'stats'}{'checkpoint'}++;
+				chat::all($p->{'nickname'}, 'reached checkpoint', $cp);
+
+				shift(@$t_stats);
+			}
+
+			shift(@$p_stats);
 		}
 
-		if(&no_repeats($e, $p) && $p_lap==$t_lap &&
-		  ($teamstats->{$cp}<$t_lap || $t_all==$t_lap)) {
-			chat::all($p->{'nickname'}, 'reached checkpoint', $cp);
-			&score($p);
-			$teamstats->{$cp}++;
-			$p->{'stats'}{'checkpoint'}++;
-		}
+
 	}
 
 	sub door_open {
@@ -3682,6 +3682,8 @@ play though extended interfaces and server support.
 		%Reset=();
 		$Hunted=undef;
 		$Active=0;
+
+		&round;
 
 		foreach my $player (player::list) {
 			delete($player->{'team'});
@@ -6836,7 +6838,7 @@ core protecting the flag.
 			$wrong_way=1;
 		}
 
-		if($wrong_way) {
+		if($wrong_way && plus::no_repeats($e2, $p2)) {
 			plus::bench($p2);
 			plus::spawn_here($p2, $x2, $y2, $allowed);
 			chat::whisper($p2, 'Wrong way!');
