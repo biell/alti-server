@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='1.41';
+my($VERSION)='1.43';
 
 =head1 NAME
 
@@ -2468,16 +2468,15 @@ types which alter the normal behavior.
 	}
 
 	sub powerup {
-		my($e, $type)=@_;
+		my($e, @types)=@_;
 		my($xy)=join(',', @$e{'positionX','positionY'});
 
 		if(exists($Pickups{$xy})) {
-			if($type) {
-				if(@{$Pickups{$xy}}==1 && $Pickups{$xy}[0]=~m/$type/i) {
-					return($Pickups{$xy}[0]);
-				} else {
-					return(undef);
+			if(@types) {
+				foreach my $type (@types) {
+					return($e->{'powerup'}) if($e->{'powerup'}=~m/$type/i);
 				}
+				return(undef);
 			} else {
 				return(@{$Pickups{$xy}});
 			}
@@ -2486,12 +2485,11 @@ types which alter the normal behavior.
 			return(undef) if($e->{'positionX'}=~m/\./);
 			return(undef) if($e->{'positionY'}=~m/\./);
 
-			if($type) {
-				if($e->{'powerup'}=~m/$type/i) {
-					return($e->{'powerup'});
-				} else {
-					return(undef);
+			if(@types) {
+				foreach my $type (@types) {
+					return($e->{'powerup'}) if($e->{'powerup'}=~m/$type/i);
 				}
+				return(undef);
 			} else {
 				return($e->{'powerup'});
 			}
@@ -3067,6 +3065,8 @@ and provide slightly enhanced game play.
 
 		&update_score($p->{'team'});
 		&set_score(@Score);
+
+		return(@Score);
 	}
 
 	sub shoot {
@@ -3221,8 +3221,15 @@ play though extended interfaces and server support.
 
 	sub score {
 		my($p)=@_;
+		my($goals)=$config::Goals;
+		my(@score)=ball::score($p);
 
-		ball::score($p);
+		$Stats{'winner'}='left'	if($score[0] >= $goals);
+		$Stats{'winner'}='right'	if($score[1] >= $goals);
+	}
+
+	sub game_over {
+		return($Stats{'winner'});
 	}
 
 	sub angle {
@@ -3361,14 +3368,15 @@ play though extended interfaces and server support.
 	}
 
 	sub no_repeats {
-		my($e, $p)=@_;
-		my($pickup)=join(',', @$e{'positionX','positionY'});
+		my($e, $p, $obj)=@_;
 		my($time)=$e->{'time'};
 		my($rv)=1;
 
-		$rv=0 if($time<$p->{'stats'}{'timer'}{$pickup});
+		$obj=join(',', @$e{'positionX','positionY'}) unless($obj);
+
+		$rv=0 if($time<$p->{'stats'}{'timer'}{$obj});
 			
-		$p->{'stats'}{'timer'}{$pickup}=$time+800;
+		$p->{'stats'}{'timer'}{$obj}=$time+800;
 		return($rv);
 	}
 
@@ -3377,12 +3385,14 @@ play though extended interfaces and server support.
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($flag)=stash::get($pickup, $p->{'team'}, 'powerups', map::name);
 
-		if($flag && no_repeats($e, $p)) {
-			unless(map::mode('ffa')) {
-				foreach my $player (player::list) {
-					&bench($player);
-				}
+		return unless(map::mode('ball'));
+		return if(&game_over);
+
+		if($flag && &no_repeats($e, $p)) {
+			foreach my $player (player::list) {
+				&bench($player);
 			}
+
 			chat::all($p->{'nickname'}, 'captured the flag!');
 			$p->{'stats'}{'capture'}++;
 			&score($p);
@@ -3395,15 +3405,17 @@ play though extended interfaces and server support.
 		my($checkpoints)=stash::get($p->{'team'}, 'powerups', map::name);
 		my($cp)=$checkpoints->{$pickup};
 		my(@powerups)=();
+		my($is_cp)=0;
 		my($t_stats, $p_stats);
 
 		return unless(defined($cp));
-		return if($Stats{'winner'});
-
-		@powerups=utils::uniq(values(%$checkpoints));
+		return unless(map::mode('ball'));
+		return if(&game_over);
 
 		#Initialize team stats:
 		unless($Stats{$p->{'team'}}{'cp'}) {
+			@powerups=utils::uniq(values(%$checkpoints));
+
 			for(my $i=0; $i<$config::Goals; $i++) {
 				$Stats{$p->{'team'}}{'cp'}[$i]=$powerups[$i%@powerups];
 			}
@@ -3411,6 +3423,8 @@ play though extended interfaces and server support.
 
 		#Initialize player stats:
 		unless($p->{'stats'}{'cp'}) {
+			@powerups=utils::uniq(values(%$checkpoints));
+
 			for(my $i=0; $i<$config::Goals; $i++) {
 				$p->{'stats'}{'cp'}[$i]=$powerups[$i%@powerups];
 			}
@@ -3426,13 +3440,13 @@ play though extended interfaces and server support.
 				chat::all($p->{'nickname'}, 'reached checkpoint', $cp);
 
 				shift(@$t_stats);
-				$Stats{'winner'}=$p->{'team'} unless(@$t_stats);
 			}
 
 			shift(@$p_stats);
+			$is_cp=1;
 		}
 
-
+		return($is_cp);
 	}
 
 	sub door_open {
@@ -6263,19 +6277,19 @@ core protecting the flag.
 		my($groups);
 
 		if($e->{'admin'}) {
-			$groups=utils::invert(%{$powerups->{map::left}});
+			$groups=utils::invert($powerups->{map::left});
 			foreach my $key (sort(keys(%$groups))) {
 				chat::whisper($p, '<', $key, ':', @{$groups->{$key}});
 				$any=1;
 			}
 
-			$groups=utils::invert(%{$powerups->{map::right}});
+			$groups=utils::invert($powerups->{map::right});
 			foreach my $key (sort(keys(%$groups))) {
 				chat::whisper($p, '>', $key, ':', @{$groups->{$key}});
 				$any=1;
 			}
 		} else {
-			$groups=utils::invert(%{$powerups->{$p->{'team'}}});
+			$groups=utils::invert($powerups->{$p->{'team'}});
 			foreach my $key (sort(keys(%$groups))) {
 				chat::whisper($p, $key, ':', @{$groups->{$key}});
 				$any=1;
@@ -6753,7 +6767,10 @@ core protecting the flag.
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 
 		plus::capture($e, $p) if(map::type('flag'));
-		plus::checkpoint($e, $p) if(map::type('race'));
+
+		if(map::type('race') && plus::checkpoint($e, $p)) {
+			server::trigger('logPlanePositions', 'checkpoint', $e, $p)
+		}
 
 		plus::divert($e, $p);
 
@@ -6766,7 +6783,7 @@ core protecting the flag.
 			chat::snark($p, 'Nice Save', $p->{'nickname'}) if(chat::snarky);
 		}
 
-		if($e->{'powerup'}=~m/Ball|Bomb|Demolition Charge/) {
+		if(map::powerup($e, 'Ball', 'Bomb', 'Demolition Charge')) {
 			$p->{'carrier'}=1;
 		}
 
@@ -6798,7 +6815,9 @@ core protecting the flag.
 		}
 
 		if(stash::get($pickup, 'oneways', map::name)) {
-			server::trigger('logPlanePositions', 'oneway', $e, $p);
+			if(plus::no_repeats($e, $p, 'oneway')) {
+				server::trigger('logPlanePositions', 'oneway', $e, $p)
+			}
 		} elsif($spawn_mode eq 'health') {
 			if(map::powerup($e, 'Health')) {
 				server::trigger('logPlanePositions', 'powerup', $e, $p)
@@ -6812,6 +6831,21 @@ core protecting the flag.
 
 	'powerupAutoUse'	=> sub {
 		$HOOKS{'powerupPickup'}->(@_);
+	},
+
+	'logPlanePositions:checkpoint' => sub {
+		my($e1, $p1, $e2, $p2)=@_;
+		my($pos)=$e1->{'positionByPlayer'};
+		my($x, $y)=split(m/,/,$pos->{$p2->{'player'}});
+		my($delta);
+
+		foreach my $player (keys(%$pos)) {
+			next if($player==$p2->{'player'});
+
+			$delta=utils::distance($x, $y, split(m/,/, $pos->{$player}));
+
+			plus::checkpoint($e2, player::lookup($player)) if($delta<60);
+		}
 	},
 
 	'logPlanePositions:powerup'	=> sub {
@@ -6840,7 +6874,7 @@ core protecting the flag.
 			$wrong_way=1;
 		}
 
-		if($wrong_way && plus::no_repeats($e2, $p2)) {
+		if($wrong_way) {
 			plus::bench($p2);
 			plus::spawn_here($p2, $x2, $y2, $allowed);
 			chat::whisper($p2, 'Wrong way!');
