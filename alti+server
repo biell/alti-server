@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.43';
+my($VERSION)='1.44';
 
 =head1 NAME
 
@@ -1104,6 +1104,8 @@ stash are automatically saved to disk.
 	sub fix_doors {
 		my($map, $left, $right)=@_;
 		my($changes)=0;
+
+		return unless(exists($Stash->{$map}{'door'}));
 
 		if(exists($Stash->{$map}{'door'}{'doors'})) {
 			$Stash->{$map}{'door'}{$left}{'doors'}=$Stash->{$map}{'door'}{'doors'};
@@ -2651,7 +2653,8 @@ is updated with them as the games progress.
 		my($p)=@_;
 		my($sas)=config::option('superAdmins');
 
-		$p->{'alive'}=1;
+		$p->{'joined'}=1;
+		$p->{'alive'}=0;
 
 		if($p->{'nickname'}=~m/^Bot ([1-9]|[1-2][0-9])$/) {
 			$p->{'isBot'}=1;
@@ -2706,6 +2709,7 @@ is updated with them as the games progress.
 			}
 		}
 
+		$p->{'joined'}=0;
 		$p->{'alive'}=0;
 		delete($p->{'player'});
 	}
@@ -3205,7 +3209,7 @@ play though extended interfaces and server support.
 
 		if($Hunted==$p) {
 			return(1);
-		} elsif(!$Hunted || !$Hunted->{'alive'}) {
+		} elsif(!$Hunted || !$Hunted->{'joined'}) {
 			$Hunted=$p;
 			return(1);
 		} else {
@@ -3275,13 +3279,6 @@ play though extended interfaces and server support.
 		}
 	}
 
-	sub spawn_reset {
-		my($p)=@_;
-
-		server::send('overrideSpawnPoint', $p->{'nickname'}, 0, 0, 0);
-		delete($p->{'stats'}{'spawns'});
-	}
-
 	sub spawn_previous {
 		my($p)=@_;
 
@@ -3313,6 +3310,19 @@ play though extended interfaces and server support.
 		server::send('overrideSpawnPoint', $p->{'nickname'}, $x, $y, $angle);
 		push(@{$p->{'stats'}{'spawns'}}, [$x, $y, $angle]);
 	}
+
+	sub spawn_reset {
+		my($p)=@_;
+		my($start)=stash::get('start', 'zones', $p->{'team'}, 'zones', map::name);
+
+		if(ref($start) eq 'ARRAY') {
+			&spawn_here($p, @$start);
+		} else {
+			server::send('overrideSpawnPoint', $p->{'nickname'}, 0, 0, 0);
+		}
+		delete($p->{'stats'}{'spawns'});
+	}
+
 
 	sub clear_spawn {
 		my($p)=@_;
@@ -3356,8 +3366,11 @@ play though extended interfaces and server support.
 	sub bench {
 		my($p)=@_;
 
+		return unless($p->{'alive'});
+
 		if(map::mode('ffa')) {
 			chat::whisper($p, 'Players cannot be forced to respawn in FFA');
+			return;
 		} elsif(map::left($p->{'team'})) {
 			server::send('assignTeam', $p->{'nickname'}, 0);
 		} elsif(map::right($p->{'team'})) {
@@ -3365,6 +3378,8 @@ play though extended interfaces and server support.
 		} else {
 			server::send('assignTeam', $p->{'nickname'}, -1);
 		}
+
+		$p->{'alive'}=0;
 	}
 
 	sub no_repeats {
@@ -4182,6 +4197,7 @@ A number of spawn possibilities are created by B<alti+server>.  Players
 can spawn normally as always.  However, the additional methods are also
 available:
 died (players spawn where they last died),
+crash (same as died, but don't turn players around after crashing),
 zone (players can manually choose the location where they spawn),
 near (players spawn at the nearest defined zone location to where they die),
 portal (players use any number of listed health powerups and are respawned in a different location), 
@@ -4199,7 +4215,7 @@ core protecting the flag.
 =cut
 
 %HOOKS=(
-	'!'			=> sub {	#Admin command for tiny_custom_json_commands.txt
+	'!'			=> sub {	#Admin command for configSize='tiny'
 		my($e, $p)=@_;
 		my($args)=@{$e->{'arguments'}};
 		my(@params);
@@ -5459,7 +5475,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'Change the behavior of how users spawn when they die, or pickup powerups');
 		chat::whisper($p, '/list spawnMode');
-		chat::whisper($p, '/set spawnMode <default|died|pickup|health|zone|near|portal>');
+		chat::whisper($p, '/set spawnMode <default|died|crash|pickup|health|zone|near|portal>');
 		chat::whisper($p, '/unset spawnMode');
 	},
 
@@ -5490,6 +5506,9 @@ core protecting the flag.
 		} elsif($spawn=~m/die/i) {
 			chat::all("Players spawn where died, use '/sz start' to spawn normal");
 			stash::set('spawnMode', map::name, 'died');
+		} elsif($spawn=~m/crash/i) {
+			chat::all("Players spawn where died, use '/sz start' to spawn normal");
+			stash::set('spawnMode', map::name, 'crash');
 		} elsif($spawn=~m/power|pick/i) {
 			chat::all("Players spawn at last powerup, use '/sz start' to spawn normal");
 			stash::set('spawnMode', map::name, 'powerup');
@@ -6356,16 +6375,24 @@ core protecting the flag.
 		if($p->{'carrier'}) {
 			chat::whisper($p, 'You cannot /spawnZone as a carrier');
 		} elsif($zone=~m/^start$/i) {
-			plus::bench($p);
+			if($p->{'alive'}) {
+				if(map::mode('ffa')) {
+					chat::whisper($p, 'Next spawn will be in', $zone);
+				} else {
+					plus::bench($p);
+				}
+			}
 			plus::spawn_reset($p);
 		} elsif($spawn_mode ne 'zone') {
 			chat::whisper($p, "Zone spawning not allowed in mode: $spawn_mode");
 		} elsif(ref($coords) eq 'ARRAY') {
 			if(plus::zone_open($p, $zone)) {
-				if(map::mode('ffa')) {
-					chat::whisper($p, 'Next spawn will be in', $zone);
-				} else {
-					plus::bench($p);
+				if($p->{'alive'}) {
+					if(map::mode('ffa')) {
+						chat::whisper($p, 'Next spawn will be in', $zone);
+					} else {
+						plus::bench($p);
+					}
 				}
 				plus::spawn_here($p, @$coords);
 			} else {
@@ -6504,7 +6531,7 @@ core protecting the flag.
 
 		plus::leave($p);
 
-		$p->{'alive'}=0;
+		$p->{'joined'}=0;
 		delete($p->{'player'});
 	},
 
@@ -6524,6 +6551,8 @@ core protecting the flag.
 			$p->{'team'}=$e->{'team'};
 			return;
 		}
+
+		$p->{'alive'}=0;
 
 		#Make sure players are the correct level for their aceRank:
 		if($p->{'aceRank'}==0) {
@@ -6600,13 +6629,13 @@ core protecting the flag.
 				server::send('assignTeam', $p->{'nickname'}, 0);
 			}
 		} elsif($map_team eq 'left' && map::right($p->{'team'})) {
-			plus::spawn_reset($p);
 			server::send('assignTeam', $p->{'nickname'}, 0);
 			return;
 		} elsif($map_team eq 'right' && map::left($p->{'team'})) {
-			plus::spawn_reset($p);
 			server::send('assignTeam', $p->{'nickname'}, 1);
 			return;
+		} else {
+			plus::spawn_reset($p);
 		}
 	},
 
@@ -6668,6 +6697,8 @@ core protecting the flag.
 				records::mark($e);
 			}
 		}
+
+		$p->{'alive'}=1;
 
 		if(chat::snarky) {
 			foreach my $snark (List::Util::shuffle(keys(%SNARKS))) {
@@ -6808,7 +6839,7 @@ core protecting the flag.
 		return if(plus::key($e, $p));
 
 		if(plus::teleport($e, $p)) {
-			if($spawn_mode!~m/died|powerup|health|portal/) {
+			if($spawn_mode!~m/died|crash|powerup|health|portal/) {
 				plus::clear_spawn($p);
 			}
 			return;
@@ -6841,6 +6872,7 @@ core protecting the flag.
 
 		foreach my $player (keys(%$pos)) {
 			next if($player==$p2->{'player'});
+			next unless($player->{'alive'});
 
 			$delta=utils::distance($x, $y, split(m/,/, $pos->{$player}));
 
@@ -6890,6 +6922,7 @@ core protecting the flag.
 		return unless($v);
 
 		$v->{'carrier'}=0;
+		$v->{'alive'}=0;
 		ball::drop;
 
 		return if($v->{'isBot'});
@@ -6901,6 +6934,10 @@ core protecting the flag.
 				$e->{'victimVelocityX'}*=-1;
 				$e->{'victimVelocityY'}*=-1;
 			}
+			plus::spawn_here($v,
+				$e->{'victimPositionX'}, $e->{'victimPositionY'},
+				$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
+		} elsif($spawn_mode eq 'crash') {
 			plus::spawn_here($v,
 				$e->{'victimPositionX'}, $e->{'victimPositionY'},
 				$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
@@ -7279,8 +7316,12 @@ also only available from the console.
 	},
 
 	'importDefaults'	=> sub {
+		my($prefix)='';
+		
+		$prefix='! ' if(config::commands('!'));
+
 		foreach my $command (plus::import_defaults) {
-			server::send($command);
+			server::send($prefix.$command);
 		}
 		stash::delete('INIT', map::name);
 	},

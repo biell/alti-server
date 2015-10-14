@@ -256,15 +256,16 @@ manage Alti+ game maps.
     persist across server restarts. To set it back, you can
     `/unset planeScale` or `/set planeScale 100`.
 
-  * **/set spawnMode [died|powerup|health|zone|near|portal|normal]**<br>
+  * **/set spawnMode [died|crash|powerup|health|zone|near|portal|normal]**<br>
     This specifies the type of respawning when a user dies, or requests
     to spawn. The type can be any of the following:
     *died* (the location of last death),
+    *crash* (same as death, but don't turn players around after crashing),
     *powerup* (the location of their last powerup of any kind),
     *health* (the location of their last health powerup),
     *zone* (zone based spawning where uses can cange their spawn zone on demand),
     *near* (nearest zone to a player when they die),
-    *portal* (players continue to spawn at the end of a portal after a death --implied with `died`, `powerup`, and `health`),
+    *portal* (players continue to spawn at the end of a portal after a death --implied with `died`, `crash`, `powerup`, and `health`),
     or *normal* (at the normal, map defined start).
     If users get into a bind, they can use `/sz start` to spawn in the
     normal location.
@@ -354,6 +355,11 @@ manage Alti+ game maps.
     location when *spawnMode* is set to `zone`.  Players will automatically
     spawn at the closest zone to their death when *spawnMode* is set to
     `near`.  See [Angles](#angles) for more information on angle specifications.
+
+    If a zone is added with the special name `start`, then this will override
+    the map-defined start locations for planes.  This feature is mostly only
+    useful to ensure human players spawn on playable areas while bots spawn
+    sequestered.
 
   * **/del zone [name] [team]**<br>
     Delete the *zone* named `name` for this map for `team`.  You can specify

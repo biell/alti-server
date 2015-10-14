@@ -2,7 +2,7 @@
 
 use strict;
 
-my($VERSION)='1.36';
+my($VERSION)='1.44';
 
 =head1 NAME
 
@@ -51,7 +51,10 @@ Display the table of contents of the map archive file.
 
 Edit the Altitude+ configuration file.  This file will be created if it does
 not already exist in the map archive.  Use this file to indicate to the
-C<alti+server> what the default settings should be for this map.
+C<alti+server> what the default settings should be for this map.  If a
+file is listed on the command-line after the archive file, it will be
+used as the F<plus.txt> file.  Otherwise, an editor will be started
+on a temporary file to be included into the map archive.
 
 =item --lzma=/path/to/lzma  or -I /path/to/lzma
 
@@ -446,11 +449,11 @@ are used to execute the text editor for Altitude+ configuration.
 =cut
 
 sub plus {
-	my($archive)=@_;
+	my($archive, $infile)=@_;
 	my($editor)=$ENV{'EDITOR'} || $ENV{'VISUAL'} || 'vi';
 	my($write, $tmpfile)=File::Temp::tempfile('plusXXXXXXXX', DIR => '/var/tmp');
+	my($read, $import)=(IO::Handle->new, IO::Handle->new);
 	my($plusfile)='plus.txt';
-	my($read)=IO::Handle->new;
 	my($found)=0;
 	my($files, $sizes, $plus);
 	my($buf);
@@ -481,11 +484,21 @@ sub plus {
 		($read, $files, $sizes)=&open_archive($archive);
 	}
 	close($write);
+	
+	unless($infile) {
+		open($import, '<', $infile);
+		open($write, '>', $tmpfile);
 
-	system($editor, $tmpfile);
+		while(read($import, $buf, 4096)) {
+			print $write $buf;
+		}
 
-	return unless(-s $tmpfile || $found);
-
+		close($write);
+		close($import);
+	} else {
+		system($editor, $tmpfile);
+		return unless(-s $tmpfile || $found);
+	}
 
 	$archive=~s/\.altx$//;
 
@@ -517,7 +530,11 @@ sub plus {
 	}
 	close($read);
 
-	open($read, '<', $tmpfile);
+	if($infile) {
+		open($read, '<', $infile);
+	} else {
+		open($read, '<', $tmpfile);
+	}
 	while(read($read, $buf, 8192)) {
 		print $write $buf;
 	}
