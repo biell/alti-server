@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.45';
+my($VERSION)='1.46';
 
 =head1 NAME
 
@@ -3921,15 +3921,13 @@ the value of C<restartMap> in seconds for downloads to complete.
 	sub complete {
 		my($client)=@_;
 		my($delta)=time()-$Time;
+		my($warmup)=$config::Warmup{map::mode}+2;
+		my($limit)=config::option('restartMap')/2;
 
 		if(delete($Client{$client})) {
 			$Count--;
 
-			if(	$Count==1							&&
-				$Max>3							&&
-				$delta > $config::Warmup{map::mode}	&&
-				$delta > config::option('restartMap')/2
-			) {
+			if($Count==1 && $Max>3 && $warmup<$delta && $delta<$limit) {
 				chat::all('Map downloads mostly complete, restarting map...');
 				server::send('changeMap', $Map);
 			}
