@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.49';
+my($VERSION)='1.50';
 
 =head1 NAME
 
@@ -1475,11 +1475,6 @@ my(@ALTIPLUS)=(
 		unless(&option('allowUploads') && &option('superAdmin')!~m/console/) {
 			return if($cmd->{'name'} eq 'upload');
 			return if($cmd->{'name'} eq 'removeMap');
-		}
-
-		if($cmd->{'name'} eq 'prey') {
-			return unless(grep(m/(^|_)mdg(_|$)/,
-				map(($_, stash::get('gameType', $_)), @Maps)));
 		}
 
 		if(&option('configSize')=~m/tiny/i) {
