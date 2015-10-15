@@ -71,6 +71,10 @@ team to be boxed up like a coop game.  Here, any Bots can be seperated
 from the rest of the game.  In 1-life games, this box should have a turret
 to clean up the Bots.
 
+If everyone agrees that a specific player should be the prey, a vote can
+be called against the `/prey` command.  This can be used to override the
+default behavior of first to join a team is the prey.
+
 ## Map Integration
 Altitude maps end with a `.altx` extension.  These are simple archive files
 which contain all the necessary information for game play.  A tool is

@@ -2,7 +2,7 @@
 
 use strict;
 
-my($VERSION)='1.44';
+my($VERSION)='1.49';
 
 =head1 NAME
 
@@ -485,7 +485,7 @@ sub plus {
 	}
 	close($write);
 	
-	unless($infile) {
+	if($infile) {
 		open($import, '<', $infile);
 		open($write, '>', $tmpfile);
 
@@ -530,11 +530,7 @@ sub plus {
 	}
 	close($read);
 
-	if($infile) {
-		open($read, '<', $infile);
-	} else {
-		open($read, '<', $tmpfile);
-	}
+	open($read, '<', $tmpfile);
 	while(read($read, $buf, 8192)) {
 		print $write $buf;
 	}
