@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.44';
+my($VERSION)='1.45';
 
 =head1 NAME
 
@@ -3366,8 +3366,6 @@ play though extended interfaces and server support.
 	sub bench {
 		my($p)=@_;
 
-		return unless($p->{'alive'});
-
 		if(map::mode('ffa')) {
 			chat::whisper($p, 'Players cannot be forced to respawn in FFA');
 			return;
@@ -6552,7 +6550,7 @@ core protecting the flag.
 			return;
 		}
 
-		$p->{'alive'}=0;
+		$p->{'alive'}=1;
 
 		#Make sure players are the correct level for their aceRank:
 		if($p->{'aceRank'}==0) {
@@ -6872,7 +6870,6 @@ core protecting the flag.
 
 		foreach my $player (keys(%$pos)) {
 			next if($player==$p2->{'player'});
-			next unless($player->{'alive'});
 
 			$delta=utils::distance($x, $y, split(m/,/, $pos->{$player}));
 
@@ -6910,6 +6907,7 @@ core protecting the flag.
 			plus::bench($p2);
 			plus::spawn_here($p2, $x2, $y2, $allowed);
 			chat::whisper($p2, 'Wrong way!');
+			chat::debug($direction, ':', $x2, $y2, $x1-$x2, $y1-$y2);
 		}
 	},
 
