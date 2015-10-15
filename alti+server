@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.47';
+my($VERSION)='1.48';
 
 =head1 NAME
 
@@ -1253,7 +1253,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 my(@ALTIPLUS)=(
 	{
 		'name'			=> 'help',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'msgs', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'required'		=> 1,
 	},
@@ -1265,7 +1265,7 @@ my(@ALTIPLUS)=(
 	},
 	{
 		'name'			=> 'list',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'msgs', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'required'		=> 1,
 	},
@@ -1283,13 +1283,13 @@ my(@ALTIPLUS)=(
 	},
 	{
 		'name'			=> 'add',
-		'arguments'		=> [['msg', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone'], 'string'],
+		'arguments'		=> [['note', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone'], 'string'],
 		'voteThreshold'	=> 100,
 		'required'		=> 1,
 	},
 	{
 		'name'			=> 'del',
-		'arguments'		=> [['msg', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
+		'arguments'		=> [['note', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
 		'voteThreshold'	=> 100,
 		'required'		=> 1,
 	},
@@ -3580,10 +3580,10 @@ play though extended interfaces and server support.
 		return(0);
 	}
 
-	sub message {
+	sub note {
 		my($e, $p)=@_;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
-		my($message)=stash::get($pickup, 'msgs', map::name);
+		my($message)=stash::get($pickup, 'notes', map::name);
 
 		chat::whisper($p, $message) if($message);
 	}
@@ -6283,19 +6283,19 @@ core protecting the flag.
 		}
 	},
 
-	'help msgs'		=> sub {
+	'help notes'		=> sub {
 		my($e, $p)=@_;
 
 		chat::whisper($p, 'Specify a message to display to players who access a powerup');
-		chat::whisper($p, '/list msgs');
-		chat::whisper($p, '/add msg <x>,<y> <message text>');
-		chat::whisper($p, '/del msg <x>,<y>');
-		chat::whisper($p, 'Note, only admins can see message texts with /list msgs');
+		chat::whisper($p, '/list notes');
+		chat::whisper($p, '/add note <x>,<y> <message text>');
+		chat::whisper($p, '/del note <x>,<y>');
+		chat::whisper($p, 'Note, only admins can see message texts with /list notes');
 	},
 
-	'list msgs'		=> sub {
+	'list notes'		=> sub {
 		my($e, $p)=@_;
-		my($msgs)=stash::get('msgs', map::name);
+		my($msgs)=stash::get('notes', map::name);
 
 		if($msgs && %$msgs) {
 			if($e->{'admin'}) {
@@ -6310,17 +6310,17 @@ core protecting the flag.
 		}
 	},
 
-	'add msg'			=> sub {
+	'add note'			=> sub {
 		my($e, $p, $x, $y, @msg)=@_;
 
-		stash::set("$x,$y", 'msgs', map::name, join(' ', @msg));
+		stash::set("$x,$y", 'notes', map::name, join(' ', @msg));
 		chat::whisper($p, "Message set for powerup at $x,$y");
 	},
 
-	'del msg'			=> sub {
+	'del note'			=> sub {
 		my($e, $p, $x, $y)=@_;
 
-		if(stash::delete("$x,$y", 'msgs', map::name)) {
+		if(stash::delete("$x,$y", 'notes', map::name)) {
 			chat::whisper($p, "Message at $x,$y deleted");
 		} else {
 			chat::whisper($p, "Could not find message at $x,$y to delete");
@@ -6889,7 +6889,7 @@ core protecting the flag.
 			chat::whisper($p, $pickup,':',join(', ', map::powerup($e)));
 		}
 
-		plus::message($e, $p);
+		plus::note($e, $p);
 
 		return if(plus::key($e, $p));
 

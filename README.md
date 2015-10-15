@@ -387,13 +387,13 @@ manage Alti+ game maps.
   * **/del powerup [name] [team]**<br>
     Delete the special powerup `name` for `team`.
 
-  * **/add msg [x],[y] [message text]**<br>
+  * **/add note [x],[y] [message text]**<br>
     Create a message associated with the powerup at coordinates `x`,`y`.
     Whenever a player trips this powerup, the message will be displayed to
     them.  This can be used to offer help to players, make fun of them, or
     congratulate them on meeting a certain objective.
 
-  * **/del msg [x],[y]**<br>
+  * **/del note [x],[y]**<br>
     Remove the message associated with the powerup at coordinates `x`,`y`.
 
   * **/! [command] [arg1] [arg2] [...]**<br>
