@@ -103,6 +103,16 @@ manage Alti+ game maps.
     should usually not be needed, as the correct side should be set by the
     server or map maker with the `/set assignTeam [left|right]` command.
 
+  * **/vote prey [player]**<br>
+    If there is an mdg (Most Dangerous Game assymetric game play) map in
+    the rotation, this command will be present.  Normally, the single player
+    is choosen as the first to join the game (first to press `f`).  If
+    greater than 60% of people believe another person should be the prey,
+    then this command can be used to change the player listed as the prey.
+
+    It is proper ettiquite for a person to nominate themselves, and not
+    to for players to be chosen against their will.
+
   * **/spawnZone [zone]**<br>
     When a player has a non-standard spawn zone, they can reset their spawn
     zone to the original map default by running `/spawnZone start`.
@@ -134,7 +144,7 @@ manage Alti+ game maps.
     still alive, you can run `/restartMap` and his will `/balanceTeams`
     without a vote.
 
-  * **/randomMap**<br>
+  * **/vote randomMap**<br>
     Change to a random map from the mapRotation.  This command requires
     a vote threshold of 66% or greater.
 

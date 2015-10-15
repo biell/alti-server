@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.46';
+my($VERSION)='1.47';
 
 =head1 NAME
 
@@ -1312,11 +1312,18 @@ my(@ALTIPLUS)=(
 		'required'		=> 1,
 	},
 	{
+		'name'			=> 'prey',
+		'arguments'		=> ['player'],
+		'argumentDescriptions' => ['Set prey'],
+		'voteThreshold'	=> 60,
+		'required'		=> 0,
+	},
+	{
 		'name'			=> 'spawnZone',
 		'arguments'		=> ['string'],
 		'argumentDescriptions' => ['Zone name'],
 		'voteThreshold'	=> 0,
-		'required'		=> 1,
+		'required'		=> 0,
 	},
 	{
 		'name'			=> 'sz',
@@ -1329,7 +1336,7 @@ my(@ALTIPLUS)=(
 		'name'			=> 'changePlane',
 		'arguments'		=> [],
 		'voteThreshold'	=> 0,
-		'required'		=> 1,
+		'required'		=> 0,
 	},
 	{
 		'name'			=> 'cp',
@@ -1468,6 +1475,11 @@ my(@ALTIPLUS)=(
 		unless(&option('allowUploads') && &option('superAdmin')!~m/console/) {
 			return if($cmd->{'name'} eq 'upload');
 			return if($cmd->{'name'} eq 'removeMap');
+		}
+
+		if($cmd->{'name'} eq 'prey') {
+			return unless(grep(m/(^|_)mdg(_|$)/,
+				map(($_, stash::get('gameType', $_)), @Maps)));
 		}
 
 		if(&option('configSize')=~m/tiny/i) {
@@ -3176,53 +3188,6 @@ play though extended interfaces and server support.
 		return($old);
 	}
 
-	sub playing {
-		my($p)=@_;
-
-		return($Stats{'players'}{'playing'}{$p});
-	}
-
-	sub leave {
-		my($p)=@_;
-
-		if($Stats{'players'}{'playing'}{$p}) {
-			delete($Stats{'players'}{'playing'}{$p});
-			if($Stats{'players'}{'count'}>0) {
-				$Stats{'players'}{'count'}--;
-			}
-			return(1);
-		} else {
-			return(0);
-		}
-	}
-
-	sub hunted {
-		if(@_) {
-			return($_[0] eq $Hunted);
-		} else {
-			return($Hunted);
-		}
-	}
-
-	sub prey {
-		my($p)=@_;
-
-		if($Hunted==$p) {
-			return(1);
-		} elsif(!$Hunted || !$Hunted->{'joined'}) {
-			$Hunted=$p;
-			return(1);
-		} else {
-			return(0);
-		}
-	}
-
-	sub cower {
-		my($p)=@_;
-
-		$Hunted=undef;
-	}
-
 	sub score {
 		my($p)=@_;
 		my($goals)=$config::Goals;
@@ -3361,6 +3326,18 @@ play though extended interfaces and server support.
 			&spawn_reset($p);
 		}
 
+	}
+
+	sub assign {
+		my($p, $team)=@_;
+
+		if(map::left($team)) {
+			server::send('assignTeam', $p->{'nickname'}, 0);
+		} elsif(map::right($team)) {
+			server::send('assignTeam', $p->{'nickname'}, 1);
+		} else {
+			server::send('assignTeam', $p->{'nickname'}, -1);
+		}
 	}
 
 	sub bench {
@@ -3664,6 +3641,82 @@ play though extended interfaces and server support.
 		if($stats->[$most]>0) {
 			$p=player::lookup($players->[$most]);
 			chat::all($text, $p->{'nickname'}) unless($p->{'isBot'});
+		}
+	}
+
+	sub playing {
+		my($p)=@_;
+
+		return($Stats{'players'}{'playing'}{$p});
+	}
+
+	sub leave {
+		my($p)=@_;
+
+		if($Stats{'players'}{'playing'}{$p}) {
+			delete($Stats{'players'}{'playing'}{$p});
+			if($Stats{'players'}{'count'}>0) {
+				$Stats{'players'}{'count'}--;
+			}
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+	sub hunted {
+		if(@_) {
+			return($_[0] eq $Hunted);
+		} else {
+			return($Hunted);
+		}
+	}
+
+	sub prey {
+		my($p)=@_;
+
+		if($Hunted==$p) {
+			return(1);
+		} elsif(!$Hunted || !$Hunted->{'joined'}) {
+			$Hunted=$p;
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+	sub cower {
+		my($p)=@_;
+
+		$Hunted=undef;
+	}
+
+	sub change_hunted {
+		my($p)=@_;
+		my($map_team)=stash::get('assignTeam', map::name);
+
+		if($Hunted==$p) {
+			return(1);
+		} elsif(!$Hunted) {
+			$Hunted=$p;
+			if(map::left($map_team) && map::left($p->{'team'})) {
+				return(1);
+			} elsif(map::right($map_team) && map::right($p->{'team'})) {
+				return(1);
+			} elsif(map::left($map_team)) {
+				&assign($p, 'right');
+			} else {
+				&assign($p, 'left');
+			}
+		} else {
+			if(map::right($map_team)) {
+				&assign($Hunted, 'right');
+				&assign($p, 'left');
+			} else {
+				&assign($Hunted, 'left');
+				&assign($p, 'right');
+			}
+			$Hunted=$p;
 		}
 	}
 
@@ -4364,7 +4417,7 @@ core protecting the flag.
 		} elsif($p->{'carrier'}) {
 			chat::whisper($p, 'You cannot /switch as a carrier');
 		} else {
-			server::send('assignTeam', $p->{'nickname'}, -1);
+			&assign($p, 'spec');
 			chat::whisper($p, 'Spectating, press `t` to join a team');
 		}
 	},
@@ -5268,16 +5321,14 @@ core protecting the flag.
 			chat::all(map::name, 'is configured to force players left');
 
 			foreach my $m (player::list) {
-				server::send('assignTeam', $m->{'nickname'}, 0)
-					if(map::right($m->{'team'}));
+				plus::assign($m, 'left') if(map::right($m->{'team'}));
 			}
 		} elsif(map::right($side)) {
 			stash::set('assignTeam', map::name, 'right');
 			chat::all(map::name, 'is configured to force players right');
 
 			foreach my $m (player::list) {
-				server::send('assignTeam', $m->{'nickname'}, 0)
-					if(map::left($m->{'team'}));
+				plus::assign($m, 'right') if(map::left($m->{'team'}));
 			}
 		} elsif($side=~m/none/i) {
 			stash::delete('assignTeam', map::name);
@@ -6362,6 +6413,14 @@ core protecting the flag.
 		}
 	},
 	
+	'prey'		=> sub {
+		my($e, $p)=@_;
+		my($nick)=@{$e->{'arguments'}};
+		my($prey)=player::lookup($nick);
+
+		plus::change_hunted($prey);
+	},
+
 	'spawnZone'	=> sub {
 		my($e, $p)=@_;
 		my($zone)=@{$e->{'arguments'}};
@@ -6563,7 +6622,7 @@ core protecting the flag.
 
 			return if(map::spec($e->{'team'}));
 
-			server::send('assignTeam', $p->{'nickname'}, -1);
+			plus::assign($p, 'spec');
 			player::infraction($p, 2);
 
 			if(exists($MILESTONES{$minlvl})) {
@@ -6607,7 +6666,7 @@ core protecting the flag.
 			#Non needed/causes problems?#plus::spawn_reset($p);
 			$p->{'team'}=$e->{'team'};
 		} else {
-			server::send('assignTeam', $p->{'nickname'}, -1);
+			plus::assign($p, 'spec');
 			$p->{'team'}=-1;
 			player::infraction($p, 0.2);
 
@@ -6619,16 +6678,16 @@ core protecting the flag.
 			if(ref($zones) eq 'HASH' && %$zones) {
 				plus::spawn_here($p, @{utils::random_value($zones)});
 			}
-			if($map_team eq 'left' && map::left($p->{'team'})) {
-				server::send('assignTeam', $p->{'nickname'}, 1);
-			} elsif($map_team eq 'right' && map::right($p->{'team'})) {
-				server::send('assignTeam', $p->{'nickname'}, 0);
+			if($map_team eq 'right' && map::right($p->{'team'})) {
+				plus::assign($p, 'left');
+			} elsif(map::left($p->{'team'})) {
+				plus::assign($p, 'right');
 			}
-		} elsif($map_team eq 'left' && map::right($p->{'team'})) {
-			server::send('assignTeam', $p->{'nickname'}, 0);
-			return;
 		} elsif($map_team eq 'right' && map::left($p->{'team'})) {
-			server::send('assignTeam', $p->{'nickname'}, 1);
+			plus::assign($p, 'right');
+			return;
+		} elsif(map::right($p->{'team'})) {
+			plus::assign($p, 'left');
 			return;
 		} else {
 			plus::spawn_reset($p);
@@ -6652,7 +6711,7 @@ core protecting the flag.
 		} elsif(plus::enter($p)) {
 			$p->{'team'}=$e->{'team'};
 		} else {
-			server::send('assignTeam', $p->{'nickname'}, -1);
+			plus::assign($p, 'spec');
 			$p->{'team'}=-1;
 			player::infraction($p, 0.2);
 			plus::spawn_reset($p);
@@ -6671,16 +6730,16 @@ core protecting the flag.
 			if(ref($zones) eq 'HASH' && %$zones) {
 				plus::spawn_here($p, @{utils::random_value($zones)});
 			}
-			if($map_team eq 'left' && map::left($p->{'team'})) {
-				server::send('assignTeam', $p->{'nickname'}, 1);
-			} elsif($map_team eq 'right' && map::right($p->{'team'})) {
-				server::send('assignTeam', $p->{'nickname'}, 0);
+			if($map_team eq 'right' && map::right($p->{'team'})) {
+				plus::assign($p, 'left');
+			} elsif(map::left($p->{'team'})) {
+				plus::assign($p, 'right');
 			}
-		} elsif($map_team eq 'left' && map::right($p->{'team'})) {
-			server::send('assignTeam', $p->{'nickname'}, 0);
-			return;
 		} elsif($map_team eq 'right' && map::left($p->{'team'})) {
-			server::send('assignTeam', $p->{'nickname'}, 1);
+			plus::assign($p, 'right');
+			return;
+		} elsif(map::right($p->{'team'})) {
+			plus::assign($p, 'left');
 			return;
 		}
 
