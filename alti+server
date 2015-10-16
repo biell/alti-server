@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.50';
+my($VERSION)='1.51';
 
 =head1 NAME
 
@@ -5441,10 +5441,14 @@ core protecting the flag.
 		my($scores)=stash::get('ballScore', map::name);
 		my($goals)=$config::Goals;
 
+		return unless(map::mode('ball'));
+
 		if($scores) {
 			$scores->[0]=$goals+$scores->[0] if($scores->[0]<0);
 			$scores->[1]=$goals+$scores->[1] if($scores->[1]<0);
 			server::send('overrideBallScore', @$scores);
+		} else {
+			server::send('overrideBallScore', 0, 0);
 		}
 	},
 
@@ -6897,6 +6901,7 @@ core protecting the flag.
 
 		if(stash::get($pickup, 'oneways', map::name)) {
 			if(plus::no_repeats($e, $p, 'oneway')) {
+				server::send('logServerStatus'); #Slow Plane Positions
 				server::trigger('logPlanePositions', 'oneway', $e, $p)
 			}
 		} elsif($spawn_mode eq 'health') {
