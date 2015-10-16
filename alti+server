@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.52';
+my($VERSION)='1.53';
 
 =head1 NAME
 
@@ -6689,7 +6689,7 @@ core protecting the flag.
 		} elsif($map_team eq 'right' && map::left($p->{'team'})) {
 			plus::assign($p, 'right');
 			return;
-		} elsif(map::right($p->{'team'})) {
+		} elsif($map_team eq 'left' && map::right($p->{'team'})) {
 			plus::assign($p, 'left');
 			return;
 		} else {
@@ -6741,7 +6741,7 @@ core protecting the flag.
 		} elsif($map_team eq 'right' && map::left($p->{'team'})) {
 			plus::assign($p, 'right');
 			return;
-		} elsif(map::right($p->{'team'})) {
+		} elsif($map_team eq 'left' && map::right($p->{'team'})) {
 			plus::assign($p, 'left');
 			return;
 		}
