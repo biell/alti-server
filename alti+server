@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.51';
+my($VERSION)='1.52';
 
 =head1 NAME
 
@@ -4412,7 +4412,7 @@ core protecting the flag.
 		} elsif($p->{'carrier'}) {
 			chat::whisper($p, 'You cannot /switch as a carrier');
 		} else {
-			&assign($p, 'spec');
+			plus::assign($p, 'spec');
 			chat::whisper($p, 'Spectating, press `t` to join a team');
 		}
 	},
@@ -6596,10 +6596,9 @@ core protecting the flag.
 	'teamChange'		=> sub {
 		my($e, $p)=@_;
 		my($map_team)=stash::get('assignTeam', map::name);
-		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name);
 		my($minlvl)=0;
 		my(@badge)=();
-		my($planes, $intro);
+		my($zones, $planes, $intro);
 		
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
@@ -6674,6 +6673,11 @@ core protecting the flag.
 
 		#Ensure players are on the correct team:
 		if(map::type('mdg') && plus::prey($p)) {
+			if(map::right($map_team)) {
+				$zones=stash::get('zones', map::left, 'zones', map::name);
+			} else {
+				$zones=stash::get('zones', map::right, 'zones', map::name);
+			}
 			if(ref($zones) eq 'HASH' && %$zones) {
 				plus::spawn_here($p, @{utils::random_value($zones)});
 			}
