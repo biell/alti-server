@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.53';
+my($VERSION)='1.54';
 
 =head1 NAME
 
@@ -99,7 +99,7 @@ my($FATAL_SERVER_ERRORS)=join('|',
 	'ERROR : serverLoop disrupted',
 );
 
-my(%HOOKS, %CONSOLE);
+my(%HOOKS, %CONSOLE, %ALTIPLUS);
 
 =head2 Interface
 
@@ -1250,138 +1250,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 =cut
 
-my(@ALTIPLUS)=(
-	{
-		'name'			=> 'help',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
-		'voteThreshold'	=> 0,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'upload',
-		'arguments'		=> [['official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url'], 'string'],
-		'voteThreshold'	=> 100,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'list',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'intro', 'records']],
-		'voteThreshold'	=> 0,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'set',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys'], 'string'],
-		'voteThreshold'	=> 100,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'unset',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys']],
-		'voteThreshold'	=> 100,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'add',
-		'arguments'		=> [['note', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone'], 'string'],
-		'voteThreshold'	=> 100,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'del',
-		'arguments'		=> [['note', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
-		'voteThreshold'	=> 100,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'restartServer',
-		'arguments'		=> [],
-		'voteThreshold'	=> 100,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'randomMap',
-		'arguments'		=> [],
-		'voteThreshold'	=> 66,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'removeMap',
-		'arguments'		=> ['map'],
-		'voteThreshold'	=> 100,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'prey',
-		'arguments'		=> ['player'],
-		'argumentDescriptions' => ['Set prey'],
-		'voteThreshold'	=> 60,
-		'required'		=> 0,
-	},
-	{
-		'name'			=> 'spawnZone',
-		'arguments'		=> ['string'],
-		'argumentDescriptions' => ['Zone name'],
-		'voteThreshold'	=> 0,
-		'required'		=> 0,
-	},
-	{
-		'name'			=> 'sz',
-		'arguments'		=> ['string'],
-		'argumentDescriptions' => ['Zone name'],
-		'voteThreshold'	=> 0,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'changePlane',
-		'arguments'		=> [],
-		'voteThreshold'	=> 0,
-		'required'		=> 0,
-	},
-	{
-		'name'			=> 'cp',
-		'arguments'		=> [],
-		'voteThreshold'	=> 0,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'switch',
-		'arguments'		=> [],
-		'voteThreshold'	=> 0,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'talk',
-		'arguments'		=> ['player', 'string'],
-		'voteThreshold'	=> 0,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'mesg',
-		'arguments'		=> [['Yes', 'No', '?']],
-		'voteThreshold'	=> 0,
-		'required'		=> 1,
-	},
-	{
-		'name'			=> 'sum',
-		'arguments'		=> [['crc32', 'md5', 'sha1', 'sha256']],
-		'voteThreshold'	=> 0,
-		'required'		=> 0,
-	},
-	{
-		'name'			=> 'logPickups',
-		'arguments'		=> [],
-		'voteThreshold'	=> 0,
-		'required'		=> 0,
-	},
-	{
-		'name'			=> 'restartMap',
-		'arguments'		=> [],
-		'voteThreshold'	=> 0,
-		'required'		=> 0,
-	},
-);
-
 {	package config;
 
 	use Storable;
@@ -1462,23 +1330,67 @@ my(@ALTIPLUS)=(
 		return($size);
 	}
 
+	sub custom_commands {
+		return(sort(keys(%ALTIPLUS)));
+	}
+
+	sub custom_command {
+		my($name)=@_;
+		my($config_size)=&option('configSize');
+
+		if(exists($ALTIPLUS{$name})) {
+			if($config_size=~m/$ALTIPLUS{$name}{'restrict'}/) {
+				return(0);
+			} else {
+				return(
+					stash::get($name, 'command')	//
+					$ALTIPLUS{$name}{'enabled'}
+				);
+			}
+		} else {
+			return(undef);
+		}
+	}
+
+	sub custom_command_set {
+		my($name, $value)=@_;
+
+		if(exists($ALTIPLUS{$name})) {
+			stash::set($name, 'command', $value);
+			return(1);
+		} else {
+			return(undef);
+		}
+	}
+
+	sub custom_command_unset {
+		my($name)=@_;
+
+		if(exists($ALTIPLUS{$name})) {
+			stash::del($name, 'command');
+			return(1);
+		} else {
+			return(undef);
+		}
+	}
+
 	sub _write_custom_commands {
 		my($cmd)=Storable::dclone($_[0]);
 		my($fh)=IO::Handle->new;
+		my($config_size)=&option('configSize');
+		my($enabled)=stash::get($cmd->{'name'}, 'command')//$cmd->{'enabled'};
 		my($json);
-
-		unless(&option('enableTalk')) {
-			return if($cmd->{'name'} eq 'talk');
-			return if($cmd->{'name'} eq 'mesg');
-		}
 
 		unless(&option('allowUploads') && &option('superAdmin')!~m/console/) {
 			return if($cmd->{'name'} eq 'upload');
 			return if($cmd->{'name'} eq 'removeMap');
 		}
 
-		if(&option('configSize')=~m/tiny/i) {
-			return unless($cmd->{'required'});
+		if(!$enabled) {
+			return;
+		} elsif($cmd->{'restrict'} && $config_size=~m/$cmd->{'restrict'}/) {
+			return;
+		} elsif(&option('configSize')=~m/tiny/i) {
 			return if($cmd->{'voteThreshold'}==100 && $cmd->{'name'} ne '!');
 
 			delete($cmd->{'argumentDescriptions'});
@@ -1492,7 +1404,8 @@ my(@ALTIPLUS)=(
 			}
 		}
 
-		delete($cmd->{'required'});
+		delete($cmd->{'enabled'});
+		delete($cmd->{'restrict'});
 
 		$json=json::encode($cmd);
 		open($fh, '>>', $Custfile);
@@ -1641,14 +1554,7 @@ my(@ALTIPLUS)=(
 
 		rename($Custfile, $Custfile_o);
 
-		&_write_custom_commands({
-			"name"			=> "!",
-			"arguments"		=> ["string"],
-			"voteThreshold"	=> 100,
-			"required"		=> 1,
-		}) if(&option('configSize')=~m/tiny/i);
-
-		foreach my $cmd (@ALTIPLUS) {
+		foreach my $cmd (values(%ALTIPLUS)) {
 			if($cmd->{'arguments'} && @{$cmd->{'arguments'}}) {
 				$Commands{$cmd->{'name'}}=$cmd->{'arguments'};
 			} else {
@@ -1665,6 +1571,10 @@ my(@ALTIPLUS)=(
 				['list', 'set', 'unset', 'add', 'del'],
 				[sort(keys(%OPTIONS))],
 				'string',
+			];
+		$Commands{'command'}=[
+				['list', 'enable', 'disable', 'unset'],
+				['all', sort(keys(%ALTIPLUS))]
 			];
 		$Commands{'importDefaults'}=undef;
 		$Commands{'stashDisplay'}=['map'];
@@ -1899,6 +1809,172 @@ my(@ALTIPLUS)=(
 	}
 
 }
+
+%ALTIPLUS=(
+	'!' => {
+		'name'			=> '!',
+		'arguments'		=> ['string'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 1,
+		'restrict'		=> 'normal|small',
+	},
+
+	'help' => {
+		'name'			=> 'help',
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 1,
+	},
+
+	'upload' => {
+		'name'			=> 'upload',
+		'arguments'		=> [['official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url'], 'string'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> config::option('allowUploads'),
+	},
+
+	'list' => {
+		'name'			=> 'list',
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'intro', 'records']],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 1,
+	},
+
+	'set' => {
+		'name'			=> 'set',
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys'], 'string'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
+	},
+
+	'unset' => {
+		'name'			=> 'unset',
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys']],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
+	},
+
+	'add' => {
+		'name'			=> 'add',
+		'arguments'		=> [['note', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone'], 'string'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
+	},
+
+	'del' => {
+		'name'			=> 'del',
+		'arguments'		=> [['note', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
+	},
+
+	'restartServer' => {
+		'name'			=> 'restartServer',
+		'arguments'		=> [],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 1,
+	},
+
+	'randomMap' => {
+		'name'			=> 'randomMap',
+		'arguments'		=> [],
+		'voteThreshold'	=> 66,
+		'enabled'			=> 1,
+	},
+
+	'removeMap' => {
+		'name'			=> 'removeMap',
+		'arguments'		=> ['map'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> config::option('allowUploads'),
+	},
+
+	'prey' => {
+		'name'			=> 'prey',
+		'arguments'		=> ['player'],
+		'argumentDescriptions' => ['Set prey'],
+		'voteThreshold'	=> 60,
+		'enabled'			=> 0,
+	},
+
+	'spawnZone' => {
+		'name'			=> 'spawnZone',
+		'arguments'		=> ['string'],
+		'argumentDescriptions' => ['Zone name'],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
+	},
+	'sz' => {
+		'name'			=> 'sz',
+		'arguments'		=> ['string'],
+		'argumentDescriptions' => ['Zone name'],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 1,
+	},
+
+	'changePlane' => {
+		'name'			=> 'changePlane',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 0,
+		'restrict'		=> 'tiny',
+	},
+	'cp' => {
+		'name'			=> 'cp',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 1,
+	},
+
+	'switch' => {
+		'name'			=> 'switch',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 1,
+	},
+
+	'talk' => {
+		'name'			=> 'talk',
+		'arguments'		=> ['player', 'string'],
+		'voteThreshold'	=> 0,
+		'enabled'			=> config::option('enableTalk'),
+	},
+
+	'mesg' => {
+		'name'			=> 'mesg',
+		'arguments'		=> [['Yes', 'No', '?']],
+		'voteThreshold'	=> 0,
+		'enabled'			=> config::option('enableTalk'),
+	},
+
+	'sum' => {
+		'name'			=> 'sum',
+		'arguments'		=> [['crc32', 'md5', 'sha1', 'sha256']],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 0,
+	},
+
+	'logPickups' => {
+		'name'			=> 'logPickups',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 0,
+	},
+
+	'restartMap' => {
+		'name'			=> 'restartMap',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'enabled'			=> config::option('allowUploads'),
+		'restrict'		=> 'tiny',
+	},
+);
+
 
 =head2 AltBouncer
 
@@ -7374,6 +7450,43 @@ also only available from the console.
 		}
 	},
 
+	'command'		=> sub {
+		my($action, $name)=@_;
+		my($s)=player::server;
+
+		if($action eq 'list') {
+			'defer';
+		} elsif($action eq 'enable') {
+			unless(config::custom_command_set($name, 1)) {
+				chat::whisper($s, 'Invalid command name', $name);
+				return;
+			}
+		} elsif($action eq 'disable') {
+			unless(config::custom_command_set($name, 0)) {
+				chat::whisper($s, 'Invalid command name', $name);
+				return;
+			}
+		} elsif($action eq 'unset') {
+			if(config::custom_command_unset($name)) {
+				chat::whisper($s, $name, 'restored to default');
+			} else {
+				chat::whisper($s, 'Invalid command name', $name);
+				return;
+			}
+		} else {
+			chat::whisper($s, 'Syntax: /command [list|enable|disable|unset] [...]');
+			return;
+		}
+
+		if($name=~m/all/i) {
+			foreach my $cmd (config::custom_commands) {
+				chat::whisper($s, "$cmd:", config::custom_command($cmd));
+			}
+		} else {
+			chat::whisper($s, "$name:", config::custom_command($name));
+		}
+	},
+
 	'importDefaults'	=> sub {
 		my($prefix)='';
 		
@@ -7608,6 +7721,8 @@ while(1) {
 						exit(1);
 					}
 				}
+
+				config::write_launcher_config;
 
 				server::start;
 				server::reopen_log;
