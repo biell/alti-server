@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.54';
+my($VERSION)='1.55';
 
 =head1 NAME
 
@@ -24,7 +24,7 @@ my(%OPTIONS)=(
 	secretCode	=> undef,			#The secret required to join the server
 	updateMapList	=> 1,               #Let alti+server change the mapList
 	enableTalk	=> 0,			#Enable server aided direct player chat
-	changePlane	=> 0,			#Default changePlane value is disabled
+	changePlane	=> 1,			#Number of players to disable /cp
 	hitchThreshold	=> 0.6,			#Length of serverHitch to report
 	restartMap	=> 25,			#restart map if downloads succeed in 25s
 	timeIdleChange	=> 7200,			#changeMap when server is idle for 2hrs
@@ -1564,7 +1564,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 			&_write_custom_commands($cmd);
 		}
 
-		$Reserve=compress::size_file($Custfile);
+		$Reserve=compress::size_file($Custfile)+10;
 
 		#These work only from console (see %CONSOLE):
 		$Commands{'server'}=[
@@ -1674,7 +1674,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($diff)=@_;
 		$diff-=1450;
 
-		$Reserve+=$diff;
+		$Reserve+=$diff+5;
 	}
 
 	sub new_maps {
@@ -5667,9 +5667,10 @@ core protecting the flag.
 	'help changePlane'	=> sub {
 		my($e, $p)=@_;
 
-		chat::whisper($p, 'Specify if players can change planes mid-map, defaults to 1 (ON)');
+		chat::whisper($p, 'Specify number of players (or less) to allow mid-map changePlane, 0 disables
+		');
 		chat::whisper($p, '/list changePlane');
-		chat::whisper($p, '/set changePlane [0|1]');
+		chat::whisper($p, '/set changePlane [#]');
 		chat::whisper($p, '/unset changePlane');
 	},
 
@@ -5678,7 +5679,7 @@ core protecting the flag.
 		my($cp)=stash::get('changePlane', map::name) // config::option('changePlane');
 
 		if($cp) {
-			chat::whisper($p, 'changePlane: 1 (enabled)');
+			chat::whisper($p, "changePlane: $cp (players)");
 		} else {
 			chat::whisper($p, 'changePlane: 0 (disabled)');
 		}
@@ -5689,7 +5690,7 @@ core protecting the flag.
 		my($cp)=stash::get('changePlane', map::name) // config::option('changePlane');
 
 		if($cp) {
-			chat::all('changePlane: 1 (enabled)');
+			chat::all("changePlane: $cp (players)");
 		} else {
 			chat::all('changePlane: 0 (disabled)');
 		}
@@ -5701,7 +5702,7 @@ core protecting the flag.
 		stash::set('changePlane', map::name, $cp);
 
 		if($cp) {
-			chat::all('Changing planes is enabled');
+			chat::all("Changing planes is enabled when players <= $cp");
 		} else {
 			chat::all('Changing planes is only possible after dying');
 		}
@@ -5714,7 +5715,7 @@ core protecting the flag.
 		stash::delete('changePlane', map::name);
 
 		chat::all('Changing planes is set to default',
-				$cp?'(enabled)':'(disabled)', 'state');
+				$cp?'(players)':'(disabled)', 'state');
 	},
 
 	'help gameType'	=> sub {
@@ -6539,9 +6540,12 @@ core protecting the flag.
 
 	'changePlane'	=> sub {
 		my($e, $p)=@_;
+		my($cp)=stash::get('changePlane', map::name) // config::option('changePlane');
 
 		if($p->{'carrier'}) {
 			chat::whisper($p, 'You cannot /changePlane as a carrier');
+		} elsif(player::count > $cp) {
+			chat::whisper($p, 'Too many players to /cp or /changePlane');
 		} else {
 			server::trigger('logPlanePositions', 'changePlane', $e, $p);
 		}
