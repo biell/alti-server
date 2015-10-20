@@ -355,9 +355,14 @@ manage Alti+ game maps.
     Specify that a powerup can only be used in one direction.  It isn't
     exactly one direction, it is actually 180 degrees of a circle with
     the middle being the specified direction.  So, players do not have
-    to perfectly pass through a oneway.  This device is very useful when
-    it is applied to the same powerups which make up checkpoints for
-    races, it ensures players go around the track in the correct direction.
+    to perfectly pass through a `oneway`.  This device isn't perfect.  The
+    server periodically stores plane positions, and this is the data used
+    to attain direction.  Although unlikely (because two commands are run
+    to effect the timing) it is theoretically possible that the data used
+    to check plane positions will be from just before the powerup is reached.
+    In this case, it would look like the player was traveling backwards (which
+    would trip the `oneway`).  Because of this, `oneway`s should be used
+    only after reviewing other available options.
 
   * **/del oneway [x],[y]**<br>
     Delete the oneway powerup located at coordinates `x`,`y`.

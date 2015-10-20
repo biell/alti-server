@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.55';
+my($VERSION)='1.56';
 
 =head1 NAME
 
@@ -2993,6 +2993,7 @@ they make the top 5.
 {	package records;
 
 	my($Start)=0;
+	my($Winner)=undef;
 
 	sub print {
 		my($records)=stash::get('records', map::name);
@@ -3001,11 +3002,20 @@ they make the top 5.
 		return unless(ref($records) eq 'ARRAY');
 
 		foreach my $record (@$records) {
-			chat::all(sprintf('%s : %s  (%s)',
-					utils::nth($i++),
-					utils::secs2mins($record->[0]),
-					utils::date($record->[1]),
-				));
+			if(exists($record->[2])) {
+				chat::all(sprintf('%s : %s  (%s  %s)',
+						utils::nth($i++),
+						utils::secs2mins($record->[0]),
+						utils::date($record->[1]),
+						$record->[2],
+					));
+			} else {
+				chat::all(sprintf('%s : %s  (%s)',
+						utils::nth($i++),
+						utils::secs2mins($record->[0]),
+						utils::date($record->[1]),
+					));
+			}
 		}
 	}
 
@@ -3017,11 +3027,20 @@ they make the top 5.
 		return unless(ref($records) eq 'ARRAY');
 
 		foreach my $record (@$records) {
-			chat::whisper($p, sprintf('%s : %s  (%s)',
-					utils::nth($i++),
-					utils::secs2mins($record->[0]),
-					utils::date($record->[1]),
-				));
+			if(exists($record->[2])) {
+				chat::whisper($p, sprintf('%s : %s  (%s %s)',
+						utils::nth($i++),
+						utils::secs2mins($record->[0]),
+						utils::date($record->[1]),
+						$record->[2],
+					));
+			} else {
+				chat::whisper($p, sprintf('%s : %s  (%s)',
+						utils::nth($i++),
+						utils::secs2mins($record->[0]),
+						utils::date($record->[1]),
+					));
+			}
 		}
 	}
 
@@ -3035,10 +3054,13 @@ they make the top 5.
 		my($e, $winner)=@_;
 		my($types)=config::option('recordsTypes');
 		my($records)=stash::get('records', map::name);
+		my(@holder)=(time());
 		my($place)=1;
 		my($time);
 
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
+
+		push(@holder, $Winner->{'nickname'}) if($Winner && map::type('race'));
 
 		$records=[] unless(ref($records) eq 'ARRAY');
 
@@ -3046,7 +3068,7 @@ they make the top 5.
 
 		for(my $i=0; $i<@$records; $i++) {
 			if($time<$records->[$i][0]) {
-				splice(@$records, $i, 0, [$time, time()]);
+				splice(@$records, $i, 0, [$time, @holder]);
 				pop(@$records) if(@$records>5);
 				last;
 			} else {
@@ -3056,7 +3078,7 @@ they make the top 5.
 
 		if(@$records) {
 			if($place<=5) {
-				push(@$records, [$time, time()]) if(@$records<$place);
+				push(@$records, [$time, @holder]) if(@$records<$place);
 				stash::set('records', map::name, $records);
 			}
 
@@ -3071,7 +3093,7 @@ they make the top 5.
 			}
 			chat::all('-----------------------');
 		} else {
-			stash::set('records', map::name, [[$time, time()]]);
+			stash::set('records', map::name, [[$time, @holder]]);
 		}
 	}
 
@@ -3094,6 +3116,16 @@ they make the top 5.
 		}
 
 		return($found);
+	}
+
+	sub winner {
+		my($p)=@_;
+
+		$Winner=$p;
+	}
+
+	sub init {
+		$Winner=undef;
 	}
 
 }
@@ -3264,8 +3296,14 @@ play though extended interfaces and server support.
 		my($goals)=$config::Goals;
 		my(@score)=ball::score($p);
 
-		$Stats{'winner'}='left'	if($score[0] >= $goals);
-		$Stats{'winner'}='right'	if($score[1] >= $goals);
+		if($score[0] >= $goals) {
+			$Stats{'winner'}='left';
+			records::winner($p);
+		}
+		if($score[1] >= $goals) {
+			$Stats{'winner'}='right';
+			records::winner($p);
+		}
 	}
 
 	sub game_over {
@@ -3836,6 +3874,7 @@ play though extended interfaces and server support.
 		$Hunted=undef;
 		$Active=0;
 
+		records::init;
 		&round;
 
 		foreach my $player (player::list) {
