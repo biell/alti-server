@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.58';
+my($VERSION)='1.59';
 
 =head1 NAME
 
@@ -1995,6 +1995,12 @@ them to the AltBouncer system.
 
 	my(%Seen)=();
 
+	my(%Exits)=(
+		6	=> 'Could not resolve host',
+		7	=> 'Failed to connect to host',
+		28	=> 'Operation timeout',
+	);
+
 	sub add {
 		my($p)=@_;
 		my($log)=IO::Handle->new;
@@ -2094,7 +2100,7 @@ them to the AltBouncer system.
 		close($upload);
 
 		if($?) {
-			ui::slog('ERROR : CURL EXIT STATUS:', $?>>8);
+			ui::slog('ERROR : CURL EXIT STATUS:', $?>>8, $Exits{$?>>8});
 		} elsif($rejected) {
 			ui::slog('WARN  : curl upload rejected by AltBouncer');
 			%Seen=();
