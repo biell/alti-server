@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='1.56';
+my($VERSION)='1.58';
 
 =head1 NAME
 
@@ -749,14 +749,14 @@ L<perl(1)> should be used to ensure basic operation.
 
 	sub date {
 		my($time)=@_;
-		my($now)=time();
+		my($delta)=time()-$time;
 
-		if($time>($now-60)) {
+		if($delta<60) {
 			return('now');
-		} elsif($time>($now-3600)) {
-			return(sprintf('%d minutes ago', ($now-$time)/60));
-		} elsif($time>($now-86400)) {
-			return(POSIX::strftime("today at %H:%M", gmtime($time)));
+		} elsif($delta<6000) {
+			return(sprintf('%d minutes ago', $delta/60));
+		} elsif($delta<108000) {
+			return(sprintf('%.1f hours ago', $delta/3600));
 		} else {
 			return(POSIX::strftime("%Y-%m-%d", gmtime($time)));
 		}
@@ -2311,6 +2311,69 @@ directly with it to manage the instance.
 		} else {
 			return();
 		}
+	}
+
+}
+
+=head2 Queue
+
+The B<alti+server> allows tasks to be queued for a future time (in seconds).
+The time is a minimum, and not garunteed to be very accurate.  Each time
+the main loop is executed, the queue is checked and executed after the
+main loop input is completed.  When players are on-line, the pingByPlayer
+log entry occurs every 5 seconds; so, your action whould (at least) be executed
+within this threshold.
+
+=cut
+
+{	package queue;
+
+	my(%Queue)=();
+	my($Id)=0;
+
+	sub schedule(& $) {
+		my($code, $delay)=@_;
+		my($time)=time()+$delay;
+
+		$Id++;
+
+		$Queue{$Id}=[$time, $code];
+
+		return($Id);
+	}
+
+	sub delete {
+		my($id)=@_;
+
+		delete($Queue{$id});
+	}
+
+	sub peek {
+		my($now)=time();
+		my(@tasks)=();
+
+		foreach my $task (values(%Queue)) {
+			push(@tasks, $task) if($task->[0]<$now);
+		}
+
+		return(@tasks);
+	}
+
+	sub execute {
+		my($now)=time();
+		my(@tasks)=();
+
+		foreach my $id (sort(keys(%Queue))) {
+			if($Queue{$id}[0]<$now) {
+
+				$Queue{$id}[1]->();
+
+				push(@tasks, $id);
+				delete($Queue{$id});
+			}
+		}
+
+		return(@tasks);
 	}
 
 }
@@ -4536,14 +4599,14 @@ core protecting the flag.
 		my($e, $p)=@_;
 		local($_)=$e->{'arguments'}[0];
 
-		if(m/y(es)?/i) {
-			stash::delete('block', $p->{'nickname'});
+		if(m/y(es)?|1/i) {
+			stash::delete('block', $p->{'nickname'}, 'player');
 			chat::whisper($p, "Private on-server messaging enabled");
-		} elsif(m/no?/i) {
-			stash::set('block', $p->{'nickname'}, 1);
+		} elsif(m/no?|0/i) {
+			stash::set('block', $p->{'nickname'}, 'player', 1);
 			chat::whisper($p, "Private on-server messaging disabled");
 		} else {
-			if(stash::get('block', $p->{'nickname'})) {
+			if(stash::get('block', $p->{'nickname'}, 'player')) {
 				chat::whisper($p, "Private on-server messaging disabled");
 			} else {
 				chat::whisper($p, "Private on-server messaging enabled");
@@ -4584,7 +4647,7 @@ core protecting the flag.
 			chat::whisper($p, 'language(', player::infraction($p, 1), ')');
 		} elsif($p->{'nickname'} eq 'server') {
 			chat::whisper($to, $msg);
-		} elsif(!stash::get('block', $to->{'nickname'})) {
+		} elsif(!stash::get('block', $to->{'nickname'}, 'player')) {
 			ui::chat_log($to->{'nickname'}, $p->{'nickname'}, $msg);
 			server::send('serverWhisper', $to->{'nickname'}, "$p->{'nickname'}> $msg");
 		} else {
@@ -5716,23 +5779,21 @@ core protecting the flag.
 	'list changePlane'	=> sub {
 		my($e, $p)=@_;
 		my($cp)=stash::get('changePlane', map::name) // config::option('changePlane');
+		my($state)='enabled';
 
-		if($cp) {
-			chat::whisper($p, "changePlane: $cp (players)");
-		} else {
-			chat::whisper($p, 'changePlane: 0 (disabled)');
-		}
+		$state='disabled' if(player::count > $cp);
+
+		chat::whisper($p, "changePlane: $cp ($state)");
 	},
 
 	'enable changePlane'	=> sub {
 		my($e, $p)=@_;
 		my($cp)=stash::get('changePlane', map::name) // config::option('changePlane');
+		my($state)='enabled';
 
-		if($cp) {
-			chat::all("changePlane: $cp (players)");
-		} else {
-			chat::all('changePlane: 0 (disabled)');
-		}
+		$state='disabled' if(player::count > $cp);
+
+		chat::all("changePlane: $cp ($state)");
 	},
 
 	'set changePlane'	=> sub {
@@ -5833,7 +5894,11 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($intro)=stash::get('intro', map::name);
 
-		chat::all($intro) if($intro);
+		if($intro) {
+			foreach my $msg (split(m/\s*;+\s*/, $intro)) {
+				chat::all($msg);
+			}
+		}
 	},
 
 	'set intro'		=> sub {
@@ -6759,7 +6824,11 @@ core protecting the flag.
 			$intro=stash::get('intro', map::name);
 
 			chat::whisper($p, 'Allowed Planes:', $planes) if($planes);
-			chat::whisper($p, $intro) if($intro);
+			if($intro) {
+				foreach my $msg (split(m/\s*;+\s*/, $intro)) {
+					queue::schedule { chat::whisper($p, $msg) } 5;
+				}
+			}
 
 			$p->{'stats'}{'intro'}=1;
 		}
@@ -7811,6 +7880,8 @@ while(1) {
 			input::stdin;
 		}
 	}
+
+	queue::execute;
 }
 
 END {
