@@ -753,6 +753,11 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     of each round.  Additionally, a team will be congratulated if they
     score in the top 5.
 
+    For game types of `race`, `alti+server` will keep the name of the
+    winner.  If the team the winner is on has exactly 1 available spawn
+    point for members of that team, then the individual name is stored.
+    Otherwise, the color of the team is stored with the record.
+
   * **rotationRE [RE]**<br>
     Not all maps need to be in the map rotation, and should only
     be available via an admin */changeMap* or a */vote changeMap*.

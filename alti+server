@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.59';
+my($VERSION)='1.60';
 
 =head1 NAME
 
@@ -97,6 +97,17 @@ my($FATAL_SERVER_ERRORS)=join('|',
 	'No suitable Java Virtual Machine could be found',
 	'no available nuons!',
 	'ERROR : serverLoop disrupted',
+);
+
+my(%CURL_RV)=(
+	6	=> 'Could not resolve host',
+	7	=> 'Failed to connect to host',
+	28	=> 'Operation timeout',
+	35	=> 'SSL Error',
+	47	=> 'Too many redirects',
+	53	=> 'No SSL support on localhost',
+	63	=> 'File size limit exceeded',
+	67	=> 'Authentication Failure',
 );
 
 my(%HOOKS, %CONSOLE, %ALTIPLUS);
@@ -709,12 +720,6 @@ L<perl(1)> should be used to ensure basic operation.
 		$a*=3.14159/180;	#convert to radians
 
 		return($x*cos($a)-$y*sin($a), $x*sin($a)+$y*cos($a));
-	}
-
-	sub random_value {
-		my(@values)=values(%{$_[0]});
-
-		return($values[int(rand(@values))]);
 	}
 
 	sub uuid {
@@ -1995,12 +2000,6 @@ them to the AltBouncer system.
 
 	my(%Seen)=();
 
-	my(%Exits)=(
-		6	=> 'Could not resolve host',
-		7	=> 'Failed to connect to host',
-		28	=> 'Operation timeout',
-	);
-
 	sub add {
 		my($p)=@_;
 		my($log)=IO::Handle->new;
@@ -2100,7 +2099,7 @@ them to the AltBouncer system.
 		close($upload);
 
 		if($?) {
-			ui::slog('ERROR : CURL EXIT STATUS:', $?>>8, $Exits{$?>>8});
+			ui::slog('ERROR : CURL EXIT STATUS:', $?>>8, $CURL_RV{$?>>8});
 		} elsif($rejected) {
 			ui::slog('WARN  : curl upload rejected by AltBouncer');
 			%Seen=();
@@ -2432,6 +2431,7 @@ types which alter the normal behavior.
 	sub definition {
 		my($map)=@_;
 		my($mapdir)=config::option('mapDir');
+		my($debug)=stash::get('debug', 'server');
 		my($cache)="$INSTALL_ROOT/maps/cache/$mapdir";
 		my($file)=<$cache/$map.altx/*.alte>;
 		my(%parser)=(
@@ -2444,9 +2444,17 @@ types which alter the normal behavior.
 				'image'			=> 'path'
 			}
 		);
+		my($ds);
 
 		if(-r $file) {
-			return(xml::decode($file, %parser));
+			$ds=xml::decode($file, %parser);
+			if($debug) {
+				$debug=Data::Dumper::Dumper($ds);
+				$debug=~s/^\$VAR1/$map/;
+				$debug=~s/        /  /g;
+				ui::slog($debug);
+			}
+			return($ds);
 		} else {
 			ui::slog("!!!  I could not find a .alte file in your  !!!");
 			ui::slog("!!!  $cache  !!!");
@@ -2660,6 +2668,16 @@ types which alter the normal behavior.
 		}
 
 		return(@powerups);
+	}
+
+	sub spawn_points {
+		my($spawns)=$Ds->{'views'}{'Game'}{'spawnPoints'}{'spawnPoints'};
+
+		if(ref($spawns) eq 'ARRAY') {
+			return(@$spawns);
+		} else {
+			return();
+		}
 	}
 
 	sub register_goal {
@@ -3129,7 +3147,13 @@ they make the top 5.
 
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
-		push(@holder, $Winner->{'nickname'}) if($Winner && map::type('race'));
+		if($Winner && map::type('race')) {
+			if(plus::spawns($winner)>1) {
+				push(@holder, map::team_color($Winner->{'team'}));
+			} else {
+				push(@holder, $Winner->{'nickname'});
+			}
+		}
 
 		$records=[] unless(ref($records) eq 'ARRAY');
 
@@ -3313,6 +3337,8 @@ and provide slightly enhanced game play.
 
 		&update_score(map::side($p));
 
+		return if($p->{'isBot'});
+
 		if($airtime>3000 && $airtime<6000) {
 			chat::laud("Nice Shot $p->{'nickname'}!");
 		}
@@ -3422,6 +3448,34 @@ play though extended interfaces and server support.
 		}
 	}
 
+	sub spawns {
+		my($p)=@_;
+		my(@spawns)=map::spawn_points;
+		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name);
+		my($spawn_zone)=stash::get('spawnMode', map::name)=~m/zone|near/;
+		my($mdg)=map::type('mdg');
+		my(@points)=();
+
+		if(ref($zones) eq 'HASH' && ($spawn_zone || $mdg)) {
+			foreach my $name (keys(%$zones)) {
+				next unless($Stats{$p->{'team'}}{'zone'}{$name} // 1);
+				next unless($Stats{$p}{$p->{'team'}}{'zone'}{$name} // 1);
+				push(@points, $zones->{$name});
+			}
+		} elsif(@spawns) {
+			foreach my $sp (@spawns) {
+				#Team 2 is ALL teams.
+				if($sp->{'team'}==2 || $sp->{'team'}==$p->{'team'}) {
+					push(@points, [@$sp{'x','y','orientation'}]);
+				}
+			}
+		} else {
+			ui::slog('There are no spawn points defined for', map::name);
+		}
+
+		return(@points);
+	}
+
 	sub spawn_previous {
 		my($p)=@_;
 
@@ -3466,6 +3520,17 @@ play though extended interfaces and server support.
 		delete($p->{'stats'}{'spawns'});
 	}
 
+	sub spawn_random {
+		my($p)=@_;
+		my(@spawns)=&spawns;
+		my($random)=int(rand(@spawns));
+
+		if(@spawns) {
+			&spawn_here($p, @{$spawns[$random]});
+		} else {
+			&spawn_reset($p);
+		}
+	}
 
 	sub clear_spawn {
 		my($p)=@_;
@@ -3605,9 +3670,12 @@ play though extended interfaces and server support.
 			if($t_stats->[0] eq $cp && @$p_stats == @$t_stats) {
 				&score($p);
 				$p->{'stats'}{'checkpoint'}++;
-				chat::all($p->{'nickname'}, 'reached checkpoint', $cp);
+				chat::all($p->{'nickname'}, ': checkpoint', $cp, 'for',
+					map::team_color($p->{'team'}));
 
 				shift(@$t_stats);
+			} else {
+				chat::whisper($p, $cp);
 			}
 
 			shift(@$p_stats);
@@ -4069,6 +4137,7 @@ with their name.
 		close($err);
 
 		waitpid($pid, 0);
+		ui::slog('ERROR : CURL EXIT STATUS:', $?>>8, $CURL_RV{$?>>8}) if($?);
 	}
 
 	sub altigame_download {
@@ -6873,7 +6942,7 @@ core protecting the flag.
 				$zones=stash::get('zones', map::right, 'zones', map::name);
 			}
 			if(ref($zones) eq 'HASH' && %$zones) {
-				plus::spawn_here($p, @{utils::random_value($zones)});
+				plus::spawn_random($p);
 			}
 			if($map_team eq 'right' && map::right($p->{'team'})) {
 				plus::assign($p, 'left');
@@ -6925,7 +6994,7 @@ core protecting the flag.
 		#Ensure players are on the correct team:
 		if(map::type('mdg') && plus::prey($p)) {
 			if(ref($zones) eq 'HASH' && %$zones) {
-				plus::spawn_here($p, @{utils::random_value($zones)});
+				plus::spawn_random($p);
 			}
 			if($map_team eq 'right' && map::right($p->{'team'})) {
 				plus::assign($p, 'left');
