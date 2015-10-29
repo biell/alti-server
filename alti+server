@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.60';
+my($VERSION)='1.61';
 
 =head1 NAME
 
@@ -1269,6 +1269,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	my(%Commands)=();
 	my(@Maps)=();
 	my(%Mapdb)=();
+	my($Harrasment)='noo+b';
 	my($Language);
 	my($Reserve)=0;
 
@@ -1807,6 +1808,16 @@ has occured.  After too many infractions, the player is kicked by the server.
 		local($_)=@_;
 
 		if(config::option('bullyKick') && m/$Language/i) {
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+	sub harrasment {
+		local($_)=@_;
+
+		if(config::option('bullyKick') && m/$Harrasment/i) {
 			return(1);
 		} else {
 			return(0);
@@ -2905,14 +2916,18 @@ is updated with them as the games progress.
 			server::send('kick', $p->{'nickname'});
 			return(0);
 		} else {
-			return($p->{'infractions'});
+			return(int($p->{'infractions'}));
 		}
 	}
 
 	sub forgive {
 		my($p)=@_;
 
-		$p->{'infractions'}-- if($p->{'infractions'}>0);
+		if($p->{'infractions'}>1) {
+			$p->{'infractions'}--;
+		} elsif($p->{'infractions'}>0) {
+			$p->{'infractions'}=0;
+		}
 	}
 
 	sub event_search {
@@ -3143,13 +3158,18 @@ they make the top 5.
 		my($records)=stash::get('records', map::name);
 		my(@holder)=(time());
 		my($place)=1;
+		my($save)=1;
 		my($time);
 
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
 		if($Winner && map::type('race')) {
 			if(plus::spawns($winner)>1) {
-				push(@holder, map::team_color($Winner->{'team'}));
+				if(map::spawn_points > player::count) {
+					$save=0;
+				} else {
+					push(@holder, map::team_color($Winner->{'team'}));
+				}
 			} else {
 				push(@holder, $Winner->{'nickname'});
 			}
@@ -3159,13 +3179,15 @@ they make the top 5.
 
 		$time=sprintf("%0.1f", $e->{'time'}/$config::Clock - $Start);
 
-		for(my $i=0; $i<@$records; $i++) {
-			if($time<$records->[$i][0]) {
-				splice(@$records, $i, 0, [$time, @holder]);
-				pop(@$records) if(@$records>5);
-				last;
-			} else {
-				$place++;
+		if($save) {
+			for(my $i=0; $i<@$records; $i++) {
+				if($time<$records->[$i][0]) {
+					splice(@$records, $i, 0, [$time, @holder]);
+					pop(@$records) if(@$records>5);
+					last;
+				} else {
+					$place++;
+				}
 			}
 		}
 
@@ -3452,7 +3474,7 @@ play though extended interfaces and server support.
 		my($p)=@_;
 		my(@spawns)=map::spawn_points;
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name);
-		my($spawn_zone)=stash::get('spawnMode', map::name)=~m/zone|near/;
+		my($spawn_zone)=stash::get('spawnMode', map::name)=~m/zone|near|after/;
 		my($mdg)=map::type('mdg');
 		my(@points)=();
 
@@ -3550,6 +3572,24 @@ play though extended interfaces and server support.
 		}
 	}
 
+	sub after {
+		my($spawn, $died)=@_;
+		my($sa)=&angle(@$spawn);
+		my($da)=&angle($died->[0]-$spawn->[0], $died->[1]-$spawn->[1]);
+		my($after)=1;
+
+		if($sa>90 && $da<0) {
+			$after=0 if(&angle(@$spawn[0,1], $sa+90)<$da);
+		} elsif($sa<=-90 && $da>0) {
+			$after=0 if(&angle(@$spawn[0,1], $sa-90)>$da);
+		} elsif($da<($sa-90) || ($sa+90)<$da) {
+			$after=0;
+		}
+
+		chat::debug('after:', $after, ':', @$spawn, ':', @$died);
+		return($after);
+	}
+
 	sub spawn_near {
 		my($p, $x, $y)=@_;
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name);
@@ -3565,6 +3605,19 @@ play though extended interfaces and server support.
 				}
 			}
 			&spawn_here($p, @{$zones->{$near}});
+		} elsif($spawn_mode eq 'after' && ref($zones) eq 'HASH' && %$zones) {
+			foreach my $zone (sort(keys(%$zones))) {
+				$try=utils::distance($x, $y, @{$zones->{$zone}}[0,1]);
+				if($try<$delta && &after($zones->{$zone}, [$x, $y])) {
+					$near=$zone;
+					$delta=$try;
+				}
+			}
+			if(exists($zones->{$near})) {
+				&spawn_here($p, @{$zones->{$near}});
+			} else {
+				&spawn_reset($p);
+			}
 		} else {
 			&spawn_reset($p);
 		}
@@ -4497,9 +4550,22 @@ died (players spawn where they last died),
 crash (same as died, but don't turn players around after crashing),
 zone (players can manually choose the location where they spawn),
 near (players spawn at the nearest defined zone location to where they die),
+after (players spawn at the closest passed zone location to where they die),
 portal (players use any number of listed health powerups and are respawned in a different location), 
 health (players spawn at the location where they pickup their last health),
 powerup (players spawn where they picked up their last powerup of any kind).
+
+The C<after> spawn type is very powerful, but must be used with a full
+understanding of how it works.  Each spawn zone is a 3-tuple of x-coord,
+y-coord, and angle.  Spawn mode C<after> spawns a player at the spawn zone
+which is the closest to their location of death AND for which the player
+has past the spawn zone.  A player is defined as being past a spawn point
+if the spawn point and angle are used to create a perpendicular line to
+the spawn angle, and the player is on the part of the map which coincides
+with the nose of a plane spawning in that zone.  This method cannot be used
+on all maps; ones which generally progress in the same direction (football,
+many coop maps, ...) are appropriate for this spawn type.
+
 
 =item Plane Limitations
 
@@ -4720,6 +4786,8 @@ core protecting the flag.
 		if(config::language($msg)) {
 			chat::whisper($p, "message not sent");
 			chat::whisper($p, 'language(', player::infraction($p, 1), ')');
+		} elsif(config::harrasment($msg)) {
+			player::infraction($p, 0.25);
 		} elsif($p->{'nickname'} eq 'server') {
 			chat::whisper($to, $msg);
 		} elsif(!stash::get('block', $to->{'nickname'}, 'player')) {
@@ -5774,7 +5842,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'Change the behavior of how users spawn when they die, or pickup powerups');
 		chat::whisper($p, '/list spawnMode');
-		chat::whisper($p, '/set spawnMode <default|died|crash|pickup|health|zone|near|portal>');
+		chat::whisper($p, '/set spawnMode <default|died|crash|pickup|health|zone|near|after|portal>');
 		chat::whisper($p, '/unset spawnMode');
 	},
 
@@ -5820,6 +5888,9 @@ core protecting the flag.
 		} elsif($spawn=~m/near/i) {
 			chat::all("Spawn in closest zone enabled, use '/sz start' to spawn normal");
 			stash::set('spawnMode', map::name, 'near');
+		} elsif($spawn=~m/after/i) {
+			chat::all("Spawn in last past zone enabled, use '/sz start' to spawn normal");
+			stash::set('spawnMode', map::name, 'after');
 		} elsif($spawn=~m/portal/i) {
 			if(map::mode('ffa')) {
 				chat::whisper($p, 'Portals do not work in FFA');
@@ -6493,7 +6564,7 @@ core protecting the flag.
 			}
 		}
 
-		if($spawn_mode eq 'zone' || $spawn_mode eq 'near') {
+		if($spawn_mode=~m/zone|near|after/) {
 			chat::whisper($p, 'No spawn zones defined') unless($any);
 		} else {
 			chat::whisper($p, 'spawnMode is not set to zone');
@@ -7043,7 +7114,7 @@ core protecting the flag.
 
 		ball::goal($e, $p);
 
-		if($spawn_mode eq 'near') {
+		if($spawn_mode=~m/near|after/) {
 	 		foreach my $player (player::list) {
 				plus::spawn_reset($player);
 			}
@@ -7063,7 +7134,7 @@ core protecting the flag.
 
 		ball::reset;
 
-		if($spawn_mode eq 'near') {
+		if($spawn_mode=~m/near|after/) {
 	 		foreach my $player (player::list) {
 				plus::spawn_reset($player);
 			}
@@ -7231,7 +7302,6 @@ core protecting the flag.
 			plus::bench($p2);
 			plus::spawn_here($p2, $x2, $y2, $allowed);
 			chat::whisper($p2, 'Wrong way!');
-			chat::debug($direction, ':', $x2, $y2, $x1-$x2, $y1-$y2);
 		}
 	},
 
@@ -7263,7 +7333,7 @@ core protecting the flag.
 			plus::spawn_here($v,
 				$e->{'victimPositionX'}, $e->{'victimPositionY'},
 				$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
-		} elsif($spawn_mode eq 'near') {
+		} elsif($spawn_mode=~m/near|after/) {
 			plus::spawn_near($v,
 				$e->{'victimPositionX'}, $e->{'victimPositionY'});
 		}
@@ -7360,8 +7430,10 @@ core protecting the flag.
 
 		if(config::language($e->{'message'})) {
 			chat::whisper($p, 'language(', player::infraction($p, 1), ')');
+		} elsif(config::harrasment($e->{'message'})) {
+			player::infraction($p, 0.25);
 		} elsif($e->{'blocked'} && config::option('bullyKick')) {
-			player::infraction($p, 0.5);
+			player::infraction($p, 0.25);
 		}
 	},
 
@@ -7451,7 +7523,7 @@ core protecting the flag.
 			}
 		}
 
-		records::enter($e);
+		queue::schedule { records::enter($e) } 2;
 
 		map::end;
 

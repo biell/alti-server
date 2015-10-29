@@ -53,6 +53,13 @@ A to B races would also be easy, with checkpoints along the way, and the
 is desired in an A to B, then setting `/set ballScore -1 -1` would also
 help accomplish this game type.
 
+Records will be kept for races.  For races where each team has a single
+spawn point, the nickname of the player who crosses the finish line first
+will be stored with the record.  If teams have multiple spawn points, then
+a record will only be saved if the number of players is at least equal
+to the number of spawn points, and then the name of the team will be stored
+with the record.
+
 ### Large Map Coops
 Many new spawn options are available with the `alti+server`. Players
 can be configured to spawn where they last died, to make continuation
