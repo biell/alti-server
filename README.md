@@ -368,8 +368,7 @@ manage Alti+ game maps.
     is issuing data from before the pickup, a delay is introduced.  It
     is not recommended to use a oneway in an area where the map would cause
     a player to cross back across the 180 degree plane of the `oneway` within
-    the scheduler's maximum garunteed 5 seconds (practically, you can get
-    away with 2 seconds).
+    2 seconds.
 
   * **/del oneway [x],[y]**<br>
     Delete the oneway powerup located at coordinates `x`,`y`.

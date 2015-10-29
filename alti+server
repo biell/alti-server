@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.62';
+my($VERSION)='1.63';
 
 =head1 NAME
 
@@ -168,7 +168,7 @@ delete($ENV{'COLUMNS'});
 	my($Chatfile)	="$INSTALL_ROOT/servers/chat.txt";
 	my($Chatfile_o)="$INSTALL_ROOT/servers/chat_old.txt";
 
-	my($Cols, $Rows, $Px, $Py)=GetTerminalSize;
+	our($Cols, $Rows, $Px, $Py)=GetTerminalSize;
 	my($Sline, $Iline)=($Rows/2-1, $Rows-3);
 	my($Iputw)=$Cols-6;
 
@@ -1006,7 +1006,7 @@ stash are automatically saved to disk.
 			$value=$value->{$next};
 		}
 
-		if(delete($value->{$_[0]})) {
+		if(defined(delete($value->{$_[0]}))) {
 			while(@hist) {
 				($value, $next)=@{pop(@hist)};
 				if(	ref($value) eq 'HASH'			&&
@@ -1272,6 +1272,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	my($Harrasment)='noo+b';
 	my($Language);
 	my($Reserve)=0;
+	my($Maplimit)=undef;
 
 	our($Port)=0;
 	our($Ping)=500; #reset from launcher_config.xml
@@ -1345,7 +1346,9 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($config_size)=&option('configSize');
 
 		if(exists($ALTIPLUS{$name})) {
-			if($config_size=~m/$ALTIPLUS{$name}{'restrict'}/) {
+			if(	exists($ALTIPLUS{$name}{'restrict'}) &&
+				$config_size=~m/$ALTIPLUS{$name}{'restrict'}/
+			) {
 				return(0);
 			} else {
 				return(
@@ -1373,7 +1376,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($name)=@_;
 
 		if(exists($ALTIPLUS{$name})) {
-			stash::del($name, 'command');
+			stash::delete($name, 'command');
 			return(1);
 		} else {
 			return(undef);
@@ -1452,7 +1455,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 			if($update_maps) {
 				if(m{</mapList>}i) {
-					foreach my $map (@Maps) {
+					foreach my $map (sort(@Maps)) {
 						s{^}{        <String value="$map" />\r\n}s;
 					}
 					$maplist=0;
@@ -1654,6 +1657,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$mapdir/*_*.altx>);
 
+		$Maplimit=@Maps unless($Maplimit);
+
 		if(&option('lobby')) {
 			@Maps=grep($_ ne &option('lobby'), @Maps);
 		}
@@ -1661,6 +1666,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 		foreach(@Maps) {
 			s|^$INSTALL_ROOT/maps/+||;
 			s|\.altx$||;
+		}
+
+		foreach my $map (splice(@Maps, $Maplimit)) {
+			ui::slog('Excluding map due to packet size constraint:', $map);
 		}
 
 		while(@Maps && compress::size_data(@Maps)>$packet_space) {
@@ -1681,6 +1690,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$diff-=1450;
 
 		$Reserve+=$diff+5;
+		$Maplimit--;
 	}
 
 	sub new_maps {
@@ -1912,7 +1922,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 	'prey' => {
 		'name'			=> 'prey',
 		'arguments'		=> ['player'],
-		'argumentDescriptions' => ['Set prey'],
 		'voteThreshold'	=> 60,
 		'enabled'			=> 0,
 	},
@@ -1920,7 +1929,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 	'spawnZone' => {
 		'name'			=> 'spawnZone',
 		'arguments'		=> ['string'],
-		'argumentDescriptions' => ['Zone name'],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -1928,7 +1936,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 	'sz' => {
 		'name'			=> 'sz',
 		'arguments'		=> ['string'],
-		'argumentDescriptions' => ['Zone name'],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 	},
@@ -2210,10 +2217,11 @@ directly with it to manage the instance.
 	}
 	
 	sub data { 
+		my($wait)=$_[0] || 300;
 		my(@streams);
 		my($hang)=time()+300;
 
-		@streams=$Streams->can_read(300);
+		@streams=$Streams->can_read($wait);
 
 		if(@streams || time()<$hang) {
 			return(@streams);
@@ -2383,7 +2391,6 @@ within this threshold.
 
 		foreach my $id (sort(keys(%Queue))) {
 			if($Queue{$id}[0]<$now) {
-
 				$Queue{$id}[1]->();
 
 				push(@tasks, $id);
@@ -2394,6 +2401,18 @@ within this threshold.
 		return(@tasks);
 	}
 
+	sub next {
+		my($now)=Time::HiRes::time;
+		my($left)=300;
+
+		if(%Queue) {
+			$left=List::Util::min($left, map($_->[0]-$now, values(%Queue)));
+
+			$left=0.2 if($left<0.2);
+		}
+
+		return($left);
+	}
 }
 
 =head2 Maps
@@ -4280,7 +4299,7 @@ the value of C<restartMap> in seconds for downloads to complete.
 		my($warmup)=$config::Warmup{map::mode}+2;
 		my($limit)=config::option('restartMap')/2;
 
-		if(delete($Client{$client})) {
+		if(defined(delete($Client{$client}))) {
 			$Count--;
 
 			if($Count==1 && $Max>3 && $warmup<$delta && $delta<$limit) {
@@ -4293,7 +4312,7 @@ the value of C<restartMap> in seconds for downloads to complete.
 	sub remove {
 		my($client)=@_;
 
-		if(delete($Client{$client})) {
+		if(defined(delete($Client{$client}))) {
 			$Count--;
 			$Max--;
 		}
@@ -6809,7 +6828,16 @@ core protecting the flag.
 
 	'logPlanePositions:changePlane'	=> sub {
 		my($e1, $p1, $e2, $p2)=@_;
-		server::trigger('logPlanePositions', 'logPlanePositions:changePlane', $e1, $p1, $e2, $p2);
+
+		if($p2->{'carrier'}) {
+			chat::whisper($p2, 'You cannot /changePlane as a carrier');
+		} else {
+			queue::schedule {
+				server::trigger(	'logPlanePositions',
+								'logPlanePositions:changePlane',
+								$e1, $p1, $e2, $p2)
+			} 1;
+		}
 	},
 
 	'logPlanePositions:logPlanePositions:changePlane'	=> sub {
@@ -6817,9 +6845,13 @@ core protecting the flag.
 		my(@pos1)=split(m/,/, $e2->{'positionByPlayer'}{$p3->{'player'}});
 		my(@pos2)=split(m/,/, $e1->{'positionByPlayer'}{$p3->{'player'}});
 
-		plus::bench($p3);
-		plus::spawn_here($p3, @pos1, $pos2[0]-$pos1[0], $pos2[1]-$pos1[1]);
-		plus::clear_spawn($p3);
+		if($p3->{'carrier'}) {
+			chat::whisper($p3, 'changePlane aborted, you are a carrier');
+		} else {
+			plus::bench($p3);
+			plus::spawn_here($p3, @pos1, $pos2[0]-$pos1[0], $pos2[1]-$pos1[1]);
+			plus::clear_spawn($p3);
+		}
 	},
 
 	'sum'		=> sub {
@@ -6971,7 +7003,11 @@ core protecting the flag.
 			$planes=stash::get('planes', map::name);
 			$intro=stash::get('intro', map::name);
 
-			chat::whisper($p, 'Allowed Planes:', $planes) if($planes);
+			if($planes) {
+				queue::schedule {
+					chat::whisper($p, 'Allowed Planes:', $planes)
+				} 3;
+			}
 			if($intro) {
 				foreach my $msg (split(m/\s*;+\s*/, $intro)) {
 					queue::schedule { chat::whisper($p, $msg) } 5;
@@ -7717,6 +7753,8 @@ also only available from the console.
 	'command'		=> sub {
 		my($action, $name)=@_;
 		my($s)=player::server;
+		my($cols)=int($ui::Cols/18);
+		my(@cmds);
 
 		if($action eq 'list') {
 			'defer';
@@ -7743,8 +7781,12 @@ also only available from the console.
 		}
 
 		if($name=~m/all/i) {
-			foreach my $cmd (config::custom_commands) {
-				chat::whisper($s, "$cmd:", config::custom_command($cmd));
+			@cmds=config::custom_commands;
+			while(@cmds) {
+				chat::whisper($s, map(
+					sprintf("%15s:%d", $_, config::custom_command($_)),
+					splice(@cmds, 0, $cols)
+				));
 			}
 		} else {
 			chat::whisper($s, "$name:", config::custom_command($name));
@@ -7932,7 +7974,7 @@ config::write_launcher_config;
 server::start;
 
 while(1) {
-	foreach my $fh (server::data) {
+	foreach my $fh (server::data(queue::next)) {
 		if(server::is_log($fh)) {
 			next unless($REQ=server::event);
 		
