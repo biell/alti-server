@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.61';
+my($VERSION)='1.62';
 
 =head1 NAME
 
@@ -2344,12 +2344,14 @@ within this threshold.
 
 {	package queue;
 
+	use Time::HiRes;
+
 	my(%Queue)=();
 	my($Id)=0;
 
 	sub schedule(& $) {
 		my($code, $delay)=@_;
-		my($time)=time()+$delay;
+		my($time)=Time::HiRes::time+$delay;
 
 		$Id++;
 
@@ -2365,7 +2367,7 @@ within this threshold.
 	}
 
 	sub peek {
-		my($now)=time();
+		my($now)=Time::HiRes::time;
 		my(@tasks)=();
 
 		foreach my $task (values(%Queue)) {
@@ -2376,7 +2378,7 @@ within this threshold.
 	}
 
 	sub execute {
-		my($now)=time();
+		my($now)=Time::HiRes::time;
 		my(@tasks)=();
 
 		foreach my $id (sort(keys(%Queue))) {
@@ -7237,10 +7239,13 @@ core protecting the flag.
 			return;
 		}
 
+		#Technically, all of these would be more accurate if delayed.  But,
+		#oneway is the only one which absolutely has to be so, and slow is bad
 		if(stash::get($pickup, 'oneways', map::name)) {
 			if(plus::no_repeats($e, $p, 'oneway')) {
-				server::send('logServerStatus'); #Slow Plane Positions
-				server::trigger('logPlanePositions', 'oneway', $e, $p)
+				queue::schedule {
+					server::trigger('logPlanePositions', 'oneway', $e, $p)
+				} 1;
 			}
 		} elsif($spawn_mode eq 'health') {
 			if(map::powerup($e, 'Health')) {

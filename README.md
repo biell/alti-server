@@ -364,12 +364,12 @@ manage Alti+ game maps.
     the middle being the specified direction.  So, players do not have
     to perfectly pass through a `oneway`.  This device isn't perfect.  The
     server periodically stores plane positions, and this is the data used
-    to attain direction.  Although unlikely (because two commands are run
-    to effect the timing) it is theoretically possible that the data used
-    to check plane positions will be from just before the powerup is reached.
-    In this case, it would look like the player was traveling backwards (which
-    would trip the `oneway`).  Because of this, `oneway`s should be used
-    only after reviewing other available options.
+    to attain direction.  To ensure that the `logPlanePositions` command
+    is issuing data from before the pickup, a delay is introduced.  It
+    is not recommended to use a oneway in an area where the map would cause
+    a player to cross back across the 180 degree plane of the `oneway` within
+    the scheduler's maximum garunteed 5 seconds (practically, you can get
+    away with 2 seconds).
 
   * **/del oneway [x],[y]**<br>
     Delete the oneway powerup located at coordinates `x`,`y`.
