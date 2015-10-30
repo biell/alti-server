@@ -123,7 +123,7 @@ pound (#) sign.
 #### These maps are complicated, are there any examples?
 
 Yes, you can take a look at the
-[https://github.com/biell/alti-maps](alti+maps) github repository
+[alti+maps](https://github.com/biell/alti-maps) github repository
 for example maps and `plus.txt` configuration files.
 
 
