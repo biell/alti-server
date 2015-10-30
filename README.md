@@ -5,6 +5,9 @@ Altitude game server wrapper to enable enhanced modes of game play.
 
   * **README.md**  The file you are reading.
 
+  * **FAQ.md**  Frequently Asked Questions, and helpful tips for server
+    administrators and map makers.
+
   * **INSTALL.txt**   A list of the quick steps to install this software.
  
   * **UNLICENSE.txt**  This software is in the Public Domain, this file

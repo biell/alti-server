@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.64';
+my($VERSION)='1.65';
 
 =head1 NAME
 
@@ -3177,6 +3177,7 @@ they make the top 5.
 		my($e, $winner)=@_;
 		my($types)=config::option('recordsTypes');
 		my($records)=stash::get('records', map::name);
+		my($min_players)=map::spawn_points;
 		my(@holder)=(time());
 		my($place)=1;
 		my($save)=1;
@@ -3184,10 +3185,9 @@ they make the top 5.
 
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
-		chat::debug(plus::spawns($Winner), map::spawn_points, player::count);
 		if($Winner && map::type('race')) {
 			if(plus::spawns($Winner)>1) {
-				if(map::spawn_points > player::count) {
+				if(player::count() < $min_players) {
 					$save=0;
 				} else {
 					push(@holder, map::team_color($Winner->{'team'}));
@@ -3219,7 +3219,11 @@ they make the top 5.
 				stash::set('records', map::name, $records);
 			}
 
-			chat::all('Record Times');
+			if($save) {
+				chat::all('Record Times');
+			} else {
+				chat::all("Record Times (minimum $min_players players)");
+			}
 			chat::all('-----------------------');
 			&print;
 
@@ -4569,7 +4573,6 @@ A number of spawn possibilities are created by B<alti+server>.  Players
 can spawn normally as always.  However, the additional methods are also
 available:
 died (players spawn where they last died),
-crash (same as died, but don't turn players around after crashing),
 zone (players can manually choose the location where they spawn),
 near (players spawn at the nearest defined zone location to where they die),
 after (players spawn at the closest passed zone location to where they die),
@@ -4779,14 +4782,22 @@ core protecting the flag.
 
 	'vote'	=> sub {
 		my($e, $p)=@_;
-		my($command)=shift(@{$e->{'arguments'}});
 		our($kicker, $kickee);
 
-		if(config::option('bullyKick') && $command eq 'kick') {
+		ui::display('','', "$p->{'nickname'} proposed: @{$e->{'arguments'}}");
+
+		if(config::option('bullyKick') && $e->{'arguments'}[0] eq 'kick') {
 			$kicker=$p;
-			$kickee=shift(@{$e->{'arguments'}});
-			player::infraction($p, 1);
+			$kickee=$e->{'arguments'}[1];
+			player::infraction($kicker, 1);
 		}
+	},
+
+	'castBallot'	=> sub {
+		my($e, $p)=@_;
+		my($vote)=shift(@{$e->{'arguments'}});
+
+		ui::display('', '', "$p->{'nickname'} voted: $vote");
 	},
 
 	'kick'	=> sub {
@@ -5864,7 +5875,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'Change the behavior of how users spawn when they die, or pickup powerups');
 		chat::whisper($p, '/list spawnMode');
-		chat::whisper($p, '/set spawnMode <default|died|crash|pickup|health|zone|near|after|portal>');
+		chat::whisper($p, '/set spawnMode <default|died|pickup|health|zone|near|after|portal>');
 		chat::whisper($p, '/unset spawnMode');
 	},
 
@@ -5892,12 +5903,9 @@ core protecting the flag.
 		if($spawn=~m/default|normal|start/i) {
 			chat::all("Player spawn returned to normal");
 			stash::delete('spawnMode', map::name);
-		} elsif($spawn=~m/die/i) {
+		} elsif($spawn=~m/die|crash/i) {
 			chat::all("Players spawn where died, use '/sz start' to spawn normal");
 			stash::set('spawnMode', map::name, 'died');
-		} elsif($spawn=~m/crash/i) {
-			chat::all("Players spawn where died, use '/sz start' to spawn normal");
-			stash::set('spawnMode', map::name, 'crash');
 		} elsif($spawn=~m/power|pick/i) {
 			chat::all("Players spawn at last powerup, use '/sz start' to spawn normal");
 			stash::set('spawnMode', map::name, 'powerup');
@@ -6946,7 +6954,11 @@ core protecting the flag.
 
 		map::busy;
 
-		ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
+		if(exists($e->{'reason'})) {
+			ui::display('', '', "< $p->{'nickname'} $e->{'message'} ($e->{'reason'})>");
+		} else {
+			ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
+		}
 
 		plus::leave($p);
 
@@ -7130,6 +7142,10 @@ core protecting the flag.
 		}
 
 		$p->{'alive'}=1;
+		$p->{'spawn'}=$e->{'time'};
+
+		@$p{'plane','perkRed','perkGreen','perkBlue','skin'}=
+			@$e{'plane','perkRed','perkGreen','perkBlue','skin'};
 
 		if(chat::snarky) {
 			foreach my $snark (List::Util::shuffle(keys(%SNARKS))) {
@@ -7343,7 +7359,9 @@ core protecting the flag.
 		if($wrong_way) {
 			plus::bench($p2);
 			plus::spawn_here($p2, $x2, $y2, $allowed);
-			chat::whisper($p2, 'Wrong way!');
+			if($x1>0 && $x2>0) { #alive
+				chat::whisper($p2, 'Wrong way!');
+			}
 		}
 	},
 
@@ -7363,15 +7381,17 @@ core protecting the flag.
 
 		plus::check_spawn($v);
 
-		if($spawn_mode eq 'died') {
-			if($e->{'player'}==-1 && $e->{'source'} eq 'plane') { #crash
-				$e->{'victimVelocityX'}*=-1;
-				$e->{'victimVelocityY'}*=-1;
+		if($spawn_mode eq 'died' || $spawn_mode eq 'crash') {
+			if(	$e->{'player'}==-1 &&
+				$e->{'source'} eq 'plane' &&
+				$e->{'time'}-$v->{'spawn'} < 1750
+			) { #crash
+				if(rand(2)<1) {
+					$e->{'victimVelocityX'}*=-10;
+				} else {
+					$e->{'victimVelocityY'}*=-10;
+				}
 			}
-			plus::spawn_here($v,
-				$e->{'victimPositionX'}, $e->{'victimPositionY'},
-				$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
-		} elsif($spawn_mode eq 'crash') {
 			plus::spawn_here($v,
 				$e->{'victimPositionX'}, $e->{'victimPositionY'},
 				$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
@@ -7861,6 +7881,14 @@ also only available from the console.
 		foreach my $key (@keys) {
 			chat::whisper($s, "$key:", $player->{$key});
 		}
+
+		chat::whisper($s, "$player->{'plane'}:",
+			"$player->{'perkRed'},",
+			"$player->{'perkGreen'},",
+			"$player->{'perkBlue'},",
+			"$player->{'skin'}",
+		) if(exists($player->{'plane'}));
+
 		chat::whisper($s, 'joined:',
 			scalar(localtime($server::Start + $player->{'time'}/$config::Clock)));
 	},
