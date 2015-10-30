@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.63';
+my($VERSION)='1.64';
 
 =head1 NAME
 
@@ -3184,8 +3184,9 @@ they make the top 5.
 
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
+		chat::debug(plus::spawns($Winner), map::spawn_points, player::count);
 		if($Winner && map::type('race')) {
-			if(plus::spawns($winner)>1) {
+			if(plus::spawns($Winner)>1) {
 				if(map::spawn_points > player::count) {
 					$save=0;
 				} else {
@@ -3213,7 +3214,7 @@ they make the top 5.
 		}
 
 		if(@$records) {
-			if($place<=5) {
+			if($save && $place<=5) {
 				push(@$records, [$time, @holder]) if(@$records<$place);
 				stash::set('records', map::name, $records);
 			}
@@ -3222,13 +3223,13 @@ they make the top 5.
 			chat::all('-----------------------');
 			&print;
 
-			if($place<=5) {
+			if($save && $place<=5) {
 				chat::all('Congratulations, you placed',  utils::nth($place));
 			} else {
 				chat::all('you',  ':', utils::secs2mins($time));
 			}
 			chat::all('-----------------------');
-		} else {
+		} elsif($save) {
 			stash::set('records', map::name, [[$time, @holder]]);
 		}
 	}
@@ -7809,26 +7810,38 @@ also only available from the console.
 		my($stash)=stash::get($map);
 		my($s)=player::server;
 
-		chat::whisper($s, '{ "'.$map.'"', ':', json::encode($stash), '}');
+		if(ref($stash) eq 'HASH') {
+			chat::whisper($s, '{ "'.$map.'"', ':', json::encode($stash), '}');
+		} else {
+			chat::whisper($s, "Usage: /stashDisplay <map>");
+		}
 	},
 
 	'stashClearSettings'	=> sub {
 		my($map)=@_;
 		my($stash)=stash::get($map);
+		my($s)=player::server;
 
-		return unless($stash);
-
-		foreach my $key (keys(%$stash)) {
-			next if($key eq 'records');
-
-			stash::delete($key, $map);
+		if(ref($stash) eq 'HASH') {
+			foreach my $key (keys(%$stash)) {
+				next if($key eq 'records');
+	
+				stash::delete($key, $map);
+			}
+		} else {
+			chat::whisper($s, "Usage: /stashClearSettings <map>");
 		}
 	},
 
 	'stashClearRecords'	=> sub {
 		my($map)=@_;
+		my($s)=player::server;
 
-		stash::delete('records', $map);
+		if(stash::delete('records', $map)) {
+			chat::whisper($s, "Records cleared for $map");
+		} else {
+			chat::whisper($s, "No records found for $map");
+		}
 	},
 
 	'showPlayer'		=> sub {
