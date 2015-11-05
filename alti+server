@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='1.65';
+my($VERSION)='1.67';
 
 =head1 NAME
 
@@ -43,7 +43,7 @@ my(%OPTIONS)=(
 	infractions	=> 10,			#10 infractions gets players kicked
 	debug		=> 0,			#Debug is on(1) or off(0)
 	awards		=> 1,			#Give out awards at the end of a round
-	recordsTypes	=> 'coop,race',     #Which map types to keep records on
+	recordsTypes	=> 'coop,race,raze',#Which map types to keep records on
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
 								# normal: all commands and help
@@ -94,6 +94,7 @@ use Data::Dumper;
 
 my($FATAL_SERVER_ERRORS)=join('|',
 	'Server config size \(\d+ bytes\) exceeds max allowed size',
+	'java.io.IOException: Oversized packet (\d+ bytes) to IP',
 	'No suitable Java Virtual Machine could be found',
 	'no available nuons!',
 	'ERROR : serverLoop disrupted',
@@ -2525,6 +2526,8 @@ types which alter the normal behavior.
 			$Type='race';
 		} elsif(m/(^|_)coop(_|$)/) {
 			$Type='coop';
+		} elsif(m/(^|_)raze(_|$)/) {
+			$Type='raze';
 		} elsif(m/(^|_)mdg(_|$)/) {
 			$Type='mdg';
 		} else {
@@ -2712,6 +2715,26 @@ types which alter the normal behavior.
 		}
 	}
 
+	sub bases {
+		my($bases)=$Ds->{'views'}{'Game'}{'Base'}{'Base'};
+
+		if(ref($bases) eq 'ARRAY') {
+			return(@$bases);
+		} else {
+			return();
+		}
+	}
+
+	sub turrets {
+		my($turrets)=$Ds->{'views'}{'Game'}{'Turret'}{'Turret'};
+
+		if(ref($turrets) eq 'ARRAY') {
+			return(@$turrets);
+		} else {
+			return();
+		}
+	}
+
 	sub register_goal {
 		my($obj)=@_;
 		my(@goal)=utils::transform($obj->{'transformation'}, -25, 0);
@@ -2839,6 +2862,12 @@ is updated with them as the games progress.
 	my(@Players)=();
 	my(@Admins)=();
 	my(%Pdb)=();
+
+	sub init {
+		@Players=();
+		@Admins=();
+		%Pdb=();
+	}
 
 	sub server {
 		return({
@@ -3302,6 +3331,13 @@ and provide slightly enhanced game play.
 		@Relay=();
 		$Last=map::spec;
 		$Team=map::spec;
+		$Shot=0;
+		$Passer=undef;
+
+		if($Carrier) {
+			$Carrier->{'carrier'}=0;
+			$Carrier=undef;
+		}
 	}
 
 	sub update_score {
@@ -3329,17 +3365,34 @@ and provide slightly enhanced game play.
 		return(@Score);
 	}
 
+	sub progress {
+		my($p, $amount)=@_;
+		my($side)=map::side($p);
+		my($goals)=$config::Goals;
+		my($new)=POSIX::floor($amount*$goals);
+
+		if($side eq 'left') {
+			return if($new==$Score[0]);
+
+			$Score[0]=$new
+		} elsif($side eq 'right') {
+			return if($new==$Score[1]);
+
+			$Score[1]=$new
+		} else {
+			return;
+		}
+		&set_score(@Score);
+	}
+
 	sub shoot {
 		my($e)=@_;
 
+		$Carrier->{'carrier'}=0;
+
 		$Passer=$Carrier;
 		$Carrier=undef;
-
-		if($e->{'type'} eq 'powerupUse' && $e->{'powerup'} eq 'Ball') {
-			return($Shot=$e->{'time'});
-		} else {
-			return(undef);
-		}
+		$Shot=$e->{'time'};
 	}
 
 	sub catch {
@@ -3350,6 +3403,7 @@ and provide slightly enhanced game play.
 			return(undef);
 		}
 
+		$Shot=0;
 		$Carrier=$p;
 
 		$Last=$Team;
@@ -3379,15 +3433,11 @@ and provide slightly enhanced game play.
 		my($e, $p)=@_;
 		my($airtime)=$e->{'time'}-$Shot;
 
-		$Shot=0;
-		$Passer=undef;
-		$Carrier=undef;
-
 		&update_score(map::side($p));
 
 		return if($p->{'isBot'});
 
-		if($airtime>3000 && $airtime<6000) {
+		if(!$p->{'carrier'} && 3000<$airtime && $airtime<6000) {
 			chat::laud("Nice Shot $p->{'nickname'}!");
 		}
 	}
@@ -3426,6 +3476,13 @@ play though extended interfaces and server support.
 	sub round {
 		ball::new;		#Can ball have multiple rounds?
 		#$Hunted=undef;	#Should hunted change per round?
+
+		if(map::type('raze')) {
+			foreach my $team (map::teams) {
+				$Stats{$team}{'structure'}{'remaining'}=
+					$Stats{$team}{'structure'}{'total'};
+			}
+		}
 	}
 
 	sub active {
@@ -3764,6 +3821,22 @@ play though extended interfaces and server support.
 		return($is_cp);
 	}
 
+	sub destroy {
+		my($p)=@_;
+		my($structure)=$Stats{$p->{'team'}}{'structure'};
+		my($progress);
+
+		$structure->{'remaining'}--;
+
+		$progress=1-$structure->{'remaining'}/$structure->{'total'};
+			
+		ball::progress($p, $progress);
+
+		if($structure->{'remaining'}<=5 && $progress>0.85) {
+			chat::team($p, $structure->{'remaining'}, 'remaining');
+		}
+	}
+
 	sub door_open {
 		my($p, $door)=@_;
 		my($team)=$p->{'team'};
@@ -3793,7 +3866,6 @@ play though extended interfaces and server support.
 			||  $Stats{$team}{'key'}{$key}
 		);
 	}
-
 
 	sub zone_init {
 		my($p)=@_;
@@ -4085,16 +4157,35 @@ play though extended interfaces and server support.
 	}
 
 	sub new {
+		my(@teams)=map::teams;
+		my($assign)=stash::get('assignTeam', map::name);
+
 		%Stats=();
 		%Reset=();
 		$Hunted=undef;
 		$Active=0;
 
+		foreach my $player (player::list) {
+			delete($player->{'team'});
+		}
+
 		records::init;
 		&round;
 
-		foreach my $player (player::list) {
-			delete($player->{'team'});
+		if(map::type('raze')) {
+			foreach my $mine (0, 1) {
+				$Stats{$teams[$mine]}{'structure'}{'total'}=0;
+				$Stats{$teams[$mine]}{'structure'}{'remaining'}=0;
+
+				foreach my $structure (map::bases(), map::turrets()) {
+					if(($assign && $structure->{'team'}!=$teams[$mine]) ||
+						($structure->{'team'}==$teams[!$mine])
+					) {
+						$Stats{$teams[$mine]}{'structure'}{'total'}++;
+						$Stats{$teams[$mine]}{'structure'}{'remaining'}++;
+					}
+				}
+			}
 		}
 
 		if(!stash::get(map::name) || stash::get('INIT', map::name)) {
@@ -5999,7 +6090,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'These are Alti+ game times, which are extentions to the mode');
 		chat::whisper($p, '/list gameType');
-		chat::whisper($p, '/set gameType <mapname|std|coop|race|flag|zone|mdg>');
+		chat::whisper($p, '/set gameType <mapname|std|coop|race|raze|flag|zone|mdg>');
 		chat::whisper($p, '/unset gameType');
 		chat::whisper($p, 'mapname causes the type to be inferred from the map name');
 	},
@@ -6947,23 +7038,22 @@ core protecting the flag.
 
 	'clientRemove'		=> sub {
 		my($e, $p)=@_;
+		my($reason)='';
 
+		plus::leave($p);
 		player::remove($p);
 
 		return if($p->{'isBot'});
 
 		map::busy;
 
-		if(exists($e->{'reason'})) {
-			ui::display('', '', "< $p->{'nickname'} $e->{'message'} ($e->{'reason'})>");
+		if(exists($e->{'reason'}) && $e->{'reason'} ne 'Client left.') {
+			$reason=$e->{'reason'};
+			$reason=~s/\..*$//;
+			ui::display('', '', "< $p->{'nickname'} $e->{'message'} ($reason)>");
 		} else {
 			ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
 		}
-
-		plus::leave($p);
-
-		$p->{'joined'}=0;
-		delete($p->{'player'});
 	},
 
 	'balanceTeams'		=> sub {
@@ -7441,10 +7531,13 @@ core protecting the flag.
 
 		$p->{'stats'}{$e->{'target'}}++;
 
+		plus::destroy($p) if(map::type('raze'));
+
 		if( ($p->{'stats'}{$e->{'target'}} % 35)==0 ) {
 			chat::snark($p, "$p->{'nickname'} is tearing down the house");
 		}
 	},
+
 
 	'pingSummary'	=> sub {
 		my($e, $p)=@_;
@@ -7650,11 +7743,13 @@ core protecting the flag.
 
 		server::start;
 		server::reopen_log;
+		player::init;
 	},
 
 	'updatePrepareRestart'	=> sub {
 		sleep(5);
 		server::reopen_log;
+		player::init;
 	},
 
 	'serverShutdown'	=> sub {
@@ -8057,7 +8152,7 @@ while(1) {
 				server::interrupt;
 				server::shutdown;
 
-				if($SOUT=~m/config size \((\d+) bytes\) exceeds max/) {
+				if($SOUT=~m/(\d+) bytes/) {
 					config::resize($1);
 
 					if(config::option('updateMapList')) {
@@ -8073,6 +8168,7 @@ while(1) {
 
 				server::start;
 				server::reopen_log;
+				player::init;
 			} elsif($SOUT=~m/Data Transfer Since Launch/) {
 				server::check_tail;
 	
@@ -8111,6 +8207,7 @@ while(1) {
 
 			server::start;
 			server::reopen_log;
+			player::init;
 		} else {
 			input::stdin;
 		}

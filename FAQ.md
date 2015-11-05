@@ -59,7 +59,9 @@ as appropriate.
 
 You need to pick a race type (A to A, or A to B).  If your track is not a loop,
 then you will need to place 6 checkpoints throughout your course, with the
-final checkpoint being the finish line.
+final checkpoint being the finish line.  Alternatively, you could set the
+initial ball score to 5 each with `/set ballScore 5 5`, and have 1 single
+powerup at the finish line.
 
 If your track is a loop, divide 6 by the number of laps (note, 6 laps with
 a single checkpoint will allow for aggressive cheating).  Generally 2 lap
