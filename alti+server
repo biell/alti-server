@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.68';
+my($VERSION)='1.69';
 
 =head1 NAME
 
@@ -43,7 +43,7 @@ my(%OPTIONS)=(
 	infractions	=> 10,			#10 infractions gets players kicked
 	debug		=> 0,			#Debug is on(1) or off(0)
 	awards		=> 1,			#Give out awards at the end of a round
-	recordsTypes	=> 'coop,race,raze',#Which map types to keep records on
+	recordsTypes	=> 'coop,race,ruin',#Which map types to keep records on
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
 								# normal: all commands and help
@@ -2526,8 +2526,8 @@ types which alter the normal behavior.
 			$Type='race';
 		} elsif(m/(^|_)coop(_|$)/) {
 			$Type='coop';
-		} elsif(m/(^|_)raze(_|$)/) {
-			$Type='raze';
+		} elsif(m/(^|_)ruin(_|$)/) {
+			$Type='ruin';
 		} elsif(m/(^|_)mdg(_|$)/) {
 			$Type='mdg';
 		} else {
@@ -2580,22 +2580,18 @@ types which alter the normal behavior.
 	sub mode		{ &_value_or_query('mode', @_);		}
 
 	sub left		{
-		chat::debug(@_);
 		foreach(@_) {
 			return(1) if(m/^$Teams{$Map->{'leftTeam'}}$/i);
 			return(1) if(m/^(left|<|all|both|\*|0)$/i);
 		}
-		chat::debug("value_or_query");
 		&_value_or_query('leftTeam', @_);
 	}
 
 	sub right		{
-		chat::debug(@_);
 		foreach(@_) {
 			return(1) if(m/^$Teams{$Map->{'rightTeam'}}$/i);
 			return(1) if(m/^(right|>|all|both|\*|1)$/i);
 		}
-		chat::debug("value_or_query");
 		&_value_or_query('rightTeam', @_);
 	}
 
@@ -3485,7 +3481,7 @@ play though extended interfaces and server support.
 		ball::new;		#Can ball have multiple rounds?
 		#$Hunted=undef;	#Should hunted change per round?
 
-		if(map::type('raze')) {
+		if(map::type('ruin')) {
 			foreach my $team (map::teams) {
 				$Stats{$team}{'structure'}{'remaining'}=
 					$Stats{$team}{'structure'}{'total'};
@@ -3677,7 +3673,6 @@ play though extended interfaces and server support.
 			$after=0;
 		}
 
-		chat::debug('after:', $after, ':', @$spawn, ':', @$died);
 		return($after);
 	}
 
@@ -3834,7 +3829,7 @@ play though extended interfaces and server support.
 		my($structure)=$Stats{$p->{'team'}}{'structure'};
 		my($progress);
 
-		return unless(map::type('raze'));
+		return unless(map::type('ruin'));
 
 		$structure->{'remaining'}--;
 
@@ -4182,7 +4177,7 @@ play though extended interfaces and server support.
 		records::init;
 		&round;
 
-		if(map::type('raze')) {
+		if(map::type('ruin')) {
 			foreach my $mine (0, 1) {
 				$Stats{$teams[$mine]}{'structure'}{'total'}=0;
 				$Stats{$teams[$mine]}{'structure'}{'remaining'}=0;
@@ -6100,7 +6095,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'These are Alti+ game times, which are extentions to the mode');
 		chat::whisper($p, '/list gameType');
-		chat::whisper($p, '/set gameType <mapname|std|coop|race|raze|flag|zone|mdg>');
+		chat::whisper($p, '/set gameType <mapname|std|coop|race|ruin|flag|zone|mdg>');
 		chat::whisper($p, '/unset gameType');
 		chat::whisper($p, 'mapname causes the type to be inferred from the map name');
 	},

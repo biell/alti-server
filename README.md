@@ -63,14 +63,14 @@ a record will only be saved if the number of players is at least equal
 to the number of spawn points, and then the name of the team will be stored
 with the record.
 
-### Raze maps
-If TBD is good, then total annihilation is even better.  Raze game types
+### Ruin maps
+If TBD is good, then total annihilation is even better.  Ruin game types
 require the player to destroy every structure not owned by them.  There
-are two types of Raze maps, team-style and coop-style.  `alti+server`
+are two types of Ruin maps, team-style and coop-style.  `alti+server`
 tells the difference based on if the `assignTeam` value is set.  Set it
 for coop style, and don't for team style.
 
-Raze maps which are team-style will only count structures which are of
+Ruin maps which are team-style will only count structures which are of
 a team color.  Neutral turrets and bases will not count towards the final
 score.
 
@@ -321,7 +321,7 @@ manage Alti+ game maps.
     likely to cause players to leave the game.  However, it is useful for
     MDG games, where 13 against 1 seems a little too asymmetric.
 
-  * **/set gameType [coop|flag|race|raze|zone|mdg|std|normal]**<br>
+  * **/set gameType [coop|flag|race|ruin|zone|mdg|std|normal]**<br>
     Normally the type of a game is ascertained by te file name.
     If that cannot be done properly, the game type can be set via this
     mechanism.
