@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.67';
+my($VERSION)='1.68';
 
 =head1 NAME
 
@@ -2559,7 +2559,11 @@ types which alter the normal behavior.
 	}
 
 	sub teams {
-		($Map->{'leftTeam'}, $Map->{'rightTeam'})=@_;
+		if(@_) {
+			return(($Map->{'leftTeam'}, $Map->{'rightTeam'})=@_);
+		} else {
+			return($Map->{'leftTeam'}, $Map->{'rightTeam'});
+		}
 	}
 
 	sub _value_or_query {
@@ -2576,18 +2580,22 @@ types which alter the normal behavior.
 	sub mode		{ &_value_or_query('mode', @_);		}
 
 	sub left		{
+		chat::debug(@_);
 		foreach(@_) {
 			return(1) if(m/^$Teams{$Map->{'leftTeam'}}$/i);
 			return(1) if(m/^(left|<|all|both|\*|0)$/i);
 		}
+		chat::debug("value_or_query");
 		&_value_or_query('leftTeam', @_);
 	}
 
 	sub right		{
+		chat::debug(@_);
 		foreach(@_) {
 			return(1) if(m/^$Teams{$Map->{'rightTeam'}}$/i);
 			return(1) if(m/^(right|>|all|both|\*|1)$/i);
 		}
+		chat::debug("value_or_query");
 		&_value_or_query('rightTeam', @_);
 	}
 
@@ -3825,6 +3833,8 @@ play though extended interfaces and server support.
 		my($p)=@_;
 		my($structure)=$Stats{$p->{'team'}}{'structure'};
 		my($progress);
+
+		return unless(map::type('raze'));
 
 		$structure->{'remaining'}--;
 
@@ -5891,9 +5901,9 @@ core protecting the flag.
 		if($scores) {
 			$scores->[0]=$goals+$scores->[0] if($scores->[0]<0);
 			$scores->[1]=$goals+$scores->[1] if($scores->[1]<0);
-			server::send('overrideBallScore', @$scores);
+			ball::set_score(@$scores);
 		} else {
-			server::send('overrideBallScore', 0, 0);
+			ball::set_score(0, 0);
 		}
 	},
 
@@ -5914,7 +5924,7 @@ core protecting the flag.
 
 			$l=$goals+$l if($l<0);
 			$r=$goals+$r if($r<0);
-			server::send('overrideBallScore', $l, $r);
+			ball::set_score($l, $r);
 		}
 
 	},
@@ -7531,7 +7541,7 @@ core protecting the flag.
 
 		$p->{'stats'}{$e->{'target'}}++;
 
-		plus::destroy($p) if(map::type('raze'));
+		plus::destroy($p);
 
 		if( ($p->{'stats'}{$e->{'target'}} % 35)==0 ) {
 			chat::snark($p, "$p->{'nickname'} is tearing down the house");
