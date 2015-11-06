@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.69';
+my($VERSION)='1.70';
 
 =head1 NAME
 
@@ -178,7 +178,7 @@ delete($ENV{'COLUMNS'});
 	my($Iwin)=newwin(3,        $Cols-4, $Iline,   2 );
 	my($Chat)=newwin($Sline-3, $Cols-4, $Sline+1, 2 );
 	my($Iput)=newwin(1,        $Iputw,  $Iline+1, 3 );
-	
+
 	sub adjust_win {
 		my($win, $height, $width, $y, $x)=@_;
 
@@ -240,7 +240,7 @@ delete($ENV{'COLUMNS'});
 		$Cwin->attroff(COLOR_PAIR(1));
 		$Iwin->attroff(COLOR_PAIR(1));
 
-		curs_set(0);
+		#curs_set(0);
 		$Swin->leaveok(1);
 		$Cwin->leaveok(1);
 
@@ -272,6 +272,7 @@ delete($ENV{'COLUMNS'});
 		$Swin->scrl(1);
 		$Swin->addstr($Sline-1, 0, $entry);
 		$Swin->refresh();
+		$Iput->refresh();
 	}
 
 	sub display {
@@ -294,6 +295,7 @@ delete($ENV{'COLUMNS'});
 			$Chat->addstr($Sline-4, 0, $text);
 		}
 		$Chat->refresh();
+		$Iput->refresh();
 	}
 
 	sub chat_log {
@@ -311,9 +313,15 @@ delete($ENV{'COLUMNS'});
 	}
 
 	sub update_input {
-		my($msg)=@_;
+		my($msg, $cursor)=@_;
 
-		$Iput->addstr(0, 0, sprintf("%-${Iputw}s", substr($msg, -$Iputw)));
+		if($cursor>=$Iputw) {
+			$Iput->addstr(0, 0, sprintf("%-${Iputw}s", substr($msg, $cursor-$Iputw+1, $Iputw-1)));
+			$Iput->move(0, $Iputw);
+		} else {
+			$Iput->addstr(0, 0, sprintf("%-${Iputw}s", substr($msg, 0, $Iputw)));
+			$Iput->move(0, $cursor);
+		}
 		$Iput->refresh();
 		$Iput->attroff(A_REVERSE());
 	}
@@ -353,6 +361,8 @@ delete($ENV{'COLUMNS'});
 			return('next');
 		} elsif($input == KEY_BACKSPACE || $ord==127) {
 			return('bs');
+		} elsif($input == KEY_DC) {
+			return('del');
 		} elsif($input eq "\025") {
 			return('clear');
 		} elsif($input eq "\t") {
@@ -386,6 +396,7 @@ list.
 	my($Eindex)=0;
 
 	my($Input);
+	my($Cursor)=0;
 
 	sub hist_up {
 		$Hindex++ if($Hindex<$#Hist);
@@ -513,34 +524,63 @@ list.
 		}
 	}
 
+	sub insert_key {
+		my($key)=@_;
+
+		substr($Input, $Cursor, 0, $key);
+		$Cursor+=length($key);
+	}
+
+	sub remove_key {
+		my($length)=@_;
+
+		if($Input) {
+			substr($Input, $Cursor+$length, 1, '');
+			$Cursor+=$length
+		}
+	}
+
+	sub overwrite_input {
+		my($string)=@_;
+
+		$Input=$string;
+		$Cursor=length($Input);
+	}
+
 	sub stdin {
 		my($key)=ui::keypress;
 		my(@cmd);
 
 		if($key eq 'up') {
-			$Input=&hist_up;
+			&overwrite_input(&hist_up);
 		} elsif($key eq 'down') {
-			$Input=&hist_down;
+			&overwrite_input(&hist_down);
+		} elsif($key eq 'left') {
+			$Cursor-- if($Cursor>0);
+		} elsif($key eq 'right') {
+			$Cursor++ if($Cursor<length($Input));
 		} elsif($key eq 'bs') {
-			$Input=~s/.$//;
+			&remove_key(-1);
+		} elsif($key eq 'del') {
+			&remove_key(0);
 		} elsif($key eq 'clear') {
-			$Input='';
+			&overwrite_input('');
 		} elsif($key eq 'tab') {
 			if($Input=~s|^\s*/||) {
 				@cmd=($Input=~m/(".*?"|".*$|\w+)/g);
 				if(@cmd==1) {
-					$Input=&expand_command(@cmd);
+					&overwrite_input(&expand_command(@cmd));
 				} else {
-					$Input=&expand_args(@cmd);
+					&overwrite_input(&expand_args(@cmd));
 				}
 			} else {
-				$Input.='  ';
+				&insert_key('  ');
 			}
 		} elsif($key eq ' ') {
 			if($Input=~m|^\s*/(\S+)$|) {
 				config::command_help(player::server(), $1);
 			}
-			$Input.=' ';
+			&insert_key(' ');
 		} elsif($key eq 'enter') {
 			$Input=~s|^\s+||;
 
@@ -559,18 +599,18 @@ list.
 					server::send($Input);
 				}
 
-				$Input='';
+				&overwrite_input('');
 			} else {
 				chat::all($Input);
-				$Input='';
+				&overwrite_input('');
 			}
 		} else {
-			$Input.=$key;
+			&insert_key($key);
 		}
 
 		&expand_clear if($key ne 'tab');
 
-		ui::update_input($Input);
+		ui::update_input($Input, $Cursor);
 	}
 }
 
@@ -7054,7 +7094,7 @@ core protecting the flag.
 
 		if(exists($e->{'reason'}) && $e->{'reason'} ne 'Client left.') {
 			$reason=$e->{'reason'};
-			$reason=~s/\..*$//;
+			$reason=~s/\..*$//s;
 			ui::display('', '', "< $p->{'nickname'} $e->{'message'} ($reason)>");
 		} else {
 			ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
@@ -7917,7 +7957,7 @@ also only available from the console.
 	'importDefaults'	=> sub {
 		my($prefix)='';
 		
-		$prefix='! ' if(config::commands('!'));
+		$prefix='! ' if(config::custom_command('!'));
 
 		foreach my $command (plus::import_defaults) {
 			server::send($prefix.$command);
@@ -7946,6 +7986,7 @@ also only available from the console.
 			foreach my $key (keys(%$stash)) {
 				next if($key eq 'records');
 	
+				chat::whisper($s, "Delete: $map.$key");
 				stash::delete($key, $map);
 			}
 		} else {
