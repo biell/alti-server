@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.70';
+my($VERSION)='1.71';
 
 =head1 NAME
 
@@ -240,7 +240,6 @@ delete($ENV{'COLUMNS'});
 		$Cwin->attroff(COLOR_PAIR(1));
 		$Iwin->attroff(COLOR_PAIR(1));
 
-		#curs_set(0);
 		$Swin->leaveok(1);
 		$Cwin->leaveok(1);
 
@@ -3247,16 +3246,20 @@ they make the top 5.
 	}
 
 	sub enter {
-		my($e, $winner)=@_;
+		my($e)=@_;
 		my($types)=config::option('recordsTypes');
 		my($records)=stash::get('records', map::name);
-		my($min_players)=map::spawn_points;
+		my($assign)=stash::get('assignTeam', map::name);
+		my($win)=ball::winner();
+		my($min_players)=scalar(map::spawn_points);
 		my(@holder)=(time());
 		my($place)=1;
 		my($save)=1;
 		my($time);
 
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
+
+		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
 
 		if($Winner && map::type('race')) {
 			if(plus::spawns($Winner)>1) {
@@ -3294,8 +3297,10 @@ they make the top 5.
 
 			if($save) {
 				chat::all('Record Times');
-			} else {
+			} elsif(map::type('race')) {
 				chat::all("Record Times (minimum $min_players players)");
+			} else {
+				chat::all("Record Times (winning teams)");
 			}
 			chat::all('-----------------------');
 			&print;
@@ -3409,6 +3414,15 @@ and provide slightly enhanced game play.
 		return(@Score);
 	}
 
+	sub team_score {
+		my($team)=@_;
+
+		&update_score($team);
+		&set_score(@Score);
+
+		return(@Score);
+	}
+
 	sub progress {
 		my($p, $amount)=@_;
 		my($side)=map::side($p);
@@ -3496,6 +3510,18 @@ and provide slightly enhanced game play.
 
 	sub passes {
 		return(scalar(@Relay));
+	}
+
+	sub winner {
+		my($goals)=$config::Goals;
+
+		if($Score[0]==$goals) {
+			return(map::left);
+		} elsif($Score[1]==$goals) {
+			return(map::right);
+		} else {
+			return(undef);
+		}
 	}
 
 }
@@ -3864,12 +3890,26 @@ play though extended interfaces and server support.
 		return($is_cp);
 	}
 
+	sub killed {
+		my($v)=@_;
+		my($assign)=stash::get('assignTeam', map::name);
+
+		if(map::type('ruin') && $assign) {
+			if(map::left($v->{'team'})) {
+				ball::team_score('right');
+			} elsif(map::right($v->{'team'})) {
+				ball::team_score('left');
+			}
+		}
+	}
+
 	sub destroy {
 		my($p)=@_;
 		my($structure)=$Stats{$p->{'team'}}{'structure'};
 		my($progress);
 
 		return unless(map::type('ruin'));
+		return unless($structure->{'total'});
 
 		$structure->{'remaining'}--;
 
@@ -3877,7 +3917,10 @@ play though extended interfaces and server support.
 			
 		ball::progress($p, $progress);
 
-		if($structure->{'remaining'}<=5 && $progress>0.85) {
+		if(	$structure->{'remaining'}>0 &&
+			$structure->{'remaining'}<=5 &&
+			$progress>0.85
+		) {
 			chat::team($p, $structure->{'remaining'}, 'remaining');
 		}
 	}
@@ -7514,6 +7557,7 @@ core protecting the flag.
 
 		return if($v->{'isBot'});
 
+		plus::killed($v);
 		plus::check_spawn($v);
 
 		if($spawn_mode eq 'died' || $spawn_mode eq 'crash') {
