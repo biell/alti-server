@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.71';
+my($VERSION)='1.72';
 
 =head1 NAME
 
@@ -3249,7 +3249,7 @@ they make the top 5.
 		my($e)=@_;
 		my($types)=config::option('recordsTypes');
 		my($records)=stash::get('records', map::name);
-		my($assign)=stash::get('assignTeam', map::name);
+		my($assign)=map::team_number(stash::get('assignTeam', map::name));
 		my($win)=ball::winner();
 		my($min_players)=scalar(map::spawn_points);
 		my(@holder)=(time());
