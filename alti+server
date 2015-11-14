@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.72';
+my($VERSION)='1.73';
 
 =head1 NAME
 
@@ -792,9 +792,13 @@ L<perl(1)> should be used to ensure basic operation.
 		return($user/$Ticks, $sys/$Ticks);
 	}
 
+	sub delta {
+		return(time()-$_[0]);
+	}
+
 	sub date {
 		my($time)=@_;
-		my($delta)=time()-$time;
+		my($delta)=&delta($time);
 
 		if($delta<60) {
 			return('now');
@@ -2314,7 +2318,7 @@ directly with it to manage the instance.
 	}
 
 	sub uptime {
-		return(utils::secs2hrs(time()-$^T));
+		return(utils::secs2hrs(utils::delta($^T)));
 	}
 
 	sub cpu_secs {
@@ -2594,7 +2598,7 @@ types which alter the normal behavior.
 
 	sub idle {
 		return(0) unless($Map->{'map'});
-		return(time()-$Map->{'idle'});
+		return(utils::delta($Map->{'idle'}));
 	}
 
 	sub teams {
@@ -3542,6 +3546,7 @@ play though extended interfaces and server support.
 	my(%Reset)=();
 	my($Hunted)=undef;
 	my($Active)=0;
+	my($Captured)=0;
 
 	sub round {
 		ball::new;		#Can ball have multiple rounds?
@@ -3821,12 +3826,14 @@ play though extended interfaces and server support.
 	sub capture {
 		my($e, $p)=@_;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
-		my($flag)=stash::get($pickup, $p->{'team'}, 'powerups', map::name);
+		my($flags)=stash::get($p->{'team'}, 'powerups', map::name);
 
+		return unless($flags);
+		return if(utils::delta($Captured)<5);
 		return unless(map::mode('ball'));
 		return if(&game_over);
 
-		if($flag && &no_repeats($e, $p)) {
+		if($flags->{$pickup}) {
 			foreach my $player (player::list) {
 				&bench($player);
 			}
@@ -3834,6 +3841,7 @@ play though extended interfaces and server support.
 			chat::all($p->{'nickname'}, 'captured the flag!');
 			$p->{'stats'}{'capture'}++;
 			&score($p);
+			$Captured=time();
 		}
 	}
 
@@ -3841,7 +3849,7 @@ play though extended interfaces and server support.
 		my($e, $p)=@_;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($checkpoints)=stash::get($p->{'team'}, 'powerups', map::name);
-		my($cp)=$checkpoints->{$pickup};
+		my($cp)=$checkpoints && $checkpoints->{$pickup};
 		my(@powerups)=();
 		my($is_cp)=0;
 		my($t_stats, $p_stats);
@@ -4461,7 +4469,7 @@ the value of C<restartMap> in seconds for downloads to complete.
 
 		return unless($Time);
 
-		if(time()-$Time > 10) {
+		if(utils::delta($Time) > 10) {
 			$Map=undef;
 			$Time=undef;
 		}
@@ -4479,7 +4487,7 @@ the value of C<restartMap> in seconds for downloads to complete.
 
 	sub complete {
 		my($client)=@_;
-		my($delta)=time()-$Time;
+		my($delta)=utils::delta($Time);
 		my($warmup)=$config::Warmup{map::mode}+2;
 		my($limit)=config::option('restartMap')/2;
 
@@ -4504,7 +4512,7 @@ the value of C<restartMap> in seconds for downloads to complete.
 
 	sub release {
 		my($map)=@_;
-		my($delta)=time()-$Time;
+		my($delta)=utils::delta($Time);
 		my($warmup)=$config::Warmup{map::mode};
 		my($limit)=config::option('restartMap');
 
