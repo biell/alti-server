@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.73';
+my($VERSION)='1.74';
 
 =head1 NAME
 
@@ -62,6 +62,7 @@ my(%OPTIONS)=(
 	motd			=> join(';', 
 			'See https://github.com/biell/alti-server for server manual',
 		),
+	updateServer	=> 'vapor.nimblygames.com',	#Nimbly update server
 );
 
 =head1 DESCRIPTION
@@ -635,6 +636,7 @@ L<perl(1)> should be used to ensure basic operation.
 	my($Ticks)=POSIX::sysconf(&POSIX::_SC_CLK_TCK);
 
 	my($Geoip);
+	my($Ping);
 
 	sub which {
 		my($prog, $feeling, $failing)=@_;
@@ -665,6 +667,7 @@ L<perl(1)> should be used to ensure basic operation.
 	}
 
 	$Geoip=&which('geoiplookup', 'good', 'Country lookups not available');
+	$Ping=&which('ping', 'good', 'Cannot check server availability');
 
 	sub minmax {
 		my($pair);
@@ -721,6 +724,28 @@ L<perl(1)> should be used to ensure basic operation.
 		}
 
 		return($country);
+	}
+
+	sub ping {
+		my($host)=@_;
+		my($pid);
+
+		return(1) unless($Ping);
+
+		if($pid=fork()) {
+			waitpid($pid, 0);
+			if($?==0) {
+				ui::slog('Ping of', $host, 'successful.');
+				return(1);
+			} else{
+				ui::slog('Ping of', $host, 'FAILED.');
+				return(undef);
+			}
+		} else {
+			close(STDOUT);
+			close(STDERR);
+			exec($Ping, '-c', 2, $host);
+		}
 	}
 
 	sub distance {
@@ -2202,6 +2227,7 @@ directly with it to manage the instance.
 
 	sub start {
 		my(@times);
+		my($nimbly)=config::option('updateServer');
 
 		$Streams->remove($Server);
 
@@ -2218,6 +2244,11 @@ directly with it to manage the instance.
 		rename($Logfile, $Logfile_o);
 
 		chdir($INSTALL_ROOT);
+
+		until(utils::ping($nimbly)) {
+			ui::slog('Cannot contact updateServer', $nimbly);
+			sleep(60);
+		}
 
 		open($Server, '-|:unix', './server_launcher', '-noui');
 		$Server->autoflush(1);
@@ -8267,6 +8298,10 @@ while(1) {
 				server::start;
 				server::reopen_log;
 				player::init;
+			} elsif($SOUT=~m/Failed to contact .+ via local UDP port/) {
+				queue::schedule {
+					utils::ping(config::option('updateServer'))
+				} 240;
 			} elsif($SOUT=~m/Data Transfer Since Launch/) {
 				server::check_tail;
 	
