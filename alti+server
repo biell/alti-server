@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.76';
+my($VERSION)='1.77';
 
 =head1 NAME
 
@@ -3553,9 +3553,9 @@ and provide slightly enhanced game play.
 	sub winner {
 		my($goals)=$config::Goals;
 
-		if($Score[0]==$goals) {
+		if($Score[0]>=$goals) {
 			return(map::left);
-		} elsif($Score[1]==$goals) {
+		} elsif($Score[1]>=$goals) {
 			return(map::right);
 		} else {
 			return(undef);
