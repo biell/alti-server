@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.75';
+my($VERSION)='1.76';
 
 =head1 NAME
 
@@ -3295,6 +3295,7 @@ they make the top 5.
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
 		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
+		chat::debug("assign=$assign, win=$win, save=$save");
 
 		if($Winner && map::type('race')) {
 			if(plus::spawns($Winner)>1) {
