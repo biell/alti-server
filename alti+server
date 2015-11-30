@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.77';
+my($VERSION)='1.78';
 
 =head1 NAME
 
@@ -20,6 +20,7 @@ my($INSTALL_ROOT)=$ENV{'ALTITUDE_ROOT'} || "$ENV{'HOME'}/altitude";
 my(%OPTIONS)=(
 	mapDir		=> '',			#Directory under $INSTALL_ROOT/maps
 								#to store maps. (e.g. "download")
+	raceData		=> undef,			#Defaults to $INSTALL_ROOT/servers
 	lobby		=> '',			#Lobby map for this server
 	secretCode	=> undef,			#The secret required to join the server
 	updateMapList	=> 1,               #Let alti+server change the mapList
@@ -2023,6 +2024,49 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'enabled'			=> 1,
 	},
 
+	'raceMap' => {
+		'name'			=> 'raceMap',
+		'arguments'		=> ['map'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 0,
+	},
+
+	'raceGoals' => {
+		'name'			=> 'raceGoals',
+		'arguments'		=> ['string'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 0,
+	},
+
+
+	'raceList' => {
+		'name'			=> 'raceList',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 0,
+	},
+
+	'raceAdd' => {
+		'name'			=> 'raceAdd',
+		'arguments'		=> ['player'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 0,
+	},
+
+	'raceDel' => {
+		'name'			=> 'raceDel',
+		'arguments'		=> ['player'],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 0,
+	},
+
+	'go' => {
+		'name'			=> 'go',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 0,
+	},
+
 	'switch' => {
 		'name'			=> 'switch',
 		'arguments'		=> [],
@@ -3250,8 +3294,9 @@ they make the top 5.
 	}
 
 	sub whisper {
-		my($p)=@_;
+		my($e, $p)=@_;
 		my($records)=stash::get('records', map::name);
+		my($time)=$e->{'time'}/$config::Clock - $Start;
 		my($i)=1;
 
 		return unless(ref($records) eq 'ARRAY');
@@ -3272,6 +3317,8 @@ they make the top 5.
 					));
 			}
 		}
+
+		chat::whisper($p, 'you',  ':', utils::secs2mins($time));
 	}
 
 	sub mark {
@@ -3387,6 +3434,191 @@ they make the top 5.
 
 }
 
+=head2 Race Tournaments
+
+B<alti+server> supports race tournaments.  You need to ensure that the
+C</raceMap>, C</raceAdd>, C</raceDel>, C</raceList>, and C</go> commands
+are enabled for these to work.  Admins register players into races, then
+set the race map.  Players are instructured to respond with C</go> when
+they are ready to begin the race.  Once all the players are ready, the
+server switches the map and the race begins.
+
+=cut
+
+{	package race;
+
+	my($Race)=0;
+	my($Goals)=$config::Goals;
+	my($Map)=undef;
+	my($Start)=undef;
+	my(@Racers)=();
+	my(@Done)=();
+	my(@Ready)=();
+	my($Timedir)=config::option('raceData') || "$INSTALL_ROOT/servers";
+	my($Log)=IO::Handle->new;
+
+	sub init {
+		unless($Race && $Map eq map::name()) {
+			$Race=0;
+			$Goals=$config::Goals;
+			$Map=undef;
+			@Racers=();
+			@Done=();
+			@Ready=();
+			close($Log);
+		}
+	}
+
+	sub mark {
+		my($e)=@_;
+
+		$Start=$e->{'time'};
+	}
+
+	sub set_map {
+		my($map)=@_;
+		my($time)=time();
+		my($date)=POSIX::strftime('%Y%m%dT%H%M%SZ', gmtime($time));
+
+		stash::set('nextMap', 'admin', $map);
+		$Map=$map;
+
+		open($Log, '>', "$Timedir/$date-$map.txt");
+
+		print $Log "map,$map\n", "time,$time\n";
+
+		foreach my $racer (@Racers) {
+			chat::whisper($racer, "Type '/go' when read to start $map");
+
+			printf $Log "player,%d,%s,%s\n",
+				@$racer{'player','vaporId','nickname'};
+		}
+
+		$Race=1;
+	}
+
+	sub set_goals {
+		my($goals)=@_;
+
+		$Goals=$goals;
+		print $Log "goals,$goals\n";
+	}
+
+	sub list {
+		return(@Racers);
+	}
+
+	sub add {
+		my($p)=@_;
+
+		foreach my $racer (@Racers) {
+			return if($racer==$p);
+		}
+
+		push(@Racers, $p);
+	}
+
+	sub del {
+		my($p)=@_;
+
+		for(my $i=0; $i<@Racers; $i++) {
+			if($Racers[$i]==$p) {
+				splice(@Racers, $i, 1);
+				redo;
+			}
+		}
+	}
+
+	sub ready {
+		my($p)=@_;
+		my($map)=stash::get('nextMap', 'admin');
+
+		unless($map) {
+			chat::whisper($p, 'Race vote not active');
+			return;
+		}
+
+		foreach my $racer (@Ready) {
+			return if($p==$racer);
+		}
+		foreach my $racer (@Racers) {
+			push(@Ready, $p) if($p==$racer);
+		}
+
+		if(@Ready==@Racers) {
+			server::send('changeMap', $map);
+		}
+	}
+
+	sub cancel {
+		if($Race) {
+			chat::all('Pending race canceled.');
+			$Race=0;
+			&init;
+		}
+	}
+
+	sub checkpoint {
+		my($e, $p, $cp)=@_;
+		my($place);
+
+		return unless($Race);
+
+		printf $Log "checkpoint,%.3f,%s,%d,%d,%s,%s\n",
+				($e->{'time'}-$Start)/$config::Clock,
+				$cp, @$p{'team','player','vaporId','nickname'};
+
+		if($p->{'stats'}{'checkpoint'} >= $Goals) {
+			push(@Done, [$p->{'nickname'}, $e->{'time'}-$Start]);
+			plus::bench($p);
+		}
+
+		if(@Racers == @Done) {
+			for(my $i=0; $i<@Done; $i++) {
+				$place=sprintf('%s : %-16s (%s)',
+					utils::nth($i+1),
+					$Done[$i][0],
+					utils::secs2mins($Done[$i][1]/$config::Clock),
+				);
+
+				chat::all($place);
+				print $Log "place,$place\n";
+			}
+
+			$Race=0;
+			&init;
+		}
+	}
+
+	sub spawn {
+		my($p)=@_;
+
+		return unless($Race);
+
+		printf $Log "spawn,%.3f,%d,%d,%s,%s\n",
+				($p->{'spawn'}-$Start)/$config::Clock,
+				@$p{'team','player','vaporId','nickname'};
+	}
+
+	sub allowed {
+		my($p)=@_;
+
+		return(1) unless($Race);
+
+		foreach my $position (@Done) {
+			return(0) if($p==$position->[0]);
+		}
+
+		foreach my $racer (@Racers) {
+			return(1) if($p==$racer);
+		}
+
+		chat::whisper($p, 'You are not in this race, please do not try to spawn');
+		return(undef);
+	}
+
+}
+
 =head2 Ball Games
 
 B<alti+server> supports standard ball games and keeps track of more information
@@ -3440,7 +3672,9 @@ and provide slightly enhanced game play.
 	}
 
 	sub set_score {
-		server::send('overrideBallScore', @_);
+		my($left)=POSIX::floor($_[0]);
+		my($right)=POSIX::floor($_[1]);
+		server::send('overrideBallScore', $left, $right);
 	}
 
 	sub score {
@@ -3925,6 +4159,8 @@ play though extended interfaces and server support.
 				chat::whisper($p, $cp);
 			}
 
+			race::checkpoint($e, $p, $cp);
+
 			shift(@$p_stats);
 			$is_cp=1;
 		}
@@ -4251,7 +4487,9 @@ play though extended interfaces and server support.
 		my($p)=@_;
 		my($max)=stash::get('maxPlayers', map::name) || $config::Maxp;
 
-		if($Stats{'players'}{'playing'}{$p}) {
+		if(!race::allowed($p)) {
+			return(0);
+		} elsif($Stats{'players'}{'playing'}{$p}) {
 			return(1);
 		} elsif($Stats{'players'}{'count'}<$max) {
 			&zone_init($p) if(stash::get('keys', map::name) & 1);
@@ -4300,6 +4538,7 @@ play though extended interfaces and server support.
 		}
 
 		records::init;
+		race::init;
 		&round;
 
 		if(map::type('ruin')) {
@@ -4969,6 +5208,52 @@ core protecting the flag.
 		}
 	},
 
+	'raceMap' => sub {
+		my($e, $p)=@_;
+		my($map)=@{$e->{'arguments'}};
+
+		race::set_map($map);
+		chat::whisper($p, "Will start map: $map");
+	},
+
+	'raceGoals'	=> sub {
+		my($e, $p)=@_;
+		my($goals)=@{$e->{'arguments'}};
+
+		race::set_goals($goals);
+		chat::whisper($p, "Winning number of goals: $goals");
+	},
+
+	'raceList' => sub {
+		my($e, $p)=@_;
+
+		foreach my $racer (race::list) {
+			chat::whisper($p, $racer->{'nickname'}, $racer->{'vaporId'});
+		}
+	},
+
+	'raceAdd' => sub {
+		my($e, $p)=@_;
+		my($racer)=player::lookup($e->{'arguments'}[0]);
+
+		race::add($racer);
+		chat::whisper($p, 'Add:', $racer->{'nickname'}, $racer->{'vaporId'});
+	},
+
+	'raceDel' => sub {
+		my($e, $p)=@_;
+		my($racer)=player::lookup($e->{'arguments'}[0]);
+
+		race::del($racer);
+		chat::whisper($p, 'Del:', $racer->{'nickname'}, $racer->{'vaporId'});
+	},
+
+	'go' => sub {
+		my($e, $p)=@_;
+
+		race::ready($p);
+	},
+
 	'switch'	=> sub {
 		my($e, $p)=@_;
 
@@ -5556,6 +5841,9 @@ core protecting the flag.
 		plus::new;
 
 		foreach my $player (player::list) {
+			if($p->{'stats'}{'spawns'}) {
+				server::send('overrideSpawnPoint', $player->{'nickname'}, 0, 0, 0);
+			}
 			$player->{'stats'}={'carrier' => 0};
 			player::forgive($player);
 		}
@@ -5886,7 +6174,10 @@ core protecting the flag.
 	'set assignTeam'	=> sub {
 		my($e, $p, $side)=@_;
 
-		if(map::left($side)) {
+		if($side=~m/^=(\w+)/) {
+			stash::set('assignTeam', map::name, $1);
+			chat::all(map::name, 'is configured to force players to', $1);
+		} elsif(map::left($side)) {
 			stash::set('assignTeam', map::name, 'left');
 			chat::all(map::name, 'is configured to force players left');
 
@@ -6330,7 +6621,7 @@ core protecting the flag.
 	'list records'	=> sub {
 		my($e, $p)=@_;
 
-		records::whisper($p);
+		records::whisper($e, $p);
 	},
 
 	'del record'	=> sub {
@@ -7358,6 +7649,7 @@ core protecting the flag.
 				server::send('changeMap', config::random_map);
 			} else {
 				records::mark($e);
+				race::mark($e);
 			}
 		}
 
@@ -7366,6 +7658,8 @@ core protecting the flag.
 
 		@$p{'plane','perkRed','perkGreen','perkBlue','skin'}=
 			@$e{'plane','perkRed','perkGreen','perkBlue','skin'};
+
+		race::spawn($p);
 
 		if(chat::snarky) {
 			foreach my $snark (List::Util::shuffle(keys(%SNARKS))) {
@@ -7419,7 +7713,9 @@ core protecting the flag.
 	'overrideBallScore'	=> sub {
 		my($e, $p)=@_;
 
-		ball::update_score( @{$e->{'arguments'}} );
+		if($e->{'group'} eq 'Administrator') {
+			ball::update_score( @{$e->{'arguments'}} );
+		}
 	},
 	
 	'logPickups'		=> sub {
@@ -7436,26 +7732,32 @@ core protecting the flag.
 
 	'powerupUse'	=> sub {
 		my($e, $p)=@_;
-		my($diff)=$e->{'time'} - $p->{$e->{'powerup'}}{'time'};
+		my($powerup)=$e->{'powerup'};
+		my($diff)=$e->{'time'} - $p->{$powerup}{'time'};
 
-		if($e->{'powerup'}=~m/Ball|Bomb|Demolition Charge/) {
-			$p->{'carrier'}=0;
-		}
-
-		if($e->{'powerup'} eq 'Ball') {
-			ball::shoot($e);
-		} elsif(0<$diff && $diff<2000) {
-			$p->{$e->{'powerup'}}{'count'}++;
+		if(0<$diff && $diff<2000) {
+			$p->{$powerup}{'count'}++;
 		} else {
-			$p->{$e->{'powerup'}}{'time'}=$e->{'time'};
-			$p->{$e->{'powerup'}}{'count'}=1;
+			$p->{$powerup}{'time'}=$e->{'time'};
+			$p->{$powerup}{'count'}=1;
 		}
 
-		if($p->{'Homing Missile'}{'count'} > 12) {
-			chat::snark($p, 'Hwacha');
-		}
-		if($p->{'Bomb'}{'count'} > 8) {
-			chat::snark($p, "$p->{'nickname'} bombs with extreme prejudice");
+		if($powerup eq 'Ball') {
+			$p->{'carrier'}=0;
+			ball::shoot($e);
+		} elsif($powerup eq 'Bomb') {
+			$p->{'carrier'}=0;
+			if($p->{'Bomb'}{'count'} > 8) {
+				chat::snark($p, "$p->{'nickname'} bombs with extreme prejudice");
+				$p->{'Bomb'}{'count'}=0;
+			}
+		} elsif($powerup eq 'Demolition Charge') {
+			$p->{'carrier'}=0;
+		} elsif($powerup eq 'Homing Missile') {
+			if($p->{'Homing Missile'}{'count'} > 12) {
+				chat::snark($p, 'Hwacha');
+				$p->{'Homing Missile'}{'count'}=0;
+			}
 		}
 	},
 
@@ -7752,16 +8054,16 @@ core protecting the flag.
 			if($stats{'Crashes'}) {
 				plus::most('Training Wheels Award: ', $stats{'Crashes'}, $pls);
 			}
-			if($stats{'Deaths'}) {
+			if($stats{'Deaths'} && !map::type('race')) {
 				plus::most('Kenny McCormick Award: ', $stats{'Deaths'}, $pls);
 			}
 			if($stats{'Ball Possession Time'}) {
 				plus::most('Ball Hog Award: ', $stats{'Ball Possession Time'}, $pls);
 			}
-			if($stats{'Damage Dealt'}) {
+			if($stats{'Damage Dealt'} && !map::type('race')) {
 				plus::most('Sledge Hammer Award: ', $stats{'Damage Dealt'}, $pls);
 			}
-			if($stats{'Damage Received'}) {
+			if($stats{'Damage Received'} && !map::type('race')) {
 				plus::most('Tank Award: ', $stats{'Damage Received'}, $pls);
 			}
 	
