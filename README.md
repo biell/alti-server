@@ -438,6 +438,34 @@ manage Alti+ game maps.
     to be `tiny`. See [Server Options](#server-options) below for more
     information on the `configSize` option.
 
+### Extended Commands for Race Tournaments
+Race tournaments all the server to be configured for a special tournament
+mode designed to manage and log race results.  Race results are stored
+in dated files in the directory specified by the config `raceData`.
+
+  * **/raceAdd [player]**<br>
+    Add `player` to the list of players which will participate in the
+    next race.
+
+  * **/raceDel [player]**<br>
+    Remove `player` from the list of players which will participate in the
+    next race.
+
+  * **/raceList**<br>
+    List the players scheduled to participate in the next race.
+
+  * **/raceGoals [#]**</br>
+    Set the winning Goals (checkpoints) to `#`.  This defaults to the 
+    server's winning goals setting.  Use this command to lower that value
+    (you can't raise it).  
+
+  * **/raceMap [map]**</br>
+    Set the next race to occur on `map`, and notify the particpants that the
+    race is ready to start.
+
+  * **/go**</br>
+    Let the server know that you are ready to participate in a race.
+
 ### Extended Commands for Super Admins
 Super admin functionality is set in the `alti+server` code itself.  The
 `superAdmin` setting can be set to either
@@ -806,6 +834,13 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     help is given on this commands, and users inside the game must remember
     exact syntax.  For any setting here, use of the `/help` command is
     especially helpful.
+
+  * **raceData [directory]**<br>
+    Normally tournament race data is stored in the `servers` directory with
+    all normal log files.  This configuration option can be used to store
+    this data in a seperate location.  This is useful if you want to keep
+    it seperate, organized by event, or export to other people via a file
+    transfer protocol such as HTTP.
 
   * **secretCode [password]**<br>
     Altitude servers can be configured using the `server_configurator` program
