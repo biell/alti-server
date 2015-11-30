@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.78';
+my($VERSION)='1.79';
 
 =head1 NAME
 
@@ -3342,7 +3342,6 @@ they make the top 5.
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
 		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
-		chat::debug("assign=$assign, win=$win, save=$save");
 
 		if($Winner && map::type('race')) {
 			if(plus::spawns($Winner)>1) {
@@ -7577,15 +7576,15 @@ core protecting the flag.
 			if(ref($zones) eq 'HASH' && %$zones) {
 				plus::spawn_random($p);
 			}
-			if($map_team eq 'right' && map::right($p->{'team'})) {
+			if(map::right($map_team) && map::right($p->{'team'})) {
 				plus::assign($p, 'left');
 			} elsif(map::left($p->{'team'})) {
 				plus::assign($p, 'right');
 			}
-		} elsif($map_team eq 'right' && map::left($p->{'team'})) {
+		} elsif(map::right($map_team) && map::left($p->{'team'})) {
 			plus::assign($p, 'right');
 			return;
-		} elsif($map_team eq 'left' && map::right($p->{'team'})) {
+		} elsif(map::left($map_team) && map::right($p->{'team'})) {
 			plus::assign($p, 'left');
 			return;
 		} else {
@@ -7629,15 +7628,15 @@ core protecting the flag.
 			if(ref($zones) eq 'HASH' && %$zones) {
 				plus::spawn_random($p);
 			}
-			if($map_team eq 'right' && map::right($p->{'team'})) {
+			if(map::right($map_team) && map::right($p->{'team'})) {
 				plus::assign($p, 'left');
 			} elsif(map::left($p->{'team'})) {
 				plus::assign($p, 'right');
 			}
-		} elsif($map_team eq 'right' && map::left($p->{'team'})) {
+		} elsif(map::right($map_team) && map::left($p->{'team'})) {
 			plus::assign($p, 'right');
 			return;
-		} elsif($map_team eq 'left' && map::right($p->{'team'})) {
+		} elsif(map::left($map_team) && map::right($p->{'team'})) {
 			plus::assign($p, 'left');
 			return;
 		}
