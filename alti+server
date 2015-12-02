@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='1.79';
+my($VERSION)='1.81';
 
 =head1 NAME
 
@@ -2031,6 +2031,14 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'enabled'			=> 0,
 	},
 
+	'raceCancel' => {
+		'name'			=> 'raceCancel',
+		'arguments'		=> [],
+		'voteThreshold'	=> 75,
+		'enabled'			=> 0,
+	},
+
+
 	'raceGoals' => {
 		'name'			=> 'raceGoals',
 		'arguments'		=> ['string'],
@@ -3436,10 +3444,10 @@ they make the top 5.
 =head2 Race Tournaments
 
 B<alti+server> supports race tournaments.  You need to ensure that the
-C</raceMap>, C</raceAdd>, C</raceDel>, C</raceList>, and C</go> commands
-are enabled for these to work.  Admins register players into races, then
-set the race map.  Players are instructured to respond with C</go> when
-they are ready to begin the race.  Once all the players are ready, the
+C</raceMap>, C</raceCancel>, C</raceAdd>, C</raceDel>, C</raceList>, and
+C</go> commands are enabled for these to work.  Admins register players into
+races, then set the race map.  Players are instructured to respond with C</go>
+when they are ready to begin the race.  Once all the players are ready, the
 server switches the map and the race begins.
 
 =cut
@@ -5215,6 +5223,12 @@ core protecting the flag.
 		chat::whisper($p, "Will start map: $map");
 	},
 
+	'raceCancel' => sub {
+		my($e, $p)=@_;
+
+		race::cancel;
+	},
+
 	'raceGoals'	=> sub {
 		my($e, $p)=@_;
 		my($goals)=@{$e->{'arguments'}};
@@ -6311,8 +6325,10 @@ core protecting the flag.
 		if($scores) {
 			$scores->[0]=$goals+$scores->[0] if($scores->[0]<0);
 			$scores->[1]=$goals+$scores->[1] if($scores->[1]<0);
+			ball::update_score(@$scores);
 			ball::set_score(@$scores);
 		} else {
+			ball::update_score(0, 0);
 			ball::set_score(0, 0);
 		}
 	},
@@ -6334,6 +6350,7 @@ core protecting the flag.
 
 			$l=$goals+$l if($l<0);
 			$r=$goals+$r if($r<0);
+			ball::update_score($l, $r);
 			ball::set_score($l, $r);
 		}
 

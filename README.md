@@ -454,14 +454,19 @@ in dated files in the directory specified by the config `raceData`.
   * **/raceList**<br>
     List the players scheduled to participate in the next race.
 
-  * **/raceGoals [#]**</br>
+  * **/raceGoals [#]**<br>
     Set the winning Goals (checkpoints) to `#`.  This defaults to the 
     server's winning goals setting.  Use this command to lower that value
     (you can't raise it).  
 
-  * **/raceMap [map]**</br>
+  * **/raceMap [map]**<br>
     Set the next race to occur on `map`, and notify the particpants that the
     race is ready to start.
+
+  * **/raceCancel**<br>
+    Cancel the pending race, removing all players and unsetting the next map.
+    If a race is in-progress, it will be halted and all players may join the
+    map.
 
   * **/go**</br>
     Let the server know that you are ready to participate in a race.
