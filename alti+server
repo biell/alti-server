@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.81';
+my($VERSION)='1.82';
 
 =head1 NAME
 
@@ -92,6 +92,7 @@ use POSIX;
 use IO::Handle;
 use IPC::Open3;
 use List::Util;
+use Tie::RefHash;
 use Data::Dumper;
 
 my($FATAL_SERVER_ERRORS)=join('|',
@@ -2031,13 +2032,19 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'enabled'			=> 0,
 	},
 
+	'raceStart' => {
+		'name'			=> 'raceStart',
+		'arguments'		=> [],
+		'voteThreshold'	=> 75,
+		'enabled'			=> 0,
+	},
+
 	'raceCancel' => {
 		'name'			=> 'raceCancel',
 		'arguments'		=> [],
 		'voteThreshold'	=> 75,
 		'enabled'			=> 0,
 	},
-
 
 	'raceGoals' => {
 		'name'			=> 'raceGoals',
@@ -3276,6 +3283,7 @@ they make the top 5.
 
 	my($Start)=0;
 	my($Winner)=undef;
+	my($Destroy)=undef;
 
 	sub print {
 		my($records)=stash::get('records', map::name);
@@ -3304,7 +3312,7 @@ they make the top 5.
 	sub whisper {
 		my($e, $p)=@_;
 		my($records)=stash::get('records', map::name);
-		my($time)=$e->{'time'}/$config::Clock - $Start;
+		my($time)=($e->{'time'} - $Start)/$config::Clock;
 		my($i)=1;
 
 		return unless(ref($records) eq 'ARRAY');
@@ -3332,7 +3340,22 @@ they make the top 5.
 	sub mark {
 		my($e)=@_;
 
-		$Start=$e->{'time'}/$config::Clock;
+		$Start=$e->{'time'};
+	}
+
+	sub destroy {
+		my($e, $p)=@_;
+		my($team)=$p->{'team'};
+		my($assign);
+
+		return unless($e->{'target'} eq 'base');
+		return unless(map::left($team) || map::right($team));
+
+		$assign=map::team_number(stash::get('assignTeam', map::name));
+		return if($assign && $team!=$assign);
+
+
+		$Destroy=$e->{'time'};
 	}
 
 	sub enter {
@@ -3351,6 +3374,9 @@ they make the top 5.
 
 		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
 
+		$save=0 if(map::mode('tbd') && map::type('coop')
+				&& ($e->{'time'}-$Destroy) > 3000);
+
 		if($Winner && map::type('race')) {
 			if(plus::spawns($Winner)>1) {
 				if(player::count() < $min_players) {
@@ -3365,7 +3391,7 @@ they make the top 5.
 
 		$records=[] unless(ref($records) eq 'ARRAY');
 
-		$time=sprintf("%0.1f", $e->{'time'}/$config::Clock - $Start);
+		$time=sprintf("%0.2f", ($e->{'time'} - $Start)/$config::Clock);
 
 		if($save) {
 			for(my $i=0; $i<@$records; $i++) {
@@ -3398,6 +3424,8 @@ they make the top 5.
 			if($save) {
 				if($place<=5) {
 					chat::all('Congratulations, you placed',  utils::nth($place));
+				} elsif(map::type('race')) {
+					chat::all('win',  ':', utils::secs2mins($time));
 				} else {
 					chat::all('you',  ':', utils::secs2mins($time));
 				}
@@ -3437,6 +3465,7 @@ they make the top 5.
 
 	sub init {
 		$Winner=undef;
+		$Destroy=undef;
 	}
 
 }
@@ -3454,13 +3483,11 @@ server switches the map and the race begins.
 
 {	package race;
 
+	my(%Racers); tie %Racers, 'Tie::RefHash';
 	my($Race)=0;
 	my($Goals)=$config::Goals;
 	my($Map)=undef;
 	my($Start)=undef;
-	my(@Racers)=();
-	my(@Done)=();
-	my(@Ready)=();
 	my($Timedir)=config::option('raceData') || "$INSTALL_ROOT/servers";
 	my($Log)=IO::Handle->new;
 
@@ -3469,17 +3496,25 @@ server switches the map and the race begins.
 			$Race=0;
 			$Goals=$config::Goals;
 			$Map=undef;
-			@Racers=();
-			@Done=();
-			@Ready=();
+			%Racers=();
 			close($Log);
 		}
+	}
+
+	sub on {
+		return($Race>0);
 	}
 
 	sub mark {
 		my($e)=@_;
 
 		$Start=$e->{'time'};
+	}
+
+	sub request_go {
+		foreach my $r (keys(%Racers)) {
+			chat::whisper($r, "Type '/go' when read to start $Map");
+		}
 	}
 
 	sub set_map {
@@ -3494,9 +3529,7 @@ server switches the map and the race begins.
 
 		print $Log "map,$map\n", "time,$time\n";
 
-		foreach my $racer (@Racers) {
-			chat::whisper($racer, "Type '/go' when read to start $map");
-
+		foreach my $racer (keys(%Racers)) {
 			printf $Log "player,%d,%s,%s\n",
 				@$racer{'player','vaporId','nickname'};
 		}
@@ -3511,29 +3544,57 @@ server switches the map and the race begins.
 		print $Log "goals,$goals\n";
 	}
 
+	sub start_if_ready {
+		foreach my $status (values(%Racers)) {
+			return unless($status==2);
+		}
+
+		server::send('changeMap', $Map);
+	}
+
+	sub finished {
+		foreach my $status (values(%Racers)) {
+			return(0) unless($status>2);
+		}
+
+		return(1);
+	}
+
+	sub racers {
+		return(%Racers);
+	}
+
 	sub list {
-		return(@Racers);
+		return(keys(%Racers));
+	}
+
+	sub cancel {
+		if($Race) {
+			chat::all('Pending race canceled.');
+			$Race=0;
+			&init;
+		}
 	}
 
 	sub add {
 		my($p)=@_;
 
-		foreach my $racer (@Racers) {
-			return if($racer==$p);
+		unless(exists($Racers{$p})) {
+			$Racers{$p}=1;
 		}
-
-		push(@Racers, $p);
 	}
 
 	sub del {
 		my($p)=@_;
 
-		for(my $i=0; $i<@Racers; $i++) {
-			if($Racers[$i]==$p) {
-				splice(@Racers, $i, 1);
-				redo;
-			}
+		delete($Racers{$p});
+
+		unless(keys(%Racers)) {
+			&cancel;
+			return;
 		}
+
+		&start_if_ready if($Race==1);
 	}
 
 	sub ready {
@@ -3545,51 +3606,51 @@ server switches the map and the race begins.
 			return;
 		}
 
-		foreach my $racer (@Ready) {
-			return if($p==$racer);
-		}
-		foreach my $racer (@Racers) {
-			push(@Ready, $p) if($p==$racer);
-		}
+		$Racers{$p}=2;
 
-		if(@Ready==@Racers) {
-			server::send('changeMap', $map);
-		}
-	}
-
-	sub cancel {
-		if($Race) {
-			chat::all('Pending race canceled.');
-			$Race=0;
-			&init;
-		}
+		$Race=2;
+		&start_if_ready;
 	}
 
 	sub checkpoint {
 		my($e, $p, $cp)=@_;
-		my($place);
+		my($time)=($e->{'time'}-$Start)/$config::Clock;
+		my($place)=0;
+		my($msg);
 
 		return unless($Race);
 
-		printf $Log "checkpoint,%.3f,%s,%d,%d,%s,%s\n",
-				($e->{'time'}-$Start)/$config::Clock,
-				$cp, @$p{'team','player','vaporId','nickname'};
+		printf $Log "checkpoint,%.3f,%s,%d,%d,%s\n",
+				$time, $cp, @$p{'team','player','nickname'};
 
 		if($p->{'stats'}{'checkpoint'} >= $Goals) {
-			push(@Done, [$p->{'nickname'}, $e->{'time'}-$Start]);
+			$Racers{$p}=$time;
 			plus::bench($p);
+			chat::whisper($p, 'You completed the race in:',
+				utils::secs2mins($time));
 		}
 
-		if(@Racers == @Done) {
-			for(my $i=0; $i<@Done; $i++) {
-				$place=sprintf('%s : %-16s (%s)',
-					utils::nth($i+1),
-					$Done[$i][0],
-					utils::secs2mins($Done[$i][1]/$config::Clock),
+		if(&finished) {
+			foreach my $r (sort {$Racers{$a}<=>$Racers{$b}} keys(%Racers)) {
+				$place++;
+
+				$msg=sprintf('%s : %-16s (%s)',
+					utils::nth($place),
+					$r->{'nickname'},
+					utils::secs2mins($Racers{$r}),
 				);
 
-				chat::all($place);
-				print $Log "place,$place\n";
+				chat::all($msg);
+
+				print $Log join(',',
+						'place',
+						$place,
+						$r->{'team'},
+						$r->{'player'},
+						$r->{'nickname'},
+						$Racers{$r},
+						$msg
+					), "\n";
 			}
 
 			$Race=0;
@@ -3602,9 +3663,9 @@ server switches the map and the race begins.
 
 		return unless($Race);
 
-		printf $Log "spawn,%.3f,%d,%d,%s,%s\n",
+		printf $Log "spawn,%.3f,%d,%d,%s\n",
 				($p->{'spawn'}-$Start)/$config::Clock,
-				@$p{'team','player','vaporId','nickname'};
+				@$p{'team','player','nickname'};
 	}
 
 	sub allowed {
@@ -3612,15 +3673,14 @@ server switches the map and the race begins.
 
 		return(1) unless($Race);
 
-		foreach my $position (@Done) {
-			return(0) if($p==$position->[0]);
+		if($Racers{$p}==2) {
+			return(1);
+		} elsif($Racers{$p}>2) {
+			chat::whisper($p, 'You finished, wait for others to finish.');
+		} else {
+			chat::whisper($p, 'You are not in this race, please do not try to spawn');
 		}
 
-		foreach my $racer (@Racers) {
-			return(1) if($p==$racer);
-		}
-
-		chat::whisper($p, 'You are not in this race, please do not try to spawn');
 		return(undef);
 	}
 
@@ -3845,6 +3905,8 @@ play though extended interfaces and server support.
 		my($p)=@_;
 		my($goals)=$config::Goals;
 		my(@score)=ball::score($p);
+
+		return if(race::on);
 
 		if($score[0] >= $goals) {
 			$Stats{'winner'}='left';
@@ -4157,7 +4219,7 @@ play though extended interfaces and server support.
 		if($p_stats->[0] eq $cp) {
 			if($t_stats->[0] eq $cp && @$p_stats == @$t_stats) {
 				&score($p);
-				$p->{'stats'}{'checkpoint'}++;
+				$p->{'stats'}{'first_cp'}++;
 				chat::all($p->{'nickname'}, ': checkpoint', $cp, 'for',
 					map::team_color($p->{'team'}));
 
@@ -4166,6 +4228,7 @@ play though extended interfaces and server support.
 				chat::whisper($p, $cp);
 			}
 
+			$p->{'stats'}{'checkpoint'}++;
 			race::checkpoint($e, $p, $cp);
 
 			shift(@$p_stats);
@@ -5220,7 +5283,23 @@ core protecting the flag.
 		my($map)=@{$e->{'arguments'}};
 
 		race::set_map($map);
+		race::request_go;
 		chat::whisper($p, "Will start map: $map");
+	},
+
+	'raceStart' => sub {
+		my($e, $p)=@_;
+		my($map)=map::name;
+
+		foreach my $player (player::list) {
+			race::add($player);
+		}
+
+		race::set_map($map);
+
+		foreach my $player (player::list) {
+			race::ready($player);
+		}
 	},
 
 	'raceCancel' => sub {
@@ -5239,9 +5318,21 @@ core protecting the flag.
 
 	'raceList' => sub {
 		my($e, $p)=@_;
+		my(%racers); tie %racers, 'Tie::RefHash';
 
-		foreach my $racer (race::list) {
-			chat::whisper($p, $racer->{'nickname'}, $racer->{'vaporId'});
+		%racers=race::racers;
+
+		foreach my $r (keys(%racers)) {
+			if($racers{$r}==1) {
+				chat::whisper($p, 'entered :',
+					$r->{'nickname'}, $r->{'vaporId'});
+			} elsif($racers{$r}==2) {
+				chat::whisper($p, 'ready   :',
+					$r->{'nickname'}, $r->{'vaporId'});
+			} else {
+				chat::whisper($p, 'finished:',
+					$r->{'nickname'}, $r->{'vaporId'});
+			}
 		}
 	},
 
@@ -5301,13 +5392,14 @@ core protecting the flag.
 
 	'vote'	=> sub {
 		my($e, $p)=@_;
+		my($cmd, @args)=@{$e->{'arguments'}};
 		our($kicker, $kickee);
 
-		ui::display('','', "$p->{'nickname'} proposed: @{$e->{'arguments'}}");
+		ui::display('','', "$p->{'nickname'} proposed: $cmd @args");
 
-		if(config::option('bullyKick') && $e->{'arguments'}[0] eq 'kick') {
+		if(config::option('bullyKick') && $cmd eq 'kick') {
 			$kicker=$p;
-			$kickee=$e->{'arguments'}[1];
+			$kickee=$args[0];
 			player::infraction($kicker, 1);
 		}
 	},
@@ -7477,6 +7569,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($reason)='';
 
+		race::del($p);
 		plus::leave($p);
 		player::remove($p);
 
@@ -7981,6 +8074,7 @@ core protecting the flag.
 		$p->{'stats'}{$e->{'target'}}++;
 
 		plus::destroy($p);
+		records::destroy($e, $p);
 
 		if( ($p->{'stats'}{$e->{'target'}} % 35)==0 ) {
 			chat::snark($p, "$p->{'nickname'} is tearing down the house");
@@ -8008,6 +8102,8 @@ core protecting the flag.
 	'chat'		=> sub {
 		my($e, $p)=@_;
 		my($to)='*';
+
+		race::ready($p) if(race::on && $e->{'message'}=~m/^\s*go\s*$/i);
 
 		if($e->{'team'}) {
 			if($e->{'blocked'}) {
@@ -8094,7 +8190,7 @@ core protecting the flag.
 			if(map::type('race')) {
 				for(my $i=0; $i<@$pls; $i++) {
 					$player=player::lookup($pls->[$i]);
-					$cps->[$i]=$player->{'stats'}{'checkpoint'} if($player);
+					$cps->[$i]=$player->{'stats'}{'first_cp'} if($player);
 				}
 				plus::most('Front Runner: ', $cps, $pls);
 			}

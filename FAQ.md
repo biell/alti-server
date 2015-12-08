@@ -148,4 +148,12 @@ more, then there must be at least as many players as spawn points, and the
 team color is stored with the record.  So, to answer the question, add more
 spawn points (you can put them right next to each other, if you like).
 
+#### Should I allow wall powerups
+
+Generally speaking, no.  Alti+ games rely on specific powerups to implement
+extended fatures.  A wall can move a powerup off it's original location.
+When this happens, alti+server doesn't know the powerup was moved, and
+can't register it.  Capture the flag maps should never use walls, and
+race maps should only use them if checkpoints are sufficiently large such
+that a wall couldn't move all the powerups.
 

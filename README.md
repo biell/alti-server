@@ -463,6 +463,11 @@ in dated files in the directory specified by the config `raceData`.
     Set the next race to occur on `map`, and notify the particpants that the
     race is ready to start.
 
+  * **/vote raceStart**<br>
+    Players can call a vote to start a race.  This allows for a recorded race
+    to be played without a moderator.  When used, 75% of players must agree,
+    then all players are entered into the race.
+
   * **/raceCancel**<br>
     Cancel the pending race, removing all players and unsetting the next map.
     If a race is in-progress, it will be halted and all players may join the
