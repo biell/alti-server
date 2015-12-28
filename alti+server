@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.82';
+my($VERSION)='1.83';
 
 =head1 NAME
 
@@ -1629,7 +1629,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Commands{'changeMap'}=['map'];
 		$Commands{'removeMap'}=['map'];
 		$Commands{'kick'}=['player'];
-		$Commands{'ban'}=['vaporId'];
+		$Commands{'listBans'}=undef;
+		$Commands{'addBan'}=['string', 'string', 'string', 'string'];
+		$Commands{'removeBan'}=['string'];
+		$Commands{'ban'}=['player', 'string', 'string', 'string'];
 		$Commands{'serverWhisper'}=['player', 'string'];
 
 		rename($Custfile, $Custfile_o);
@@ -3372,6 +3375,8 @@ they make the top 5.
 
 		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
+		$save=0 if(!defined($assign) && map::type('ruin'));
+
 		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
 
 		$save=0 if(map::mode('tbd') && map::type('coop')
@@ -4444,6 +4449,8 @@ play though extended interfaces and server support.
 
 		return(0) unless($portal);
 
+		return(0) unless(plus::no_repeats($e, $p, $portal->[0]));
+
 		&bench($p);
 		&spawn_here($p, @$portal[1,2,3]);
 
@@ -4581,6 +4588,7 @@ play though extended interfaces and server support.
 		if(-r $plus) {
 			open($read, '<', $plus);
 			while(<$read>) {
+				chomp;
 				s|^\s*/?||;
 
 				next unless(m/^(set|unset|add|del)\s/);
