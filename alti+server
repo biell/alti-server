@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.83';
+my($VERSION)='1.84';
 
 =head1 NAME
 
@@ -4171,7 +4171,7 @@ play though extended interfaces and server support.
 		my($flags)=stash::get($p->{'team'}, 'powerups', map::name);
 
 		return unless($flags);
-		return if(utils::delta($Captured)<5);
+		return if(utils::delta($Captured)<5000);
 		return unless(map::mode('ball'));
 		return if(&game_over);
 
@@ -4183,7 +4183,18 @@ play though extended interfaces and server support.
 			chat::all($p->{'nickname'}, 'captured the flag!');
 			$p->{'stats'}{'capture'}++;
 			&score($p);
-			$Captured=time();
+			$Captured=$e->{'time'};
+		}
+	}
+
+	sub capture_wait {
+		my($e)=@_;
+		my($wait)=$Captured+3000;
+
+		if($e->{'time'}<$wait) {
+			return(1);
+		} else {
+			return(0);
 		}
 	}
 
@@ -7724,6 +7735,8 @@ core protecting the flag.
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			return;
+		} elsif(plus::capture_wait($e)) {
+			plus::bench($p);
 		} elsif(plus::enter($p)) {
 			$p->{'team'}=$e->{'team'};
 		} else {

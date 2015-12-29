@@ -155,5 +155,15 @@ extended fatures.  A wall can move a powerup off it's original location.
 When this happens, alti+server doesn't know the powerup was moved, and
 can't register it.  Capture the flag maps should never use walls, and
 race maps should only use them if checkpoints are sufficiently large such
-that a wall couldn't move all the powerups.
+that a wall couldn't move all the powerups.  Races would also be very
+badly affected by walls.  Ruin type maps will not be effected.
+
+#### I can't finish my ruin map, it says there is still a turret left
+
+The server does not log when turrets kill turrets.  So, you can not place
+turrets such that a turret from one team would kill a turret from another.
+If this happens, the turret is destroyed, but not logged.  So, the Alti+
+code things the turret is still there, and that you must destroy it to
+finish.
+
 
