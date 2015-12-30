@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.85';
+my($VERSION)='1.86';
 
 =head1 NAME
 
@@ -3513,6 +3513,10 @@ server switches the map and the race begins.
 		return($Race>0);
 	}
 
+	sub map {
+		return($Map);
+	}
+
 	sub mark {
 		my($e)=@_;
 
@@ -3528,7 +3532,7 @@ server switches the map and the race begins.
 	sub set_map {
 		my($map)=@_;
 		my($time)=time();
-		my($score)=List::Util::max(@{stash::get('ballScore', map::name)});
+		my($score)=List::Util::max(@{stash::get('ballScore', $map)});
 		my($date)=POSIX::strftime('%Y%m%dT%H%M%SZ', gmtime($time));
 
 		stash::set('nextMap', 'admin', $map);
@@ -3584,6 +3588,10 @@ server switches the map and the race begins.
 
 	sub list {
 		return(keys(%Racers));
+	}
+
+	sub count {
+		return(scalar(keys(%Racers)));
 	}
 
 	sub cancel {
@@ -4663,7 +4671,7 @@ play though extended interfaces and server support.
 					foreach my $racer (race::list) {
 						plus::assign($racer, $assign);
 					}	
-				} $config::Warmup{map::mode}/2;
+				} $config::Warmup{map::mode}/4;
 			}
 		}
 
@@ -5323,24 +5331,26 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($map)=@{$e->{'arguments'}};
 
+		ball::set_score(0, 0);
+
 		race::set_map($map);
-		race::request_go;
 		chat::whisper($p, "Will start map: $map");
 	},
 
 	'raceStart' => sub {
 		my($e, $p)=@_;
-		my($map)=map::name;
 
-		foreach my $player (player::list) {
-			race::add($player);
+		ball::set_score(0, 0);
+
+		unless(race::count) {
+			foreach my $player (player::list) {
+				race::add($player);
+			}
 		}
 
-		race::set_map($map);
+		race::set_map(map::name) unless(race::map);
 
-		foreach my $player (player::list) {
-			race::ready($player);
-		}
+		race::request_go;
 	},
 
 	'raceCancel' => sub {
