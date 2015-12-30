@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.84';
+my($VERSION)='1.85';
 
 =head1 NAME
 
@@ -1765,6 +1765,9 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 		$Reserve+=$diff+5;
 		$Maplimit--;
+
+		#debug config size issue temporry line:
+		system(sprintf("cp %s %s.%d", $Conffile, $Conffile, time()));
 	}
 
 	sub new_maps {
@@ -3490,7 +3493,7 @@ server switches the map and the race begins.
 
 	my(%Racers); tie %Racers, 'Tie::RefHash';
 	my($Race)=0;
-	my($Goals)=$config::Goals;
+	my($Goals)=0;
 	my($Map)=undef;
 	my($Start)=undef;
 	my($Timedir)=config::option('raceData') || "$INSTALL_ROOT/servers";
@@ -3499,7 +3502,7 @@ server switches the map and the race begins.
 	sub init {
 		unless($Race && $Map eq map::name()) {
 			$Race=0;
-			$Goals=$config::Goals;
+			$Goals=0;
 			$Map=undef;
 			%Racers=();
 			close($Log);
@@ -3525,6 +3528,7 @@ server switches the map and the race begins.
 	sub set_map {
 		my($map)=@_;
 		my($time)=time();
+		my($score)=List::Util::max(@{stash::get('ballScore', map::name)});
 		my($date)=POSIX::strftime('%Y%m%dT%H%M%SZ', gmtime($time));
 
 		stash::set('nextMap', 'admin', $map);
@@ -3540,6 +3544,15 @@ server switches the map and the race begins.
 		}
 
 		$Race=1;
+
+		unless($Goals) {
+			if($score<0) {
+				$Goals=abs($score);
+			} else {
+				$Goals=$config::Goals-$score;
+			}
+			print $Log "goals,$Goals\n";
+		}
 	}
 
 	sub set_goals {
@@ -4644,7 +4657,16 @@ play though extended interfaces and server support.
 					}
 				}
 			}
+		} elsif(map::type('race')) {
+			if($assign && race::on) {
+				queue::schedule {
+					foreach my $racer (race::list) {
+						plus::assign($racer, $assign);
+					}	
+				} $config::Warmup{map::mode}/2;
+			}
 		}
+
 
 		if(!stash::get(map::name) || stash::get('INIT', map::name)) {
 			foreach my $command (&import_defaults) {
@@ -6433,7 +6455,7 @@ core protecting the flag.
 
 		return unless(map::mode('ball'));
 
-		if($scores) {
+		if($scores && !race::on) {
 			$scores->[0]=$goals+$scores->[0] if($scores->[0]<0);
 			$scores->[1]=$goals+$scores->[1] if($scores->[1]<0);
 			ball::update_score(@$scores);
