@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.87';
+my($VERSION)='1.88';
 
 =head1 NAME
 
@@ -4642,6 +4642,7 @@ play though extended interfaces and server support.
 		%Reset=();
 		$Hunted=undef;
 		$Active=0;
+		$Captured=0;
 
 		foreach my $player (player::list) {
 			delete($player->{'team'});
@@ -8344,12 +8345,18 @@ core protecting the flag.
 		server::start;
 		server::reopen_log;
 		player::init;
+		race::init;
+		ball::new;
+		plus::new;
 	},
 
 	'updatePrepareRestart'	=> sub {
 		sleep(5);
 		server::reopen_log;
 		player::init;
+		race::init;
+		ball::new;
+		plus::new;
 	},
 
 	'serverShutdown'	=> sub {
@@ -8770,6 +8777,9 @@ while(1) {
 				server::start;
 				server::reopen_log;
 				player::init;
+				race::init;
+				ball::new;
+				plus::new;
 			} elsif($SOUT=~m/Failed to contact .+ via local UDP port/) {
 				queue::schedule {
 					utils::ping(config::option('updateServer'))
@@ -8813,6 +8823,9 @@ while(1) {
 			server::start;
 			server::reopen_log;
 			player::init;
+			race::init;
+			ball::new;
+			plus::new;
 		} else {
 			input::stdin;
 		}
