@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.88';
+my($VERSION)='1.89';
 
 =head1 NAME
 
@@ -27,7 +27,8 @@ my(%OPTIONS)=(
 	enableTalk	=> 0,			#Enable server aided direct player chat
 	changePlane	=> 1,			#Number of players to disable /cp
 	hitchThreshold	=> 0.6,			#Length of serverHitch to report
-	restartMap	=> 25,			#restart map if downloads succeed in 25s
+	restartMapTime	=> 25,			#restart map if downloads succeed in 25s
+	restartMapTypes=> 'coop,race',	#restart map only on these game types
 	timeIdleChange	=> 7200,			#changeMap when server is idle for 2hrs
 	cpuUsedChange	=> 300,			#changeMap idle servers at 5min CPU used
 	allowUploads	=> 1,			#Allow superAdmins to upload maps
@@ -2497,6 +2498,10 @@ within this threshold.
 	my(%Queue)=();
 	my($Id)=0;
 
+	sub clear {
+		%Queue=();
+	}
+
 	sub schedule(& $) {
 		my($code, $delay)=@_;
 		my($time)=Time::HiRes::time+$delay;
@@ -4650,6 +4655,7 @@ play though extended interfaces and server support.
 
 		records::init;
 		race::init;
+		queue::clear;
 		&round;
 
 		if(map::type('ruin')) {
@@ -4848,7 +4854,7 @@ the value of C<restartMap> in seconds for downloads to complete.
 	sub change_map {
 		my($map)=@_;
 
-		if(config::option('restartMap')) {
+		if(config::option('restartMapTime')) {
 			%Client=();
 			$Map=$map;
 			$Time=time();
@@ -4882,7 +4888,10 @@ the value of C<restartMap> in seconds for downloads to complete.
 		my($client)=@_;
 		my($delta)=utils::delta($Time);
 		my($warmup)=$config::Warmup{map::mode}+2;
-		my($limit)=config::option('restartMap')/2;
+		my($limit)=config::option('restartMapTime')/2;
+		my($types)=config::option('restartMapTypes');
+
+		return unless(map::type(split(m/[\s,;|]+/, $types)));
 
 		if(defined(delete($Client{$client}))) {
 			$Count--;
@@ -4907,8 +4916,10 @@ the value of C<restartMap> in seconds for downloads to complete.
 		my($map)=@_;
 		my($delta)=utils::delta($Time);
 		my($warmup)=$config::Warmup{map::mode};
-		my($limit)=config::option('restartMap');
+		my($limit)=config::option('restartMapTime');
+		my($types)=config::option('restartMapTypes');
 
+		return unless(map::type(split(m/[\s,;|]+/, $types)));
 		return unless($map eq $Map);
 		return unless($Time);
 
@@ -5996,6 +6007,7 @@ core protecting the flag.
 
 		map::new($e);
 		plus::new;
+		queue::clear;
 
 		foreach my $player (player::list) {
 			if($p->{'stats'}{'spawns'}) {
@@ -6011,6 +6023,10 @@ core protecting the flag.
 		}
 
 		chat::all('Server configured for map:', $e->{'map'});
+
+		queue::schedule {
+			records::print;
+		} 10;
 	},
 
 	'help gravity'	=> sub {
@@ -8762,6 +8778,8 @@ while(1) {
 
 				if($SOUT=~m/(\d+) bytes/) {
 					config::resize($1);
+
+					sleep(2);
 
 					if(config::option('updateMapList')) {
 						config::find_maps;
