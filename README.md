@@ -710,12 +710,17 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     shutting down, user info will be flushed to the AltBouner server before
     exiting.
 
-  * **restartMap [#]**<br>
+  * **restartMapTime [#]**<br>
     Specify to `alti+server` that if users download the `altx` map file
     in longer than game delay, but less than `#` seconds, then restart
     the map over.  This allows the game to be more properly played and
     balanced.  Also, it is critical for race maps that players start at
     the same time.
+
+  * **restartMapTypes [type1,type2,...]**<br>
+    Specify that the map restart functionality described just above only
+    apply to game types `type``, `type2`, ...  This functionality is best
+    used on race and coop maps, where times matter.
 
   * **boxColor [black|blue|cyan|green|magenta|red|white|yellow]**<br>
     Two sections of the console curses interface are encapsulated
