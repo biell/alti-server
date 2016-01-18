@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.91';
+my($VERSION)='1.92';
 
 =head1 NAME
 
@@ -3358,8 +3358,19 @@ they make the top 5.
 
 	sub mark {
 		my($e)=@_;
+		my($records)=stash::get('records', map::name);
+		my($i)=1;
 
 		$Start=$e->{'time'};
+
+		return unless(ref($records) eq 'ARRAY');
+
+		foreach my $record (@$records) {
+			queue::schedule {
+				chat::all(utils::nth($i++), ':',
+					utils::secs2mins($record->[0]))
+			} $record->[0]-3;
+		}
 	}
 
 	sub destroy {
