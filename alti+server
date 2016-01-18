@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='1.89';
+my($VERSION)='1.91';
 
 =head1 NAME
 
@@ -116,6 +116,14 @@ my(%CURL_RV)=(
 );
 
 my(%HOOKS, %CONSOLE, %ALTIPLUS);
+
+if(exists($ENV{'INSTALL4J_ADD_VM_PARAMS'})) {
+	unless($ENV{'INSTALL4J_ADD_VM_PARAMS'}=~m/-verbose:gc/) {
+		$ENV{'INSTALL4J_ADD_VM_PARAMS'}.=' -verbose:gc';
+	}
+} else {
+	$ENV{'INSTALL4J_ADD_VM_PARAMS'}='-verbose:gc';
+}
 
 =head2 Interface
 
