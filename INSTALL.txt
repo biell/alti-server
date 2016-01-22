@@ -124,7 +124,7 @@ really should consider taking immediate action on configuring the following:
     this functionality in a restricted fashion.
 
 =========================
-Step 2, Start alti+server
+Step 3, Start alti+server
 =========================
 You should be ready to go to start your server, give it a try.  It is highly
 recommended that alti+server be run from a detatchable terminal.  Good
