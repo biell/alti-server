@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.95';
+my($VERSION)='1.96';
 
 =head1 NAME
 
@@ -3740,7 +3740,7 @@ server switches the map and the race begins.
 		queue::schedule {
 			chat::all('Official race starting now');
 			chat::all("Only $racers may participate");
-		} 4;
+		} 5;
 	}
 
 	sub checkpoint {
