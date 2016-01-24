@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.96';
+my($VERSION)='1.97';
 
 =head1 NAME
 
@@ -3653,6 +3653,8 @@ server switches the map and the race begins.
 			return unless($status==2);
 		}
 
+		$Race=2;
+
 		server::send('changeMap', $Map);
 	}
 
@@ -3660,6 +3662,8 @@ server switches the map and the race begins.
 		foreach my $racer (keys(%Racers)) {
 			$Racers{$racer}=2;
 		}
+
+		$Race=2;
 
 		server::send('changeMap', $Map);
 	}
@@ -3749,7 +3753,7 @@ server switches the map and the race begins.
 		my($place)=0;
 		my($msg);
 
-		return unless($Race);
+		return unless($Race>1);
 
 		printf $Log "checkpoint,%.3f,%s,%d,%d,%s\n",
 				$time, $cp, @$p{'team','player','nickname'};
