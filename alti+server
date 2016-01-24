@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.98';
+my($VERSION)='1.99';
 
 =head1 NAME
 
@@ -8465,6 +8465,8 @@ core protecting the flag.
 		sleep(1);
 		chat::all("1"); ui::display('', '', '1');
 		sleep(1);
+
+		config::launcher;
 
 		if(config::option('updateMapList')) {
 			config::find_maps;
