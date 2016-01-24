@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.97';
+my($VERSION)='1.98';
 
 =head1 NAME
 
@@ -3742,7 +3742,7 @@ server switches the map and the race begins.
 		$racers=join(', ', map($_->{'nickname'}, keys(%Racers)));
 
 		queue::schedule {
-			chat::all('Official race starting now');
+			chat::all('*** Official race starting now! ***');
 			chat::all("Only $racers may participate");
 		} 5;
 	}
