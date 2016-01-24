@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.00';
+my($VERSION)='2.01';
 
 =head1 NAME
 
@@ -3719,8 +3719,6 @@ server switches the map and the race begins.
 			&cancel;
 			return;
 		}
-
-		&start_if_ready if($Race);
 	}
 
 	sub ready {
