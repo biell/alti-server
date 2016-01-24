@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.99';
+my($VERSION)='2.00';
 
 =head1 NAME
 
@@ -3575,6 +3575,7 @@ server switches the map and the race begins.
 	my($Start)=undef;
 	my($Timedir)=config::option('raceData') || "$INSTALL_ROOT/servers";
 	my($Log)=IO::Handle->new;
+	my($Logfile)=undef;
 
 	sub init {
 		unless($Race && $Map eq map::name()) {
@@ -3583,6 +3584,7 @@ server switches the map and the race begins.
 			$Map=undef;
 			%Racers=();
 			close($Log);
+			$Logfile=undef;
 		}
 	}
 
@@ -3620,7 +3622,8 @@ server switches the map and the race begins.
 		stash::set('nextMap', 'admin', $map);
 		$Map=$map;
 
-		open($Log, '>', "$Timedir/$date-$map.txt");
+		$Logfile="$Timedir/$date-$map.txt";
+		open($Log, '>', $Logfile);
 
 		print $Log "map,$map\n", "time,$time\n";
 
@@ -3689,10 +3692,13 @@ server switches the map and the race begins.
 	}
 
 	sub cancel {
+		my($logfile)=$Logfile;
+
 		if($Race) {
 			chat::all('Pending race canceled.');
 			$Map=map::name;
 			&init;
+			unlink($logfile);
 		}
 	}
 
