@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.01';
+my($VERSION)='2.02';
 
 =head1 NAME
 
@@ -3105,6 +3105,9 @@ is updated with them as the games progress.
 
 		if(config::admin_vip($p->{'vaporId'})) {
 			push(@Admins, $p);
+			$p->{'admin'}=1;
+		} else {
+			$p->{'admin'}=0;
 		}
 
 		if($sas=~m/(^|;)$p->{'vaporId'}(;|$)/) {
@@ -3578,15 +3581,51 @@ server switches the map and the race begins.
 	my($Logfile)=undef;
 
 	sub init {
-		unless($Race && $Map eq map::name()) {
+		my($racers);
+
+		if($Race==1) {
+			1; #pass
+		} elsif($Race==2 && $Map eq map::name()) {
+			foreach my $status (values(%Racers)) {
+				return unless($status==2);
+			}
+
+			$racers=join(', ', map($_->{'nickname'}, keys(%Racers)));
+
+			$Race=3;
+
+			queue::schedule {
+				chat::all('*** Official race starting now! ***');
+				chat::all("Only $racers may participate");
+			} 8;
+		} else {
 			$Race=0;
 			$Goals=0;
 			$Map=undef;
+			$Start=undef;
 			%Racers=();
 			close($Log);
 			$Logfile=undef;
 		}
 	}
+
+	sub block {
+		my($p)=@_;
+
+		unless(exists($Racers{$p}) || $p->{'admin'}) {
+			server::send('addChatBlock', $p->{'vaporId'},
+					'AllChat', 5, 'minute', 'Spectator');
+		}
+	}
+
+	sub unblock {
+		my($p)=@_;
+
+		unless(exists($Racers{$p}) || $p->{'admin'}) {
+			server::send('removeChatBlock', $p->{'vaporId'}, 'AllChat');
+		}
+	}
+
 
 	sub on {
 		return($Race>0);
@@ -3624,6 +3663,7 @@ server switches the map and the race begins.
 
 		$Logfile="$Timedir/$date-$map.txt";
 		open($Log, '>', $Logfile);
+		$Log->autoflush(1);
 
 		print $Log "map,$map\n", "time,$time\n";
 
@@ -3656,14 +3696,22 @@ server switches the map and the race begins.
 			return unless($status==2);
 		}
 
+		foreach my $player (player::list) {
+			&block($player);
+		}
+
 		$Race=2;
 
 		server::send('changeMap', $Map);
 	}
 
 	sub start_now {
-		foreach my $racer (keys(%Racers)) {
-			$Racers{$racer}=2;
+		foreach my $player (player::list) {
+			if(exists($Racers{$player})) {
+				$Racers{$player}=2;
+			} else {
+				&block($player);
+			}
 		}
 
 		$Race=2;
@@ -3695,11 +3743,51 @@ server switches the map and the race begins.
 		my($logfile)=$Logfile;
 
 		if($Race) {
+			foreach my $player (player::list) {
+				&unblock($player);
+			}
+
 			chat::all('Pending race canceled.');
 			$Map=map::name;
 			&init;
 			unlink($logfile);
 		}
+	}
+
+	sub complete {
+		my($place)=0;
+		my($msg);
+
+		return unless(&finished);
+
+		foreach my $player (player::list) {
+			&unblock($player);
+		}
+
+		foreach my $r (sort {$Racers{$a}<=>$Racers{$b}} keys(%Racers)) {
+			$place++;
+
+			$msg=sprintf('%s : %-16s (%s)',
+				utils::nth($place),
+				$r->{'nickname'},
+				utils::secs2mins($Racers{$r}),
+			);
+
+			chat::all($msg);
+
+			print $Log join(',',
+					'place',
+					$place,
+					$r->{'team'},
+					$r->{'player'},
+					$r->{'nickname'},
+					$Racers{$r},
+					$msg
+				), "\n";
+		}
+
+		$Race=0;
+		&init;
 	}
 
 	sub add {
@@ -3719,6 +3807,10 @@ server switches the map and the race begins.
 			&cancel;
 			return;
 		}
+
+		if(&finished) {
+			&complete;
+		}
 	}
 
 	sub ready {
@@ -3734,28 +3826,9 @@ server switches the map and the race begins.
 		&start_if_ready;
 	}
 
-	sub announce {
-		my($racers);
-
-		return unless($Race);
-
-		foreach my $status (values(%Racers)) {
-			return unless($status==2);
-		}
-
-		$racers=join(', ', map($_->{'nickname'}, keys(%Racers)));
-
-		queue::schedule {
-			chat::all('*** Official race starting now! ***');
-			chat::all("Only $racers may participate");
-		} 5;
-	}
-
 	sub checkpoint {
 		my($e, $p, $cp)=@_;
 		my($time)=($e->{'time'}-$Start)/$config::Clock;
-		my($place)=0;
-		my($msg);
 
 		return unless($Race>1);
 
@@ -3770,30 +3843,7 @@ server switches the map and the race begins.
 		}
 
 		if(&finished) {
-			foreach my $r (sort {$Racers{$a}<=>$Racers{$b}} keys(%Racers)) {
-				$place++;
-
-				$msg=sprintf('%s : %-16s (%s)',
-					utils::nth($place),
-					$r->{'nickname'},
-					utils::secs2mins($Racers{$r}),
-				);
-
-				chat::all($msg);
-
-				print $Log join(',',
-						'place',
-						$place,
-						$r->{'team'},
-						$r->{'player'},
-						$r->{'nickname'},
-						$Racers{$r},
-						$msg
-					), "\n";
-			}
-
-			$Race=0;
-			&init;
+			&complete;
 		}
 	}
 
@@ -6135,8 +6185,6 @@ core protecting the flag.
 
 		chat::all('Server configured for map:', $e->{'map'});
 
-		race::announce;
-
 		if(map::type(@records)) {
 			queue::schedule {
 				records::print;
@@ -7735,6 +7783,8 @@ core protecting the flag.
 		foreach my $statement (split(m/;/, config::option('motd'))) {
 			chat::whisper($p, $statement);
 		}
+
+		race::block($p) if(race::on);
 	},
 
 	'clientNicknameChange'	=> sub {
@@ -8293,7 +8343,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($to)='*';
 
-		race::ready($p) if(race::on && $e->{'message'}=~m/^\s*go\s*$/i);
+		#race::ready($p) if(race::on && $e->{'message'}=~m/^\s*go\s*$/i);
 
 		if($e->{'team'}) {
 			if($e->{'blocked'}) {
