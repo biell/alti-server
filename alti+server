@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.94';
+my($VERSION)='1.95';
 
 =head1 NAME
 
@@ -3687,7 +3687,7 @@ server switches the map and the race begins.
 	sub cancel {
 		if($Race) {
 			chat::all('Pending race canceled.');
-			$Race=0;
+			$Map=map::name;
 			&init;
 		}
 	}
@@ -5504,6 +5504,8 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($racer)=player::lookup($e->{'arguments'}[0]);
 
+		ball::set_score(0, 0);
+
 		race::add($racer);
 		chat::whisper($p, 'Add:', $racer->{'nickname'}, $racer->{'vaporId'});
 	},
@@ -6080,10 +6082,6 @@ core protecting the flag.
 		}
 
 		stash::delete('nextMap', 'admin') if($next);
-
-		queue::clear;
-
-		race::announce;
 	},
 
 	'mapChange:skip'	=> sub {
@@ -6128,6 +6126,8 @@ core protecting the flag.
 		}
 
 		chat::all('Server configured for map:', $e->{'map'});
+
+		race::announce;
 
 		if(map::type(@records)) {
 			queue::schedule {
