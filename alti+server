@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='1.93';
+my($VERSION)='1.94';
 
 =head1 NAME
 
@@ -807,6 +807,11 @@ L<perl(1)> should be used to ensure basic operation.
 		$digest=~m/(.{8}).(.{4}).(.{3}).(.{3}).(.{16})/;
 
 		return(join('-', $1, $2, $x.$3, $y.$4, $5));
+	}
+
+	sub is_vapor {
+		local($_)=@_;
+		m/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{16}$/;
 	}
 
 	sub proc_time {
@@ -3438,7 +3443,7 @@ they make the top 5.
 
 	sub enter {
 		my($e)=@_;
-		my($types)=config::option('recordsTypes');
+		my(@types)=map::type(split(m/\W+/, config::option('recordsTypes')));
 		my($records)=stash::get(map::name, 'records');
 		my($assign)=map::team_number(stash::get('assignTeam', map::name, 'map'));
 		my($win)=ball::winner();
@@ -3448,7 +3453,7 @@ they make the top 5.
 		my($save)=1;
 		my($time);
 
-		return unless(map::type(split(m/[\s,;|]+/, $types)));
+		return unless(map::type(@types));
 
 		$save=0 if(!defined($assign) && map::type('ruin'));
 
@@ -3596,8 +3601,13 @@ server switches the map and the race begins.
 	}
 
 	sub request_go {
-		foreach my $r (keys(%Racers)) {
-			chat::whisper($r, "Type '/go' when read to start $Map");
+		foreach my $p (player::list) {
+			if($Racers{$p}) {
+				chat::whisper($p, "Type '/go' when read to start $Map");
+			} else {
+				chat::whisper($p, 'Game reserved for race participants');
+				&bench($p);
+			}
 		}
 	}
 
@@ -3641,6 +3651,14 @@ server switches the map and the race begins.
 	sub start_if_ready {
 		foreach my $status (values(%Racers)) {
 			return unless($status==2);
+		}
+
+		server::send('changeMap', $Map);
+	}
+
+	sub start_now {
+		foreach my $racer (keys(%Racers)) {
+			$Racers{$racer}=2;
 		}
 
 		server::send('changeMap', $Map);
@@ -3692,22 +3710,37 @@ server switches the map and the race begins.
 			return;
 		}
 
-		&start_if_ready if($Race==1);
+		&start_if_ready if($Race);
 	}
 
 	sub ready {
 		my($p)=@_;
-		my($map)=stash::get('nextMap', 'admin');
 
-		unless($map) {
+		unless($Race) {
 			chat::whisper($p, 'Race vote not active');
 			return;
 		}
 
 		$Racers{$p}=2;
 
-		$Race=2;
 		&start_if_ready;
+	}
+
+	sub announce {
+		my($racers);
+
+		return unless($Race);
+
+		foreach my $status (values(%Racers)) {
+			return unless($status==2);
+		}
+
+		$racers=join(', ', map($_->{'nickname'}, keys(%Racers)));
+
+		queue::schedule {
+			chat::all('Official race starting now');
+			chat::all("Only $racers may participate");
+		} 4;
 	}
 
 	sub checkpoint {
@@ -5429,7 +5462,8 @@ core protecting the flag.
 
 		race::set_map(map::name) unless(race::map);
 
-		race::request_go;
+		#race::request_go;
+		race::start_now;
 	},
 
 	'raceCancel' => sub {
@@ -6046,6 +6080,10 @@ core protecting the flag.
 		}
 
 		stash::delete('nextMap', 'admin') if($next);
+
+		queue::clear;
+
+		race::announce;
 	},
 
 	'mapChange:skip'	=> sub {
@@ -6054,6 +6092,7 @@ core protecting the flag.
 
 	'mapChange'	=> sub {
 		my($e, $p)=@_;
+		my(@records)=map::type(split(m/\W+/, config::option('recordsTypes')));
 		my(@settings)=qw(
 			gameType
 			maxPlayers
@@ -6090,9 +6129,11 @@ core protecting the flag.
 
 		chat::all('Server configured for map:', $e->{'map'});
 
-		queue::schedule {
-			records::print;
-		} 10;
+		if(map::type(@records)) {
+			queue::schedule {
+				records::print;
+			} 10;
+		}
 	},
 
 	'help gravity'	=> sub {
@@ -7843,6 +7884,7 @@ core protecting the flag.
 		my($planere)=stash::get('planes', map::name, 'map');
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
+		my(@records)=map::type(split(m/\W+/, config::option('recordsTypes')));
 		my($match);
 
 		$p->{'plane'}=$e->{'plane'};
@@ -7895,7 +7937,7 @@ core protecting the flag.
 			if(map::name eq config::lobby) {
 				server::send('changeMap', config::random_map);
 			} else {
-				records::mark($e);
+				records::mark($e) if(map::type(@records));
 				race::mark($e);
 			}
 		}
