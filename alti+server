@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.02';
+my($VERSION)='2.03';
 
 =head1 NAME
 
@@ -3446,7 +3446,7 @@ they make the top 5.
 
 	sub enter {
 		my($e)=@_;
-		my(@types)=map::type(split(m/\W+/, config::option('recordsTypes')));
+		my(@types)=split(m/\W+/, config::option('recordsTypes'));
 		my($records)=stash::get(map::name, 'records');
 		my($assign)=map::team_number(stash::get('assignTeam', map::name, 'map'));
 		my($win)=ball::winner();
@@ -6148,7 +6148,7 @@ core protecting the flag.
 
 	'mapChange'	=> sub {
 		my($e, $p)=@_;
-		my(@records)=map::type(split(m/\W+/, config::option('recordsTypes')));
+		my(@records)=split(m/\W+/, config::option('recordsTypes'));
 		my(@settings)=qw(
 			gameType
 			maxPlayers
@@ -7942,7 +7942,7 @@ core protecting the flag.
 		my($planere)=stash::get('planes', map::name, 'map');
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
-		my(@records)=map::type(split(m/\W+/, config::option('recordsTypes')));
+		my(@records)=split(m/\W+/, config::option('recordsTypes'));
 		my($match);
 
 		$p->{'plane'}=$e->{'plane'};
