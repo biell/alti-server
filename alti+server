@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.03';
+my($VERSION)='2.04';
 
 =head1 NAME
 
@@ -38,6 +38,10 @@ my(%OPTIONS)=(
 	chatFromColor	=> 'cyan',          # black, blue, cyan, green,
 	chatToColor	=> 'yellow',        # magenta, red, white, yellow
 	uiPrettyBoxes	=> 0,               #0='|','-'; 1=ACS/Unicode prettiness
+	db_type		=> 'SQLite',		#Or 'Pg' for postgres
+	db_name		=> 'sqlite.db',	#Or 'hostname' for postgres
+	db_user		=> '',			#Actual username for postgres
+	db_pass		=> '',			#Run through "utils::get_value"
 	noviceLevel	=> 8,               #Require level 8 for Ace 0 to play
 	aceLevel		=> 3,               #Require level 3 for Ace 1-10 to play
 	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
@@ -913,6 +917,104 @@ L<perl(1)> should be used to ensure basic operation.
 		return($string);
 	}
 }
+
+=head2 Backends
+
+Some data can be stored in a database.  B<alti+server> will automatically
+enable more liberal data collection and storage when a database backend
+is present than it otherwise would.  Without a database backend, data is
+stored in standard file formats (json or csv) so it can be accessed easily
+when needed.  This is slow, and requires a lot of memory.  As such,
+B<alti+server> runs in a lean mode.  With a proper database backend, more
+information can be kept and accesed efficiently.
+
+Supported databases are SQLite and PostgreSQL.
+
+=cut
+
+{	package db;
+
+	my($Dbh)=undef;
+	my(@connect)=();
+	my($Type)=undef;
+
+	if($OPTIONS{'db_type'}=~m/Pg/i) {
+		@connect=(
+			"dbi:Pg:dbname=$OPTIONS{'db_name'}",
+			$OPTIONS{'db_user'},
+			utils::get_value($OPTIONS{'db_pass'}),
+			{'PrintError' => $OPTIONS{'debug'}}
+		);
+		ui::slog('Pg Not yet supported (sorry)');
+	} elsif($OPTIONS{'db_type'}=~m/SQLite/i) {
+		@connect=(
+			"dbi:SQLite:dbname=$OPTIONS{'db_name'}",
+			'',
+			'',
+			{'PrintError' => $OPTIONS{'debug'}}
+		);
+		if($Dbh=eval('use DBI; DBI->connect(@connect)')) {
+			ui::slog('using DBD::SQLite (ok)');
+			$Type='sqlite';
+		} else {
+			ui::slog('No database libraries, falling back to stash-only mode');
+		}
+	}
+
+	sub init {
+		my($stmt)=qq{
+			CREATE TABLE IF NOT EXISTS version (
+					version INTEGER
+				);
+
+			CREATE TABLE IF NOT EXISTS player (
+					vaporid CHAR(36) PRIMARY KEY,
+					nickname TEXT,
+					sticky INT,
+					seen INT,
+					ip TEXT,
+					block INT
+				);
+
+			CREATE TABLE IF NOT EXISTS aliases (
+					vaporid CHAR(36),
+					nickname TEXT
+				);
+
+			CREATE TABLE IF NOT EXISTS records (
+					id INTEGER PRIMARY KEY,
+					map TEXT,
+					record REAL,
+					date INT,
+					players TEXT
+				);
+		};
+
+		$Dbh->do($stmt);
+	}
+
+	sub upgrade {
+		my($version)=$Dbh->select_array(qq{SELECT version FROM version;});
+
+		if(!$version) {
+			$Dbh->do(qq{INSERT INTO version values (1);});
+		}
+	}
+
+	sub enabled {
+		return(defined($Type));
+	}
+
+	sub type {
+		return($Type);
+	}
+
+	sub register_player {
+		my($p)=@_;
+	}
+
+}
+
 
 =head2 Interchange Formats
 
@@ -3172,10 +3274,12 @@ is updated with them as the games progress.
 	sub infraction {
 		my($p, $value)=@_;
 		my($count)=config::option('infractions');
+		my($nick)=$p->{'nickname'};
 
 		$p->{'infractions'}+=$value;
 		if($p->{'infractions'}>$count) {
-			server::send('kick', $p->{'nickname'});
+			$nick=~s|\\|\\\\|g;
+			server::send('kick', '"'.$nick.'"');
 			return(0);
 		} else {
 			return(int($p->{'infractions'}));
@@ -3692,13 +3796,23 @@ server switches the map and the race begins.
 	}
 
 	sub start_if_ready {
+		my($assign)=stash::get('assignTeam', map::name, 'map');
+
 		foreach my $status (values(%Racers)) {
 			return unless($status==2);
 		}
 
 		foreach my $player (player::list) {
-			&block($player);
+			if(exists($Racers{$player})) {
+				$Racers{$player}=2;
+				plus::assign($player, $assign);
+			} else {
+				&block($player);
+				plus::bench($player);
+			}
 		}
+
+		#server::send('startTournament');
 
 		$Race=2;
 
@@ -3706,13 +3820,19 @@ server switches the map and the race begins.
 	}
 
 	sub start_now {
+		my($assign)=stash::get('assignTeam', map::name, 'map');
+
 		foreach my $player (player::list) {
 			if(exists($Racers{$player})) {
 				$Racers{$player}=2;
+				plus::assign($player, $assign);
 			} else {
 				&block($player);
+				plus::bench($player);
 			}
 		}
+
+		#server::send('startTournament');
 
 		$Race=2;
 
@@ -3743,6 +3863,8 @@ server switches the map and the race begins.
 		my($logfile)=$Logfile;
 
 		if($Race) {
+			#server::send('stopTournament');
+
 			foreach my $player (player::list) {
 				&unblock($player);
 			}
@@ -3759,6 +3881,8 @@ server switches the map and the race begins.
 		my($msg);
 
 		return unless(&finished);
+
+		#server::send('stopTournament');
 
 		foreach my $player (player::list) {
 			&unblock($player);
