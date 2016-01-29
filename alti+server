@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.04';
+my($VERSION)='2.05';
 
 =head1 NAME
 
@@ -4935,9 +4935,9 @@ play though extended interfaces and server support.
 			delete($player->{'team'});
 		}
 
+		queue::clear;
 		records::init;
 		race::init;
-		queue::clear;
 		&round;
 
 		if(map::type('ruin')) {
