@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.05';
+my($VERSION)='2.06';
 
 =head1 NAME
 
@@ -3912,6 +3912,11 @@ server switches the map and the race begins.
 
 		$Race=0;
 		&init;
+
+		queue::schedule {
+			chat::all('*** Official race complete! ***');
+			chat::all("All players may spawn");
+		} 4;
 	}
 
 	sub add {
