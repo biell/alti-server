@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.06';
+my($VERSION)='2.07';
 
 =head1 NAME
 
@@ -918,6 +918,7 @@ L<perl(1)> should be used to ensure basic operation.
 	}
 }
 
+
 =head2 Backends
 
 Some data can be stored in a database.  B<alti+server> will automatically
@@ -962,42 +963,72 @@ Supported databases are SQLite and PostgreSQL.
 	}
 
 	sub init {
-		my($stmt)=qq{
-			CREATE TABLE IF NOT EXISTS version (
-					version INTEGER
+		my(@stmts)=(
+			qq{
+				CREATE TABLE IF NOT EXISTS info (
+					key TEXT PRIMARY KEY,
+					value TEXT
 				);
-
-			CREATE TABLE IF NOT EXISTS player (
+			},
+	
+			qq{
+				CREATE TABLE IF NOT EXISTS player (
 					vaporid CHAR(36) PRIMARY KEY,
 					nickname TEXT,
-					sticky INT,
-					seen INT,
+					sticky INTEGER,
+					seen INTEGER,
 					ip TEXT,
-					block INT
+					block INTEGER
 				);
+			},
 
-			CREATE TABLE IF NOT EXISTS aliases (
+			qq{
+				CREATE TABLE IF NOT EXISTS aliases (
 					vaporid CHAR(36),
-					nickname TEXT
+					nickname TEXT,
+					PRIMARY KEY (vaporid, nickname),
+					FOREIGN KEY (vaporid) REFERENCES player(vaporid)
 				);
+			},
 
-			CREATE TABLE IF NOT EXISTS records (
+			qq{
+				CREATE TABLE IF NOT EXISTS records (
 					id INTEGER PRIMARY KEY,
 					map TEXT,
 					record REAL,
-					date INT,
+					date INTEGER,
 					players TEXT
 				);
-		};
+			},
+		);
 
-		$Dbh->do($stmt);
+		foreach my $stmt (@stmts) {
+			$Dbh->do($stmt);
+		}
+	}
+
+	sub shutdown {
+		if($Dbh) {
+			$Dbh->disconnect;
+			$Dbh=undef;
+		}
+	}
+
+	sub info {
+		my($key)=@_;
+
+		return(undef) unless($key);
+
+		return($Dbh->select_array(
+			qq{ SELECT value FROM info WHERE key="$key"; }
+		));
 	}
 
 	sub upgrade {
-		my($version)=$Dbh->select_array(qq{SELECT version FROM version;});
+		my($version)=&info('version');
 
 		if(!$version) {
-			$Dbh->do(qq{INSERT INTO version values (1);});
+			$Dbh->do(qq{INSERT INTO info values ('version', 1);});
 		}
 	}
 
@@ -1009,10 +1040,106 @@ Supported databases are SQLite and PostgreSQL.
 		return($Type);
 	}
 
-	sub register_player {
-		my($p)=@_;
+	sub select {
+		my($table, $where)=@_;
+		my(@rows)=();
+		my($sth, $row);
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where);
+
+		$sth=$Dbh->prepare("SELECT * FROM $table WHERE $where");
+		$sth->execute;
+
+		while($row=$sth->fetchrow_hashref) {
+			push(@rows, $row);
+		}
+
+		$sth->finish;
+
+		return(@rows);
 	}
 
+	sub insert {
+		my($table, $set)=@_;
+		my(@keys, @values);
+		my($keys, $values);
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && ref($set) eq 'HASH' && %$set);
+
+		while(my($k, $v)=each(%$set)) {
+			push(@keys, $k);
+			if($v=~m/^[\d.]+$/) {
+				push(@values, $v);
+			} else {
+				push(@values, '"'.$v.'"');
+			}
+		}
+		$keys=join(', ', @keys);
+		$values=join(', ', @values);
+
+		return($Dbh->do(qq{INSERT INTO $table ($keys) VALUES($values);}));
+	}
+
+	sub update {
+		my($table, $where, $set)=@_;
+		my(@pairs);
+		my($pairs);
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where && ref($set) eq 'HASH' && %$set);
+
+		while(my($k, $v)=each(%$set)) {
+			if($v=~m/^[\d.]+$/) {
+				push(@pairs, "$k=$v");
+			} else {
+				push(@pairs, sprintf('%s="%s"', $k, $v));
+			}
+		}
+		$pairs=join(', ', @pairs);
+
+		return($Dbh->do(qq{UPDATE $table SET $pairs WHERE $where;}));
+	}
+
+	sub upsert {
+		my($table, $where, $set)=@_;
+		my($count);
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where && $set);
+
+		($count)=$Dbh->selectrow_array(
+				qq{SELECT COUNT(1) FROM $table WHERE $where;});
+
+		if($count<=1) {
+			&insert($table, $set);
+		} elsif($count==1) {
+			&update($table, $where, $set);
+		} else {
+			ui::slog('Use db::update if you want to update multiple rows');
+			return(undef);
+		}
+
+	}
+
+	sub delete {
+		my($table, $where)=@_;
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where);
+
+		return($Dbh->do(qq{DELETE FROM $table WHERE $where;}));
+	}
+
+	#Stash interface:
+	sub get {
+		1;
+	}
+
+	sub set {
+		1;
+	}
 }
 
 
@@ -1118,6 +1245,8 @@ pure-perl C<JSON::PP>, and this will be used if C<JSON::XS> is not found.
 	}
 
 }
+
+
 =head2 State
 
 B<alti+server> keeps state from one invocation to another.  It stores
@@ -3221,6 +3350,13 @@ is updated with them as the games progress.
 		$Pdb{$p->{'nickname'}}	=
 		$Pdb{$p->{'player'}}	=
 		$Pdb{$p->{'vaporId'}}	= $p;
+
+		#db::upsert('player', qq{vaporid="$p->{'vaporId'}"}, {
+		#		'vaporid'		=> $p->{'vaporId'},
+		#		'nickname'	=> $p->{'nickname'},
+		#		'ip'			=> $p->{'ip'},
+		#		'seen'		=> time(),
+		#	});
 	}
 
 	sub rename {
@@ -3231,6 +3367,12 @@ is updated with them as the games progress.
 		delete($Pdb{$old});
 
 		$p->{'nickname'}=$new;
+
+		#db::insert('player',
+		#	{ 'vaporid' => $p->{'vaporId'}, 'nickname' => $old });
+
+		#db::update('player', qq{ vaporid="$p->{'vaporId'}" },
+		#	{ 'nickname' => $new });
 	}
 
 	sub remove {
@@ -3460,9 +3602,11 @@ they make the top 5.
 
 {	package records;
 
+	my(%Helpers); tie %Helpers, 'Tie::RefHash';
 	my($Start)=0;
 	my($Winner)=undef;
 	my($Destroy)=undef;
+
 
 	sub print {
 		my($records)=stash::get(map::name, 'records');
@@ -3548,6 +3692,14 @@ they make the top 5.
 		$Destroy=$e->{'time'};
 	}
 
+	sub help {
+		my($p, $points)=@_;
+
+		return if($p->{'isBot'});
+
+		$Helpers{$p}+=$points;
+	}
+
 	sub enter {
 		my($e)=@_;
 		my(@types)=split(m/\W+/, config::option('recordsTypes'));
@@ -3558,7 +3710,7 @@ they make the top 5.
 		my(@holder)=(time());
 		my($place)=1;
 		my($save)=1;
-		my($time);
+		my($time, @nicks);
 
 		return unless(map::type(@types));
 
@@ -3579,6 +3731,12 @@ they make the top 5.
 			} else {
 				push(@holder, $Winner->{'nickname'});
 			}
+		} elsif(%Helpers && map::type('coop', 'ruin')) {
+			@nicks=sort({ $Helpers{$b} <=> $Helpers{$a} } keys(%Helpers));
+
+			splice(@nicks, 6, @nicks, '...') if(@nicks>6);
+
+			push(@holder, join(', ', map($_->{'nickname'}, @nicks)));
 		}
 
 		$records=[] unless(ref($records) eq 'ARRAY');
@@ -3658,6 +3816,7 @@ they make the top 5.
 	sub init {
 		$Winner=undef;
 		$Destroy=undef;
+		%Helpers=();
 	}
 
 }
@@ -8157,6 +8316,7 @@ core protecting the flag.
 		my($a2)=player::lookup($e->{'secondaryAssister'});
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 
+		records::help($p, 20);
 		ball::goal($e, $p);
 
 		if($spawn_mode=~m/near|after/) {
@@ -8424,7 +8584,9 @@ core protecting the flag.
 		$p->{'stats'}{'kill'}{$v->{'nickname'}}++;
 		$v->{'stats'}{'died'}++;
 
+		records::help($p, 2);
 		if($p->{'team'} == $v->{'team'}) {
+			records::help($p, -4);
 			chat::snark($v, "$v->{'nickname'} was killed by friendly fire");
 		} elsif($e->{'multi'}>5) {
 			chat::snark($p, "$p->{'nickname'} says Booyah!!");
@@ -8437,10 +8599,26 @@ core protecting the flag.
 		}
 	},
 
+	'structureDamage'	=> sub {
+		my($e, $p)=@_;
+
+		if($e->{'target'} eq 'base') {
+			records::help($p, $e->{'xp'}-10);
+		} else {
+			records::help($p, 1);
+		}
+	},
+
 	'structureDestroy'	=> sub {
 		my($e, $p)=@_;
 
 		$p->{'stats'}{$e->{'target'}}++;
+
+		if($e->{'target'} eq 'base') {
+			records::help($p, $e->{'xp'}+10);
+		} else {
+			records::help($p, 2);
+		}
 
 		plus::destroy($p);
 		records::destroy($e, $p);
@@ -8971,6 +9149,7 @@ also only available from the console.
 	'shutdown'		=> sub {
 		altbouncer::upload;
 		server::shutdown;
+		db::shutdown;
 		ui::shutdown;
 		exit(0);
 	},
@@ -8991,6 +9170,7 @@ local(%SIG)=(
 	},
 	'__DIE__'		=> sub {
 		server::shutdown;
+		db::shutdown;
 		ui::shutdown;
 		print @_, "\n";
 		exit(1);
@@ -9067,6 +9247,7 @@ while(1) {
 
 				server::interrupt;
 				server::shutdown;
+				db::shutdown;
 				ui::shutdown;
 				exit(1);
 			} elsif($SOUT=~m/Error processing packet .*, playerId=(\d+)/) {
@@ -9083,6 +9264,7 @@ while(1) {
 					if(config::option('updateMapList')) {
 						config::find_maps;
 					} else {
+						db::shutdown;
 						ui::shutdown;
 						print "Config size too big, remove maps from mapList\n";
 						exit(1);
@@ -9153,6 +9335,7 @@ while(1) {
 
 END {
 	server::shutdown;
+	db::shutdown;
 	ui::shutdown;
 	exit(0);
 }
