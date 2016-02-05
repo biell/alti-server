@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.07';
+my($VERSION)='2.08';
 
 =head1 NAME
 
@@ -3697,6 +3697,16 @@ they make the top 5.
 
 		return if($p->{'isBot'});
 
+		unless(exists($Helpers{$p})) {
+			foreach my $helper (keys(%Helpers)) {
+				if($helper->{'vaporId'} eq $p->{'vaporId'}) {
+					$Helpers{$p}=$Helpers{$helper};
+					delete($Helpers{$helper});
+					last;
+				}
+			}
+		}
+
 		$Helpers{$p}+=$points;
 	}
 
@@ -3721,6 +3731,10 @@ they make the top 5.
 		$save=0 if(map::mode('tbd') && map::type('coop')
 				&& ($e->{'time'}-$Destroy) > 3000);
 
+		$records=[] unless(ref($records) eq 'ARRAY');
+
+		$time=sprintf("%0.2f", ($e->{'time'} - $Start)/$config::Clock);
+
 		if($Winner && map::type('race')) {
 			if(plus::spawns($Winner)>1) {
 				if(player::count() < $min_players) {
@@ -3734,14 +3748,18 @@ they make the top 5.
 		} elsif(%Helpers && map::type('coop', 'ruin')) {
 			@nicks=sort({ $Helpers{$b} <=> $Helpers{$a} } keys(%Helpers));
 
-			splice(@nicks, 6, @nicks, '...') if(@nicks>6);
+			if($time>90 && $Helpers{$nicks[0]}>50) {
+				@nicks=grep($Helpers{$_}>25, @nicks);
+			} else {
+				@nicks=grep($Helpers{$_}>10, @nicks);
+			}
 
-			push(@holder, join(', ', map($_->{'nickname'}, @nicks)));
+			splice(@nicks, 5, @nicks, '...') if(@nicks>5);
+
+			if(@nicks) {
+				push(@holder, join(', ', map($_->{'nickname'}, @nicks)));
+			}
 		}
-
-		$records=[] unless(ref($records) eq 'ARRAY');
-
-		$time=sprintf("%0.2f", ($e->{'time'} - $Start)/$config::Clock);
 
 		if($save) {
 			for(my $i=0; $i<@$records; $i++) {
@@ -8092,6 +8110,8 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($reason)='';
 
+		records::help($p, -10);
+
 		race::del($p);
 		plus::leave($p);
 		player::remove($p);
@@ -8603,7 +8623,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		if($e->{'target'} eq 'base') {
-			records::help($p, $e->{'xp'}-10);
+			records::help($p, $e->{'xp'}-5);
 		} else {
 			records::help($p, 1);
 		}
