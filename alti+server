@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.09';
+my($VERSION)='2.10';
 
 =head1 NAME
 
@@ -2737,17 +2737,28 @@ directly with it to manage the instance.
 		return(map(utils::secs2hrs($_), &cpu_secs));
 	}
 
+	sub altiquote {
+		local($_)=@_;
+
+		s/^\s*"(.*)"\s*$/\1/;
+		s/\\/\\\\/g;
+		s/"/\\"/g;
+
+		if(m/[\s'`]/) {
+			return('"'.$_.'"');
+		} else {
+			return($_);
+		}
+	}
+
 	sub send {
 		my($command)=shift;
 		my($pipe)="$INSTALL_ROOT/servers/command.txt";
 		my($msg)=IO::Handle->new;
 
 		foreach my $arg (@_) {
-			if($arg=~m/^\s*"(.*)"\s*$/) {
-				$command.=sprintf(' "%s"', quotemeta($arg));
-			} else {
-				$command.=sprintf(' %s', quotemeta($arg));
-			}
+			$command.=' ';
+			$command.=&altiquote($arg);
 		}
 		
 		open($msg, '>>', $pipe);
