@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.11';
+my($VERSION)='2.12';
 
 =head1 NAME
 
@@ -582,7 +582,7 @@ list.
 			&overwrite_input('');
 		} elsif($key eq 'tab') {
 			if($Input=~s|^\s*/||) {
-				@cmd=($Input=~m/(".*?"|".*$|\w+)/g);
+				@cmd=server::parse_cmd($Input);
 				if(@cmd==1) {
 					&overwrite_input(&expand_command(@cmd));
 				} else {
@@ -600,18 +600,14 @@ list.
 			$Input=~s|^\s+||;
 
 			if($Input=~s|^/||) {
-				@cmd=($Input=~m/(".*?"|".*$|\S+)/g);
-				foreach(@cmd) {
-					s/^"//;
-					s/"$//;
-				}
+				@cmd=server::parse_cmd($Input);
 
 				&hist_push($Input);
 
 				if(exists($CONSOLE{$cmd[0]})) {
 					$CONSOLE{$cmd[0]}->(splice(@cmd, 1));
 				} else {
-					server::send($Input);
+					server::send(@cmd);
 				}
 
 				&overwrite_input('');
@@ -2738,10 +2734,20 @@ directly with it to manage the instance.
 		return(map(utils::secs2hrs($_), &cpu_secs));
 	}
 
+	sub parse_cmd {
+		local($_)=@_;
+		my(@cmd)=();
+
+		while(s/\s*"(.*?(?<!\\))"\s*|\s*"(.*?)\s*$|\s*(\S+)\s*//) {
+			push(@cmd, $1 // $2 // $3);
+		}
+
+		return(@cmd);
+	}
+
 	sub altiquote {
 		local($_)=@_;
 
-		s/^\s*"(.*)"\s*$/\1/;
 		s/\\/\\\\/g;
 		s/"/\\"/g;
 
@@ -3914,7 +3920,7 @@ server switches the map and the race begins.
 
 		unless(exists($Racers{$p}) || $p->{'admin'}) {
 			server::send('addChatBlock', $p->{'vaporId'},
-					'AllChat', 5, 'minute', 'Spectator');
+					'AllChat', 5, 'minute', 'All chat blocked during race');
 		}
 	}
 
@@ -4008,7 +4014,7 @@ server switches the map and the race begins.
 			}
 		}
 
-		#server::send('startTournament');
+		#server::send('startTournament') if(&count > 1);
 
 		$Race=2;
 
@@ -4028,7 +4034,7 @@ server switches the map and the race begins.
 			}
 		}
 
-		#server::send('startTournament');
+		#server::send('startTournament') if(&count > 1);
 
 		$Race=2;
 
@@ -4059,7 +4065,7 @@ server switches the map and the race begins.
 		my($logfile)=$Logfile;
 
 		if($Race) {
-			#server::send('stopTournament');
+			#server::send('stopTournament') if(&count > 1);
 
 			foreach my $player (player::list) {
 				&unblock($player);
@@ -4078,7 +4084,7 @@ server switches the map and the race begins.
 
 		return unless(&finished);
 
-		#server::send('stopTournament');
+		#server::send('stopTournament') if(&count > 1);
 
 		foreach my $player (player::list) {
 			&unblock($player);
@@ -5168,7 +5174,7 @@ play though extended interfaces and server support.
 
 		if(!stash::get(map::name, 'map') || stash::get('INIT', map::name, 'map')) {
 			foreach my $command (&import_defaults) {
-				server::send($command);
+				server::send(server::parse_cmd($command));
 			}
 			stash::delete('INIT', map::name, 'map');
 		}
@@ -5811,7 +5817,7 @@ core protecting the flag.
 		my($type, $args)=@{$e->{'arguments'}};
 		my(@args);
 
-		@args=($args=~m/(".*?"|".*$|\S+)/g);
+		@args=server::parse_cmd($args);
 
 		return unless($e->{'superAdmin'});
 
@@ -9056,7 +9062,7 @@ also only available from the console.
 		$prefix='! ' if(config::custom_command('!'));
 
 		foreach my $command (plus::import_defaults) {
-			server::send($prefix.$command);
+			server::send($prefix, server::parse_cmd($command));
 		}
 		stash::delete('INIT', map::name, 'map');
 	},
