@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.10';
+my($VERSION)='2.11';
 
 =head1 NAME
 
@@ -2451,7 +2451,7 @@ them to the AltBouncer system.
 	my($Seenlog_o)="$INSTALL_ROOT/servers/seen_old.txt";
 	my($Url)='http://tec27.com/altbouncer/uploadaltnames.php';
 	my($Curl)=utils::which('curl', 'good', 'forcing AltBouncer support off');
-	my(@Args)=qw(-s -m 6 -F MAX_FILE_SIZE=80000);
+	my(@Args)=qw(-s -F MAX_FILE_SIZE=80000 -m);
 
 	my(%Seen)=();
 
@@ -2524,6 +2524,7 @@ them to the AltBouncer system.
 	}
 
 	sub upload {
+		my($timeout)=@_;
 		my($stage, $upload)=(IO::Handle->new, IO::Handle->new);
 		my($rejected)=1;
 		local($_);
@@ -2542,8 +2543,8 @@ them to the AltBouncer system.
 			return;
 		}
 
-		ui::slog($Curl, @Args, '-F', "uploadedfile=\@$File", $Url);
-		open($upload, '-|', $Curl, @Args, '-F', "uploadedfile=\@$File", $Url);
+		ui::slog($Curl, @Args, $timeout, '-F', "uploadedfile=\@$File", $Url);
+		open($upload, '-|', $Curl, @Args, $timeout, '-F', "uploadedfile=\@$File", $Url);
 
 		while(<$upload>) {
 			chomp;
@@ -8815,7 +8816,7 @@ core protecting the flag.
 		map::end;
 
 		#This is a good time to do slow stuff:
-		altbouncer::upload if(altbouncer::count > 250);
+		altbouncer::upload(5) if(altbouncer::count > 250);
 	},
 
 	'restartMap'	=> sub {
@@ -9185,7 +9186,7 @@ also only available from the console.
 	},
 
 	'shutdown'		=> sub {
-		altbouncer::upload;
+		altbouncer::upload(15);
 		server::shutdown;
 		db::shutdown;
 		ui::shutdown;
@@ -9338,11 +9339,11 @@ while(1) {
 						server::send('changeMap',
 							config::lobby || config::random_map);
 						map::end;
-						altbouncer::upload;
+						altbouncer::upload(10);
 					}
 
 					if(altbouncer::count > 100) {
-						altbouncer::upload;
+						altbouncer::upload(10);
 					}
 				}
 			}
