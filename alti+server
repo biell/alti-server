@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.08';
+my($VERSION)='2.09';
 
 =head1 NAME
 
@@ -1134,11 +1134,21 @@ Supported databases are SQLite and PostgreSQL.
 
 	#Stash interface:
 	sub get {
-		1;
+		my($schema, @path)=@_;
+		my($output)=[];
+
+		if($schema eq 'player') {
+			1;
+		} elsif($schema eq 'records') {
+			foreach my $row (&select('records', qq{ map = $path[0] ORDER BY record LIMIT 5; })) {
+				push(@$output, @$row{'record','date','players'});
+			}
+			return($output);
+		}
 	}
 
 	sub set {
-		1;
+		my($value, $schema, @path)=@_;
 	}
 }
 
@@ -2733,12 +2743,10 @@ directly with it to manage the instance.
 		my($msg)=IO::Handle->new;
 
 		foreach my $arg (@_) {
-			if($arg=~m/^\s*".*"\s*$/) {
-				$command.=sprintf(' %s', $arg);
-			} elsif($arg=~m/[ \t'`]/) {
-				$command.=sprintf(' "%s"', $arg);
+			if($arg=~m/^\s*"(.*)"\s*$/) {
+				$command.=sprintf(' "%s"', quotemeta($arg));
 			} else {
-				$command.=sprintf(' %s', $arg);
+				$command.=sprintf(' %s', quotemeta($arg));
 			}
 		}
 		
@@ -3420,8 +3428,7 @@ is updated with them as the games progress.
 
 		$p->{'infractions'}+=$value;
 		if($p->{'infractions'}>$count) {
-			$nick=~s|\\|\\\\|g;
-			server::send('kick', '"'.$nick.'"');
+			server::send('kick', $nick);
 			return(0);
 		} else {
 			return(int($p->{'infractions'}));
