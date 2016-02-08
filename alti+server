@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.12';
+my($VERSION)='2.13';
 
 =head1 NAME
 
@@ -3779,10 +3779,10 @@ they make the top 5.
 				@nicks=grep($Helpers{$_}>10, @nicks);
 			}
 
-			splice(@nicks, 5, @nicks, '...') if(@nicks>5);
+			splice(@nicks, 5, @nicks, {'nickname' => '...'}) if(@nicks>5);
 
 			if(@nicks) {
-				push(@holder, join(', ', map($_->{'nickname'}, @nicks)));
+				push(@holder, grep(m/\w/, map($_->{'nickname'}, @nicks)));
 			}
 		}
 
