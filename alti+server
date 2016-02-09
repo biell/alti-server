@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.13';
+my($VERSION)='2.14';
 
 =head1 NAME
 
@@ -8677,15 +8677,20 @@ core protecting the flag.
 	'pingSummary'	=> sub {
 		my($e, $p)=@_;
 		my(%pings)=%{$e->{'pingByPlayer'}};
-		my($laggard);
+		my($player);
+
+		foreach my $player_id (keys(%pings)) {
+			$player=player::lookup($player_id);
+			$player->{'ping'}=$pings{$player_id};
+		}
 
 		return unless(chat::snarky);
 		return if($config::Ping<100);
 
-		foreach my $player (List::Util::shuffle(keys(%pings))) {
-			if($pings{$player}>=$config::Ping) {
-				$laggard=player::lookup($player);
-				chat::snark($laggard, $laggard->{'nickname'}, 'is laggy');
+		foreach my $player_id (List::Util::shuffle(keys(%pings))) {
+			if($pings{$player_id}>=$config::Ping) {
+				$player=player::lookup($player_id);
+				chat::snark($player, $player->{'nickname'}, 'is laggy');
 				last;
 			}
 		}
@@ -9116,6 +9121,7 @@ also only available from the console.
 			level
 			aceRank
 			ip
+			ping
 			country
 		);
 
