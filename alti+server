@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.17';
+my($VERSION)='2.18';
 
 =head1 NAME
 
@@ -3782,7 +3782,7 @@ they make the top 5.
 
 			if(@nicks) {
 				splice(@nicks, 5, scalar(@nicks), $etal) if(@nicks>5);
-				push(@holder, map($_->{'nickname'}, @nicks));
+				push(@holder, join(', ', map($_->{'nickname'}, @nicks)));
 			}
 		}
 
