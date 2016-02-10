@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.15';
+my($VERSION)='2.16';
 
 =head1 NAME
 
@@ -9114,7 +9114,6 @@ also only available from the console.
 		my($s)=player::server;
 		my($player)=player::lookup(@_);
 		my(@keys)=qw(
-			nickname
 			player
 			vaporId
 			team
@@ -9123,11 +9122,12 @@ also only available from the console.
 			country
 		);
 
+		chat::whisper($s, $player->{'nickname'}, ':');
+		chat::whisper($s, 'level / ace:', $player->{'level'}, '/', $player->{'aceRank'});
 		foreach my $key (@keys) {
 			chat::whisper($s, "$key:", $player->{$key});
 		}
 
-		chat::whisper($s, 'level (ace):', "$player->{'level'} ($player->{'aceRank'})");
 		chat::whisper($s, "$player->{'plane'}:",
 			"$player->{'perkRed'},",
 			"$player->{'perkGreen'},",
