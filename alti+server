@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.16';
+my($VERSION)='2.17';
 
 =head1 NAME
 
@@ -9123,19 +9123,19 @@ also only available from the console.
 		);
 
 		chat::whisper($s, $player->{'nickname'}, ':');
-		chat::whisper($s, 'level / ace:', $player->{'level'}, '/', $player->{'aceRank'});
+		chat::whisper($s, '  level ace:', $player->{'level'}, $player->{'aceRank'});
 		foreach my $key (@keys) {
-			chat::whisper($s, "$key:", $player->{$key});
+			chat::whisper($s, "  $key:", $player->{$key});
 		}
 
-		chat::whisper($s, "$player->{'plane'}:",
+		chat::whisper($s, "  $player->{'plane'}:",
 			"$player->{'perkRed'},",
 			"$player->{'perkGreen'},",
 			"$player->{'perkBlue'},",
 			"$player->{'skin'}",
 		) if(exists($player->{'plane'}));
 
-		chat::whisper($s, 'joined:',
+		chat::whisper($s, '  joined:',
 			scalar(localtime($server::Start + $player->{'time'}/$config::Clock)));
 	},
 
