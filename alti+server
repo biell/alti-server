@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.14';
+my($VERSION)='2.15';
 
 =head1 NAME
 
@@ -3745,6 +3745,7 @@ they make the top 5.
 		my(@holder)=(time());
 		my($place)=1;
 		my($save)=1;
+		my($etal)={'nickname' => '...'};
 		my($time, @nicks);
 
 		return unless(map::type(@types));
@@ -3779,10 +3780,9 @@ they make the top 5.
 				@nicks=grep($Helpers{$_}>10, @nicks);
 			}
 
-			splice(@nicks, 5, @nicks, {'nickname' => '...'}) if(@nicks>5);
-
 			if(@nicks) {
-				push(@holder, grep(m/\w/, map($_->{'nickname'}, @nicks)));
+				splice(@nicks, 5, scalar(@nicks), $etal) if(@nicks>5);
+				push(@holder, map($_->{'nickname'}, @nicks));
 			}
 		}
 
@@ -9118,10 +9118,8 @@ also only available from the console.
 			player
 			vaporId
 			team
-			level
-			aceRank
-			ip
 			ping
+			ip
 			country
 		);
 
@@ -9129,6 +9127,7 @@ also only available from the console.
 			chat::whisper($s, "$key:", $player->{$key});
 		}
 
+		chat::whisper($s, 'level (ace):', "$player->{'level'} ($player->{'aceRank'})");
 		chat::whisper($s, "$player->{'plane'}:",
 			"$player->{'perkRed'},",
 			"$player->{'perkGreen'},",
