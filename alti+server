@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.18';
+my($VERSION)='2.19';
 
 =head1 NAME
 
@@ -2271,6 +2271,14 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'arguments'		=> [['note', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
+	},
+
+	'abuse'	=> {
+		'name'			=> 'abuse',
+		'arguments'		=> ['player', ['chat', 'ban', 'nick', 'rude']],
+		'voteThreshold'	=> 100,
+		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
 	},
 
@@ -5812,6 +5820,70 @@ core protecting the flag.
 		}
 	},
 
+	'abuse'		=> sub {
+		my($e, $p)=@_;
+		my($a)=player::lookup($e->{'arguments'}[0]);
+		my($type)=$e->{'arguments'}[1];
+		my($last)=stash::get('last', 'abuse', $a->{'vaporId'}, 'player');
+		my($count)=stash::get('count', 'abuse', $a->{'vaporId'}, 'player');
+		my($today)=sprintf('%.1f', time()/86400);
+		my($anick)=$a->{'nickname'};
+		my($ip)=$a->{'ip'};
+		my(@duration);
+
+		return unless($e->{'admin'});
+
+		$ip=~s/:.*$//;
+
+		if($today-$last > 30) {
+			$count-=3;
+		} elsif($today-$last > 10) {
+			$count-=2;
+		} elsif($today-$last > 4) {
+			$count-=1;
+		} else {
+			$count+=1;
+		}
+
+		$count=1 if($count<1);
+
+		if($count==1) {
+			@duration=qw( 3 hour );
+		} elsif($count==2) {
+			@duration=qw( 1 day );
+		} elsif($count==3) {
+			@duration=qw( 3 day );
+		} else {
+			@duration=qw( 1 week );
+		}
+
+		if($type=~m/chat/i) {
+			server::send('addChatBlock', $a->{'vaporId'}, 'AllChat',
+				@duration, 'Stop abusing chat');
+			server::send('addChatBlock', $ip, 'AllChat',
+				@duration, 'Stop abusing chat');
+			player::infraction($a, 1);
+		} elsif($type=~m/ban/i) {
+			server::send('ban', $anick, @duration, 'You are in time out, go to your quiet corner!');
+		} elsif($type=~m/nick/i) {
+			stash::set('nick', 'abuse', $a->{'vaporId'}, 'player', $anick);
+			chat::whisper($a, 'If you want to play on this server, change your nickname');
+			queue::schedule {
+				chat::whisper($a, 'If you do not change your nickname, you will be kicked');
+			} 5;
+			queue::schedule {
+				server::send('kick', $anick);
+			} 20;
+			player::infraction($a, 2);
+		} elsif($type=~m/rude/i) {
+			player::infraction($a, 5);
+			chat::whisper($a, 'You are being rude, knock it off or get kicked');
+		}
+
+		stash::set('last', 'abuse', $a->{'vaporId'}, 'player', $today);
+		stash::set('count', 'abuse', $a->{'vaporId'}, 'player', $count);
+	},
+
 	'upload'		=> sub {
 		my($e, $p)=@_;
 		my($type, $args)=@{$e->{'arguments'}};
@@ -5931,13 +6003,13 @@ core protecting the flag.
 		local($_)=$e->{'arguments'}[0];
 
 		if(m/y(es)?|1/i) {
-			stash::delete('block', $p->{'nickname'}, 'player');
+			stash::delete('block', $p->{'vaporId'}, 'player');
 			chat::whisper($p, "Private on-server messaging enabled");
 		} elsif(m/no?|0/i) {
-			stash::set('block', $p->{'nickname'}, 'player', 1);
+			stash::set('block', $p->{'vaporId'}, 'player', 1);
 			chat::whisper($p, "Private on-server messaging disabled");
 		} else {
-			if(stash::get('block', $p->{'nickname'}, 'player')) {
+			if(stash::get('block', $p->{'vaporId'}, 'player')) {
 				chat::whisper($p, "Private on-server messaging disabled");
 			} else {
 				chat::whisper($p, "Private on-server messaging enabled");
@@ -5963,7 +6035,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($vote)=shift(@{$e->{'arguments'}});
 
-		ui::display('', '', "$p->{'nickname'} voted: $vote");
+		ui::display($p->{'nickname'}, 'vote', $vote);
 	},
 
 	'kick'	=> sub {
@@ -5989,7 +6061,7 @@ core protecting the flag.
 			player::infraction($p, 0.25);
 		} elsif($p->{'nickname'} eq 'server') {
 			chat::whisper($to, $msg);
-		} elsif(!stash::get('block', $to->{'nickname'}, 'player')) {
+		} elsif(!stash::get('block', $to->{'vaporId'}, 'player')) {
 			ui::chat_log($to->{'nickname'}, $p->{'nickname'}, $msg);
 			server::send('serverWhisper', $to->{'nickname'}, "$p->{'nickname'}> $msg");
 		} else {
@@ -8083,15 +8155,30 @@ core protecting the flag.
 
 	'clientAdd'		=> sub {
 		my($e, $p)=@_;
+		my($anick)=stash::get('nick', 'abuse', $e->{'vaporId'}, 'player');
 
 		#                       PlayerId|VaporID
-		if($p->{'nickname'}=~m/^(\d{1,2}|[0-9a-f-]{36})$/) {
+		if($e->{'nickname'}=~m/^(\d{1,2}|[0-9a-f-]{36})$/) {
 			chat::whisper($e, 'Invalid nickname for this server.');
-			server::send('kick', $e->{'nickname'});
+			queue::schedule {
+				server::send('kick', $e->{'nickname'});
+			} 5;
 			return(undef);
-		} elsif($p->{'vaporId'}=~m/[^0-]/ && $p->{'nickname'}=~m/^Bot \d\d?/) {
+		} elsif($e->{'vaporId'}=~m/[^0-]/ && $e->{'nickname'}=~m/^Bot \d\d?/) {
 			chat::whisper($e, 'Invalid nickname for this server.');
-			server::send('kick', $e->{'nickname'});
+			queue::schedule {
+				server::send('kick', $e->{'nickname'});
+			} 5;
+			return(undef);
+		} elsif($anick) {
+			if($e->{'nickname'}=~m/\Q$anick\E/) {
+				chat::whisper($e, 'Change your nickname if you want to play here.');
+				queue::schedule {
+					server::send('kick', $e->{'nickname'});
+				} 5;
+			} else {
+				stash::delete('nick', 'abuse', $e->{'vaporId'}, 'player');
+			}
 			return(undef);
 		}
 
@@ -9114,8 +9201,8 @@ also only available from the console.
 		my($s)=player::server;
 		my($player)=player::lookup(@_);
 		my(@keys)=qw(
-			player
 			vaporId
+			player
 			team
 			ping
 			ip
@@ -9123,6 +9210,8 @@ also only available from the console.
 		);
 
 		chat::whisper($s, $player->{'nickname'}, ':');
+		chat::whisper($s, '  joined:',
+			scalar(localtime($server::Start + $player->{'time'}/$config::Clock)));
 		chat::whisper($s, '  level ace:', $player->{'level'}, $player->{'aceRank'});
 		foreach my $key (@keys) {
 			chat::whisper($s, "  $key:", $player->{$key});
@@ -9135,8 +9224,6 @@ also only available from the console.
 			"$player->{'skin'}",
 		) if(exists($player->{'plane'}));
 
-		chat::whisper($s, '  joined:',
-			scalar(localtime($server::Start + $player->{'time'}/$config::Clock)));
 	},
 
 	'showTeams'		=> sub {
