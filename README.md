@@ -494,6 +494,20 @@ the server.  If this option is set to `console`, then the `upload` and
 `removeMap` commands will not be included in the *custom_json_commands.txt*
 file to save space for more maps.
 
+  * **/abuse [player] [chat|ban|nick|rude]
+    This is a quick form access to various player control mechanisms.
+    It starts with short term consequences, and increases duration
+    automatically if behaviour does not improve.  **chat** will allow
+    the player to continue to play, but ban them from allChat and teamChat.
+    **ban** will ban the player.  **nick** is to be used if a player has
+    an incorrect nick (most likely because they are abusing clan tags),
+    and will not allow them to re-join the server until their nick is
+    changed.  **rude** uses the internal **alti+server** infractions system
+    to increase the player's infraction count by 5, and sends them a
+    server message telling them to clean up their act;  if the player is
+    within 5 infractions of being kicked, they will be kicked by the
+    server.
+
   * **/restartServer**<br>
     Restart the server. This will shut the currently running server down,
     and start a new one. This should be used to load new maps or to re-load
@@ -563,6 +577,18 @@ file to save space for more maps.
     listed in the server configuration file, it will be added. However,
     the server must be restarted for the map to be added to the
     maplist and rotation.
+
+  * **/command [enable|disable|list] [all|...]
+    The **alti+server** server has many extended features which augment
+    the commands already available on a server.  This console command
+    allows these commands to be enabled or disabled.  This can be done
+    because a particular command isn't necesary on a server (e.g. race
+    league commands on a non-race league server).  These commands require
+    space in the Altitude configuration packet, and this decreases the
+    number of maps which can be loaded on the server.  As such, you want
+    to disable commands you aren't using to increase the number of maps
+    you can serve.  Run `/command list all` to see a list of all commands
+    and their current enabled state.
 
 ### Console only commands
 
