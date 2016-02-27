@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='2.19';
+my($VERSION)='2.21';
 
 =head1 NAME
 
@@ -4599,14 +4599,18 @@ play though extended interfaces and server support.
 		my($spawn, $died)=@_;
 		my($sa)=&angle(@$spawn);
 		my($da)=&angle($died->[0]-$spawn->[0], $died->[1]-$spawn->[1]);
-		my($after)=1;
+		my($after)=0;
+		my($cc, $cw)=(&angle(0, 0, $sa+90), &angle(0, 0, $sa-90));
 
-		if($sa>90 && $da<0) {
-			$after=0 if(&angle(@$spawn[0,1], $sa+90)<$da);
-		} elsif($sa<=-90 && $da>0) {
-			$after=0 if(&angle(@$spawn[0,1], $sa-90)>$da);
-		} elsif($da<($sa-90) || ($sa+90)<$da) {
-			$after=0;
+		chat::debug("sa=$sa, da=$da, cc=$cc, cw=$cw");
+		if(90>=$sa && $sa>-90) {
+			$after=1 if($cc>=$da && $da>=$cw);
+		} else {
+			if($da>0) {
+				$after=1 if($da>=$cw);
+			} else {
+				$after=1 if($da<=$cc);
+			}
 		}
 
 		return($after);
@@ -4616,7 +4620,7 @@ play though extended interfaces and server support.
 		my($p, $x, $y)=@_;
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
-		my($near, $delta, $try)=('far', 2**20, 0);
+		my($near, $delta, $try)=(undef, 2**20, 0);
 
 		if($spawn_mode eq 'near' && ref($zones) eq 'HASH' && %$zones) {
 			foreach my $zone (sort(keys(%$zones))) {
@@ -4630,12 +4634,13 @@ play though extended interfaces and server support.
 		} elsif($spawn_mode eq 'after' && ref($zones) eq 'HASH' && %$zones) {
 			foreach my $zone (sort(keys(%$zones))) {
 				$try=utils::distance($x, $y, @{$zones->{$zone}}[0,1]);
+				chat::debug("utils::distance($x, $y, @{$zones->{$zone}}[0,1]) = $try");
 				if($try<$delta && &after($zones->{$zone}, [$x, $y])) {
 					$near=$zone;
 					$delta=$try;
 				}
 			}
-			if(exists($zones->{$near})) {
+			if($near && exists($zones->{$near})) {
 				&spawn_here($p, @{$zones->{$near}});
 			} else {
 				&spawn_reset($p);
