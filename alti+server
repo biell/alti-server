@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.21';
+my($VERSION)='2.22';
 
 =head1 NAME
 
@@ -4458,7 +4458,7 @@ play though extended interfaces and server support.
 		if(@_==1) {
 			$a=lc($_[0]);
 		} else {
-			return(utils::direction(@_));
+			return(utils::direction($x, $y));
 		}
 
 		#Accept -90, 270, 'down', or 's' to signify straight down:
@@ -4602,7 +4602,6 @@ play though extended interfaces and server support.
 		my($after)=0;
 		my($cc, $cw)=(&angle(0, 0, $sa+90), &angle(0, 0, $sa-90));
 
-		chat::debug("sa=$sa, da=$da, cc=$cc, cw=$cw");
 		if(90>=$sa && $sa>-90) {
 			$after=1 if($cc>=$da && $da>=$cw);
 		} else {
@@ -4634,7 +4633,6 @@ play though extended interfaces and server support.
 		} elsif($spawn_mode eq 'after' && ref($zones) eq 'HASH' && %$zones) {
 			foreach my $zone (sort(keys(%$zones))) {
 				$try=utils::distance($x, $y, @{$zones->{$zone}}[0,1]);
-				chat::debug("utils::distance($x, $y, @{$zones->{$zone}}[0,1]) = $try");
 				if($try<$delta && &after($zones->{$zone}, [$x, $y])) {
 					$near=$zone;
 					$delta=$try;
