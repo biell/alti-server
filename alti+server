@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.22';
+my($VERSION)='2.23';
 
 =head1 NAME
 
@@ -4451,14 +4451,18 @@ play though extended interfaces and server support.
 	}
 
 	sub angle {
-		my($x)=shift;
-		my($y)=shift;
-		my($a);
+		my($x, $y, $a);
 
 		if(@_==1) {
+			$x=0; $y=0;
 			$a=lc($_[0]);
+		} elsif(@_==2) {
+			return(utils::direction(@_));
+		} elsif(@_==3) {
+			($x, $y, $a)=@_;
+			$a=lc($a);
 		} else {
-			return(utils::direction($x, $y));
+			return(utils::direction(@_[2,3]));
 		}
 
 		#Accept -90, 270, 'down', or 's' to signify straight down:
@@ -4600,7 +4604,7 @@ play though extended interfaces and server support.
 		my($sa)=&angle(@$spawn);
 		my($da)=&angle($died->[0]-$spawn->[0], $died->[1]-$spawn->[1]);
 		my($after)=0;
-		my($cc, $cw)=(&angle(0, 0, $sa+90), &angle(0, 0, $sa-90));
+		my($cc, $cw)=(&angle($sa+90), &angle($sa-90));
 
 		if(90>=$sa && $sa>-90) {
 			$after=1 if($cc>=$da && $da>=$cw);
@@ -8535,6 +8539,8 @@ core protecting the flag.
 	'powerupPickup'	=> sub {
 		my($e, $p)=@_;
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
+		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
+		my($spawn)=$p->{'stats'}{'spawns'}[-1];
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 
 		#Don't repeat this specific powerup for 0.8 seconds
@@ -8596,12 +8602,35 @@ core protecting the flag.
 				} 1;
 			}
 		} elsif($spawn_mode eq 'health') {
-			if(map::powerup($e, 'Health')) {
+			chat::debug($spawn, $e->{'positionX'}, $e->{'positionY'});
+			if(map::powerup($e, 'Health') && (
+					!$spawn ||
+					$e->{'positionX'}!=$spawn->[0] ||
+					$e->{'positionY'}!=$spawn->[1]
+				)
+			) {
 				server::trigger('logPlanePositions', 'powerup', $e, $p)
 			}
 		} elsif($spawn_mode eq 'powerup') {
-			if(map::powerup($e)) {
-				server::trigger('logPlanePositions', 'powerup', $e, $p)
+			chat::debug($spawn, $e->{'positionX'}, $e->{'positionY'});
+			if(map::powerup($e) && (
+					!$spawn ||
+					$e->{'positionX'}!=$spawn->[0] ||
+					$e->{'positionY'}!=$spawn->[1]
+				)
+			) {
+				if($zones) {
+					foreach my $zone (keys(%$zones)) {
+						if(	$e->{'positionX'}==$zones->{$zone}[0] &&
+							$e->{'positionY'}==$zones->{$zone}[1]
+						) {
+							plus::spawn_here($p, @{$zones->{$zone}});
+							chat::whisper($p, $zone);
+						}
+					}
+				} else {
+					server::trigger('logPlanePositions', 'powerup', $e, $p);
+				}
 			}
 		}
 	},
@@ -9232,6 +9261,8 @@ also only available from the console.
 	'showTeams'		=> sub {
 		my($s)=player::server;
 		my($left, $right)=(map::team_color('left'), map::team_color('right'));
+
+		chat::whisper($s, map::name);
 
 		chat::whisper($s, sprintf('%-16s:', "left  ($left)"),
 			join(', ', map($_->{'nickname'}, player::list('left'))));

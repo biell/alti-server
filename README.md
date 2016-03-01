@@ -296,7 +296,7 @@ manage Alti+ game maps.
     to spawn. The type can be any of the following:
     *died* (the location of last death),
     *crash* (same as death, but don't turn players around after crashing),
-    *powerup* (the location of their last powerup of any kind),
+    *powerup* (the location of their last powerup of any kind -see zones),
     *health* (the location of their last health powerup),
     *zone* (zone based spawning where uses can cange their spawn zone on demand),
     *near* (nearest zone to a player when they die),
@@ -402,6 +402,10 @@ manage Alti+ game maps.
     the map-defined start locations for planes.  This feature is mostly only
     useful to ensure human players spawn on playable areas while bots spawn
     sequestered.
+
+    If zones are specified and `spawnMode` is set to powerup, then only
+    powerups listed as spawn zones act as checkpoints.  When this occurs,
+    the user is told they have reached a checkpoint.
 
   * **/del zone [name] [team]**<br>
     Delete the *zone* named `name` for this map for `team`.  You can specify
