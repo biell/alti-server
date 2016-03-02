@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.23';
+my($VERSION)='2.24';
 
 =head1 NAME
 
@@ -3135,6 +3135,16 @@ types which alter the normal behavior.
 			return('^');
 		} else {
 			return('?');
+		}
+	}
+
+	sub powerup_lookup {
+		my($xy)=join(',', @_[0,1]);
+
+		if(exists($Pickups{$xy})) {
+			return(@{$Pickups{$xy}});
+		} else {
+			return(undef);
 		}
 	}
 
@@ -7842,6 +7852,12 @@ core protecting the flag.
 						@{$keys->{$zone}},
 						$status
 					);
+				} elsif($spawn_mode eq 'powerup') {
+					chat::whisper($p, sprintf("%s $sep %d,%d @%s (%s)",
+						$zone,
+						@{$zones->{$zone}},
+						join(', ', map::powerup_lookup(@{$zones->{$zone}}))
+					));
 				} else {
 					chat::whisper($p,
 						sprintf("%s $sep %d,%d @%s", $zone, @{$zones->{$zone}})
@@ -7857,10 +7873,10 @@ core protecting the flag.
 			}
 		}
 
-		if($spawn_mode=~m/zone|near|after/) {
+		if($spawn_mode=~m/powerup|zone|near|after/) {
 			chat::whisper($p, 'No spawn zones defined') unless($any);
 		} else {
-			chat::whisper($p, 'spawnMode is not set to zone');
+			chat::whisper($p, 'spawnMode is not set to use zones');
 		}
 	},
 
