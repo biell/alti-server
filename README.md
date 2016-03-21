@@ -291,7 +291,7 @@ manage Alti+ game maps.
     persist across server restarts. To set it back, you can
     `/unset planeScale` or `/set planeScale 100`.
 
-  * **/set spawnMode [died|crash|powerup|health|zone|near|after|portal|normal]**<br>
+  * **/set spawnMode [died|crash|powerup|health|zone|near|after|portal|normal][,center|hmirror|vmirror]**<br>
     This specifies the type of respawning when a user dies, or requests
     to spawn. The type can be any of the following:
     *died* (the location of last death),
@@ -305,6 +305,14 @@ manage Alti+ game maps.
     or *normal* (at the normal, map defined start).
     If users get into a bind, they can use `/sz start` to spawn in the
     normal location.
+
+    Optionally, you can also override the spawn angle.  This only really makes
+    sense for *died*, *powerup*, and *health*.  But, it technically works
+    in all situations to override spawn angle.  The types are as follows:
+    *center* (always spawn facing the center of the map),
+    *hmirror* (always spawn facing the map axis),
+    *vmirror* (always spawn facing the middle bisect).
+
 
   * **/set changePlane [0|1]**<br>
     Enable (1, the default) or disable (0) the ability for players to use the
