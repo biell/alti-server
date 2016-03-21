@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.26';
+my($VERSION)='2.27';
 
 =head1 NAME
 
@@ -4462,11 +4462,8 @@ play though extended interfaces and server support.
 
 	sub angle {
 		my($x, $y, $a);
-		my($override)=stash::get('spawnAngle', map::name, 'map');
 
-		if($override) {
-			$a=$override;
-		} elsif(@_==1) {
+		if(@_==1) {
 			$x=0; $y=0;
 			$a=lc($_[0]);
 		} elsif(@_==2) {
@@ -4553,7 +4550,8 @@ play though extended interfaces and server support.
 
 	sub spawn_here {
 		my($p, $x, $y, @angle)=@_;
-		my($angle)=&angle($x, $y, @angle);
+		my($override)=stash::get('spawnAngle', map::name, 'map');
+		my($angle)=&angle($x, $y, $override || @angle);
 		
 		if(abs($angle)>90) {
 			$x=POSIX::ceil($x);
@@ -7225,6 +7223,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		if(stash::delete('spawnMode', map::name, 'map')) {
+			stash::delete('spawnAngle', map::name, 'map');
 			chat::all('Disabled enhanced spawn locations');
 		} else {
 			chat::whisper($p, 'Enhanced spawn locations not set');
