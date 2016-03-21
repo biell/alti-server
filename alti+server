@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.27';
+my($VERSION)='2.28';
 
 =head1 NAME
 
@@ -7173,8 +7173,10 @@ core protecting the flag.
 	'enable spawnMode'	=> sub {
 		my($e, $p)=@_;
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
+		my($spawn_angle)=stash::get('spawnAngle', map::name, 'map');
 
 		if($spawn_mode) {
+			$spawn_mode.=" ($spawn_angle)" if($spawn_angle);
 			chat::all('spawnMode:', $spawn_mode);
 		}
 	},
