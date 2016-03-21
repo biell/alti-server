@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.24';
+my($VERSION)='2.25';
 
 =head1 NAME
 
@@ -8474,7 +8474,7 @@ core protecting the flag.
 		records::help($p, 20);
 		ball::goal($e, $p);
 
-		if($spawn_mode=~m/near|after/) {
+		if($spawn_mode && $spawn_mode!~m/normal/) {
 	 		foreach my $player (player::list) {
 				plus::spawn_reset($player);
 			}
