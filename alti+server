@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.28';
+my($VERSION)='2.29';
 
 =head1 NAME
 
@@ -2064,9 +2064,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 		$Reserve+=$diff+5;
 		$Maplimit--;
-
-		#debug config size issue temporry line:
-		system(sprintf("cp %s %s.%d", $Conffile, $Conffile, time()));
 	}
 
 	sub new_maps {
@@ -5168,7 +5165,6 @@ play though extended interfaces and server support.
 			delete($player->{'team'});
 		}
 
-		queue::clear;
 		records::init;
 		race::init;
 		&round;
@@ -5262,7 +5258,11 @@ with their name.
 		my($map)=@_;
 		my(@st)=stat($map);
 
-		chmod($st[2]&0777, $map);
+		if(chmod($st[2]&0777, $map)) {
+			ui::slog('Updated last used time of', $map);
+		} else {
+			ui::slog('Failed to update the last used time of', $map);
+		}
 	}
 
 	sub name_ok {
@@ -5412,8 +5412,10 @@ the value of C<restartMap> in seconds for downloads to complete.
 			$Count--;
 
 			if($Count==1 && $Max>3 && $warmup<$delta && $delta<$limit) {
-				chat::all('Map downloads mostly complete, restarting map...');
-				server::send('changeMap', $Map);
+				chat::all('Downloads complete, restarting map ...');
+				queue::schedule {
+					server::send('changeMap', $Map);
+				} 2;
 			}
 		}
 	}
@@ -6558,12 +6560,16 @@ core protecting the flag.
 		my($map)="$INSTALL_ROOT/maps/$mapdir/$e->{'map'}.altx";
 		my($next)=stash::get('nextMap', 'admin');
 
+		queue::clear;
+
 		if($next && $e->{'map'} ne $next) {
 			server::send('changeMap', $next);
 			server::override('mapChange', 'skip');
 		} else {
-			file::update_ctime($map);
 			map::busy;
+
+			#Don't mark it used if there is a quick /vote changeMap :
+			queue::schedule { file::update_ctime($map) } 30;
 		}
 
 		stash::delete('nextMap', 'admin') if($next);
@@ -8774,7 +8780,7 @@ core protecting the flag.
 			}
 		}
 
-		if(List::Util::max(map(abs, @$e{'victimVelocityX', 'victimVelocityY'})) > 15) {
+		if(List::Util::max(map(abs, @$e{'victimVelocityX', 'victimVelocityY'})) > 18) {
 			chat::snark($v, "$v->{'nickname'} says Ouch!!");
 		}
 
@@ -8787,11 +8793,13 @@ core protecting the flag.
 			chat::snark($v, "$v->{'nickname'} was killed by friendly fire");
 		} elsif($e->{'multi'}>5) {
 			chat::snark($p, "$p->{'nickname'} says Booyah!!");
-		} elsif($e->{'streak'}>10) {
+		} elsif($e->{'streak'}>10 && $e->{'streak'}%2) {
 			chat::snark($p, "$p->{'nickname'}: $e->{'streak'}");
-		} elsif(($v->{'stats'}{'died'}%15)==0 && player::count>4) {
+		} elsif(($v->{'stats'}{'died'}%10)==0 && player::count>4) {
 			if($p->{'stats'}{'kill'}{$v->{'nickname'}} > $v->{'stats'}{'died'}/(player::count()/4)) {
-				chat::snark($v, "$p->{'nickname'} must really like killing $v->{'nickname'}");
+				if(chat::snarky) {
+					chat::snark($v, "$p->{'nickname'} must really like killing $v->{'nickname'}");
+				}
 			}
 		}
 	},
@@ -9269,6 +9277,7 @@ also only available from the console.
 			vaporId
 			player
 			team
+			infractions
 			ping
 			ip
 			country
