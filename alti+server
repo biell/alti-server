@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.29';
+my($VERSION)='2.30';
 
 =head1 NAME
 
@@ -8922,16 +8922,13 @@ core protecting the flag.
 		queue::clear;
 
 		if(config::option('awards') && player::count>2) {
-			if($stats{'Crashes'}) {
+			if($stats{'Crashes'} && List::Util::max(@{$stats{'Crashes'}})>8) {
 				plus::most('Training Wheels Award: ', $stats{'Crashes'}, $pls);
 			}
 			if($stats{'Deaths'} && !map::type('race')) {
 				plus::most('Kenny McCormick Award: ', $stats{'Deaths'}, $pls);
 			}
-			if($stats{'Ball Possession Time'}) {
-				plus::most('Ball Hog Award: ', $stats{'Ball Possession Time'}, $pls);
-			}
-			if($stats{'Damage Dealt'} && !map::type('race')) {
+			if($stats{'Damage Dealt'} && !map::type('race') && !(map::type('std') && map::mode('ball'))) {
 				plus::most('Sledge Hammer Award: ', $stats{'Damage Dealt'}, $pls);
 			}
 			if($stats{'Damage Received'} && !map::type('race')) {
