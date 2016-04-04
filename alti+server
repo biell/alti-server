@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.30';
+my($VERSION)='2.31';
 
 =head1 NAME
 
@@ -195,6 +195,14 @@ delete($ENV{'COLUMNS'});
 	my($Chat)=newwin($Sline-3, $Cols-4, $Sline+1, 2 );
 	my($Iput)=newwin(1,        $Iputw,  $Iline+1, 3 );
 
+	my($Redirect)=undef;
+
+	sub redirect {
+		$Redirect=$_[0];
+
+		#($Swin, $Cwin, $Iwin, $Chat, $Iput)=undef;	
+	}
+
 	sub adjust_win {
 		my($win, $height, $width, $y, $x)=@_;
 
@@ -278,16 +286,20 @@ delete($ENV{'COLUMNS'});
 
 		return unless($entry);
 
-		rename($Outfile, $Outfile_o) if(-s $Outfile > 1048576);
+		if($Redirect) {
+			print $Redirect $entry, "\n";
+		} else {
+			rename($Outfile, $Outfile_o) if(-s $Outfile > 1048576);
 
-		open($slog, '>>', $Outfile);
-		print $slog $entry, "\n";
-		close($slog);
+			open($slog, '>>', $Outfile);
+			print $slog $entry, "\n";
+			close($slog);
 
-		$Swin->scrl(1);
-		$Swin->addstr($Sline-1, 0, $entry);
-		$Swin->refresh();
-		$Iput->refresh();
+			$Swin->scrl(1);
+			$Swin->addstr($Sline-1, 0, $entry);
+			$Swin->refresh();
+			$Iput->refresh();
+		}
 	}
 
 	sub display {
@@ -324,7 +336,11 @@ delete($ENV{'COLUMNS'});
 		printf($clog "[%s:%-16s:%s] %s\n", $time, $nick, $type, $msg);
 		close($clog);
 
-		&display($nick, $type, $msg);
+		if($Redirect) {
+			printf($Redirect "[%s:%-16s:%s] %s\n", $time, $nick, $type, $msg);
+		} else {
+			&display($nick, $type, $msg);
+		}
 	}
 
 	sub update_input {
@@ -356,8 +372,8 @@ delete($ENV{'COLUMNS'});
 		my($ord)=ord($input);
 		
 		if($input == KEY_RESIZE) {
-			&slog('resize not implemented'); #Not working
-			#&setup_screen;
+			#&slog('resize not implemented'); #Not working
+			&setup_screen;
 			return();
 		} elsif($input eq "\014") {
 			&setup_screen;
@@ -944,6 +960,9 @@ Supported databases are SQLite and PostgreSQL.
 		);
 		ui::slog('Pg Not yet supported (sorry)');
 	} elsif($OPTIONS{'db_type'}=~m/SQLite/i) {
+		unless($OPTIONS{'db_name'}=~m|/|) {
+			$OPTIONS{'db_name'}="$INSTALL_ROOT/servers/$OPTIONS{'db_name'}";
+		}
 		@connect=(
 			"dbi:SQLite:dbname=$OPTIONS{'db_name'}",
 			'',
@@ -970,11 +989,21 @@ Supported databases are SQLite and PostgreSQL.
 			qq{
 				CREATE TABLE IF NOT EXISTS player (
 					vaporid CHAR(36) PRIMARY KEY,
+					name TEXT,
 					nickname TEXT,
-					sticky INTEGER,
 					seen INTEGER,
 					ip TEXT,
 					block INTEGER
+				);
+			},
+
+			qq{
+				CREATE TABLE IF NOT EXISTS rank (
+					vaporid CHAR(36),
+					type TEXT,
+					rating INTEGER,
+					PRIMARY KEY (vaporid, type),
+					FOREIGN KEY (vaporid) REFERENCES player(vaporid)
 				);
 			},
 
@@ -1015,7 +1044,7 @@ Supported databases are SQLite and PostgreSQL.
 
 		return(undef) unless($key);
 
-		return($Dbh->select_array(
+		return($Dbh->selectrow_array(
 			qq{ SELECT value FROM info WHERE key="$key"; }
 		));
 	}
@@ -1024,6 +1053,7 @@ Supported databases are SQLite and PostgreSQL.
 		my($version)=&info('version');
 
 		if(!$version) {
+			&init;
 			$Dbh->do(qq{INSERT INTO info values ('version', 1);});
 		}
 	}
@@ -1108,7 +1138,7 @@ Supported databases are SQLite and PostgreSQL.
 		($count)=$Dbh->selectrow_array(
 				qq{SELECT COUNT(1) FROM $table WHERE $where;});
 
-		if($count<=1) {
+		if($count<1) {
 			&insert($table, $set);
 		} elsif($count==1) {
 			&update($table, $where, $set);
@@ -1128,24 +1158,41 @@ Supported databases are SQLite and PostgreSQL.
 		return($Dbh->do(qq{DELETE FROM $table WHERE $where;}));
 	}
 
-	#Stash interface:
-	sub get {
-		my($schema, @path)=@_;
-		my($output)=[];
+	#Table interface:
+	sub player {
+		my($p, $update)=@_;
+		my($row);
 
-		if($schema eq 'player') {
-			1;
-		} elsif($schema eq 'records') {
-			foreach my $row (&select('records', qq{ map = $path[0] ORDER BY record LIMIT 5; })) {
-				push(@$output, @$row{'record','date','players'});
-			}
-			return($output);
+		if($update) {
+			&upsert('player', qq{vaporid="$p->{'vaporId'}"}, $update);
+		} else {
+			($row)=&select('player', qq{vaporid="$p->{'vaporId'}"});
+			return($row);
 		}
 	}
 
-	sub set {
-		my($value, $schema, @path)=@_;
+	sub aliases {
+		my($p, $alias)=@_;
+		my($cols);
+
+		if($alias) {
+			&insert('aliases', {
+					'vaporid'		=> $p->{'vaporId'},
+					'nickname'	=> $alias,
+				});
+		} else {
+			$cols=$Dbh->selectcol_arrayref(qq{
+				SELECT nickname FROM aliases WHERE vaporid=$p->{'vaporId'};
+			});
+
+			if(ref($cols) eq 'ARRAY') {
+				return(@$cols);
+			} else {
+				return();
+			}
+		}
 	}
+
 }
 
 
@@ -1962,6 +2009,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Commands{'stashDisplay'}=['map'];
 		$Commands{'stashClearSettings'}=['map'];
 		$Commands{'stashClearRecords'}=['map'];
+		$Commands{'setPlayerName'}=['player', 'string'];
+		$Commands{'updateNames'}=undef;
 		$Commands{'showPlayer'}=['player'];
 		$Commands{'showTeams'}=undef;
 		$Commands{'showSeen'}=undef;
@@ -2453,6 +2502,7 @@ them to the AltBouncer system.
 	my($Url)='http://tec27.com/altbouncer/uploadaltnames.php';
 	my($Curl)=utils::which('curl', 'good', 'forcing AltBouncer support off');
 	my(@Args)=qw(-s -F MAX_FILE_SIZE=80000 -m);
+	my($Sent)=time();
 
 	my(%Seen)=();
 
@@ -2525,9 +2575,9 @@ them to the AltBouncer system.
 	}
 
 	sub upload {
-		my($timeout)=@_;
 		my($stage, $upload)=(IO::Handle->new, IO::Handle->new);
 		my($rejected)=1;
+		my($timeout)=25;
 		local($_);
 
 		return unless(keys(%Seen)>10);
@@ -2554,6 +2604,8 @@ them to the AltBouncer system.
 		}
 
 		close($upload);
+
+		$Sent=time();
 
 		if($?) {
 			ui::slog('ERROR : CURL EXIT STATUS:', $?>>8, $CURL_RV{$?>>8});
@@ -2810,7 +2862,8 @@ The time is a minimum, and not garunteed to be very accurate.  Each time
 the main loop is executed, the queue is checked and executed after the
 main loop input is completed.  When players are on-line, the pingByPlayer
 log entry occurs every 5 seconds; so, your action whould (at least) be executed
-within this threshold.
+within this threshold.  The Queue system also supports running functions
+in the background, but only one backgrounded process may run at a time.
 
 =cut
 
@@ -2820,6 +2873,10 @@ within this threshold.
 
 	my(%Queue)=();
 	my($Id)=0;
+	my($Pread, $Pwrite)=(IO::Handle->new, IO::Handle->new);
+	my($Pid, $Bid)=(undef, undef);
+
+	our($Child)=0;
 
 	sub clear {
 		%Queue=();
@@ -2831,7 +2888,18 @@ within this threshold.
 
 		$Id++;
 
-		$Queue{$Id}=[$time, $code];
+		$Queue{$Id}=[$time, 1, $code];
+
+		return($Id);
+	}
+
+	sub background(& $) {
+		my($code, $delay)=@_;
+		my($time)=Time::HiRes::time+$delay;
+
+		$Id++;
+
+		$Queue{$Id}=[$time, 0, $code];
 
 		return($Id);
 	}
@@ -2857,12 +2925,47 @@ within this threshold.
 		my($now)=Time::HiRes::time;
 		my(@tasks)=();
 
+		if($Pid && waitpid($Pid, POSIX::WNOHANG)) {
+			$Pread->blocking(0);
+			while(<$Pread>) {
+				ui::slog($_);
+			}
+			close($Pread);
+			ui::slog("Task $Bid completed (pid $Pid)");
+			$Pid=undef;
+			$Bid=undef;
+		}
+
 		foreach my $id (sort(keys(%Queue))) {
 			if($Queue{$id}[0]<$now) {
-				$Queue{$id}[1]->();
+				if($Queue{$id}[1]) {
+					$Queue{$id}[2]->();
 
-				push(@tasks, $id);
-				delete($Queue{$id});
+					push(@tasks, $id);
+					delete($Queue{$id});
+				} else {
+					unless($Pid) {
+						pipe($Pread, $Pwrite);
+		
+						if($Pid=fork()) {
+							close($Pwrite);
+							$Bid=$id;
+							ui::slog("Task $Bid started (pid $Pid)");
+						} else {
+							$Child=1;
+							close($Pread);
+							ui::redirect($Pwrite);
+
+							$Queue{$id}[2]->();
+
+							close($Pwrite);
+							exit(0);
+						}
+
+						push(@tasks, $id);
+						delete($Queue{$id});
+					}
+				}
 			}
 		}
 
@@ -3364,6 +3467,7 @@ is updated with them as the games progress.
 	sub add {
 		my($p)=@_;
 		my($sas)=config::option('superAdmins');
+		my($db);
 
 		$p->{'joined'}=1;
 		$p->{'alive'}=0;
@@ -3392,12 +3496,33 @@ is updated with them as the games progress.
 		$Pdb{$p->{'player'}}	=
 		$Pdb{$p->{'vaporId'}}	= $p;
 
-		#db::upsert('player', qq{vaporid="$p->{'vaporId'}"}, {
-		#		'vaporid'		=> $p->{'vaporId'},
-		#		'nickname'	=> $p->{'nickname'},
-		#		'ip'			=> $p->{'ip'},
-		#		'seen'		=> time(),
-		#	});
+		$db=db::player($p);
+
+		#Pull player settings from stash:
+		$p->{'block'}=stash::get('block', $p->{'vaporId'}, 'player');
+
+		#Pull player settings from db:
+		foreach my $key (keys(%$db)) {
+			$p->{$key}=$db->{$key};
+		}
+
+		return if($p->{'isBot'});
+
+		db::player($p, {
+				'vaporid'		=> $p->{'vaporId'},
+				'nickname'	=> $p->{'nickname'},
+				'seen'		=> time(),
+				'ip'			=> $p->{'ip'},
+				'block'		=> $p->{'block'}//0,
+			});
+
+		db::aliases($p, $p->{'nickname'});
+	}
+
+	sub name {
+		my($p)=@_;
+
+		return($p->{'name'} || $p->{'nickname'});
 	}
 
 	sub rename {
@@ -3409,11 +3534,11 @@ is updated with them as the games progress.
 
 		$p->{'nickname'}=$new;
 
-		#db::insert('player',
-		#	{ 'vaporid' => $p->{'vaporId'}, 'nickname' => $old });
+		db::insert('aliases',
+			{ 'vaporid' => $p->{'vaporId'}, 'nickname' => $new });
 
-		#db::update('player', qq{ vaporid="$p->{'vaporId'}" },
-		#	{ 'nickname' => $new });
+		db::update('player', qq{ vaporid="$p->{'vaporId'}" },
+			{ 'nickname' => $new });
 	}
 
 	sub remove {
@@ -3525,6 +3650,135 @@ is updated with them as the games progress.
 
 	sub admins {
 		return(@Admins);
+	}
+
+}
+
+=head3 Player names and nicknames
+
+Players can set their nicknames once per day, and they often have clan
+designators.  This isn't ideal for keeping records and identifying players.
+When a database is used by B<alti+server>, it keeps a record for each
+player which has a more permanent name available.  Keeping track of what
+this name should be isn't trivial.  Rather than re-invent the wheel, require
+players to maintain multiple systems, and have to deal with inconsistencies
+across different environments, B<alti+server> defers to ladder.  Names
+are pulled from ladder, and changes in ladder are reflected here.
+
+=cut
+
+{	package planeball;
+
+	eval('use HTML::Parser');
+
+	my($Curl)=utils::which('curl', 'good', 'PlaneBall support disabled');
+	my($Players)='https://planeball.com/players/';
+
+	my($In)=0;
+	my(@Head)=();
+	my($Data)={};
+	my($Index)=0;
+	my($Mode);
+
+	sub _update_db {
+		my($data)=@_;
+		my($player, $nickname, $update);
+
+		return unless($data->{'Vapor'} && $data->{'AKA'});
+
+		$data->{'AKA'}=~s/^\@//;
+
+		($player)=db::select('player', qq{vaporid="$data->{'Vapor'}"});
+
+		unless($player && $player->{'name'} eq $data->{'AKA'}) {
+			$nickname=$player->{'nickname'} || $data->{'Nickname'};
+			$update={
+				'vaporid'  => $data->{'Vapor'},
+				'name'     => $data->{'AKA'},
+				'nickname' => $nickname,
+			};
+
+			db::upsert('player', qq{vaporid="$data->{'Vapor'}"}, $update);
+
+			ui::slog("Updated $data->{'Vapor'} ($nickname) to $data->{'AKA'}");
+		}
+	}
+
+	sub _state {
+		my($event, $tag, $attr)=@_;
+
+		if($tag eq 'table' && $attr->{'id'} eq 'table_player_list') {
+			if($event eq 'start') {
+				$In=1;
+			} elsif($event eq 'end') {
+				$In=0;
+			}
+		} elsif($In && $tag eq 'tr') {
+			if($event eq 'start') {
+				$Index=0;
+				$Data={};
+			} elsif($event eq 'end') {
+				&_update_db($Data) if(%$Data);
+			}
+		} elsif($In && $tag eq 'th') {
+			if($event eq 'start') {
+				$Mode='header';
+			} elsif($event eq 'end') {
+				$Index++;
+			}
+		} elsif($In && $tag eq 'td') {
+			if($event eq 'start') {
+				$Mode='data';
+			} elsif($event eq 'end') {
+				$Index++;
+			}
+		}
+	}
+
+	sub _data {
+		my($text)=@_;
+
+		return unless($In);
+
+		if($Mode eq 'header') {
+			$Head[$Index]=$text;
+		} elsif($Mode eq 'data') {
+			$Data->{$Head[$Index]}=$text;
+		}
+	}
+
+	sub update {
+		my($get)=IO::Handle->new;
+		my($p)=eval('HTML::Parser->new');
+
+		unless($p) {
+			ui::slog('ERROR HTML::Parser perl module not installed');
+			return(undef);
+		}
+
+		unless($Curl) {
+			ui::slog('ERROR curl command-line binary not found');
+			return(undef);
+		}
+
+		unless(db::enabled) {
+			ui::slog('ERROR This function requires a database backend');
+			return(undef);
+		}
+
+		$In=0;
+
+		$p->report_tags(qw(table tr th td));
+		$p->handler('start' => \&_state, 'event, tagname, attr');
+		$p->handler('end'   => \&_state, 'event, tagname, attr');
+		$p->handler('text'  => \&_data,  'text');
+
+		open($get, '-|', $Curl, '-s', $Players);
+		while(<$get>) {
+			$p->parse($_);
+		}
+		close($get);
+		$p->eof;
 	}
 
 }
@@ -5850,8 +6104,8 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($a)=player::lookup($e->{'arguments'}[0]);
 		my($type)=$e->{'arguments'}[1];
-		my($last)=stash::get('last', 'abuse', $a->{'vaporId'}, 'player');
-		my($count)=stash::get('count', 'abuse', $a->{'vaporId'}, 'player');
+		my($last)=stash::get('last', $a->{'vaporId'}, 'abuse');
+		my($count)=stash::get('count', $a->{'vaporId'}, 'abuse');
 		my($today)=sprintf('%.1f', time()/86400);
 		my($anick)=$a->{'nickname'};
 		my($ip)=$a->{'ip'};
@@ -5892,7 +6146,7 @@ core protecting the flag.
 		} elsif($type=~m/ban/i) {
 			server::send('ban', $anick, @duration, 'You are in time out, go to your quiet corner!');
 		} elsif($type=~m/nick/i) {
-			stash::set('nick', 'abuse', $a->{'vaporId'}, 'player', $anick);
+			stash::set('nick', $a->{'vaporId'}, 'abuse', $anick);
 			chat::whisper($a, 'If you want to play on this server, change your nickname');
 			queue::schedule {
 				chat::whisper($a, 'If you do not change your nickname, you will be kicked');
@@ -5906,8 +6160,8 @@ core protecting the flag.
 			chat::whisper($a, 'You are being rude, knock it off or get kicked');
 		}
 
-		stash::set('last', 'abuse', $a->{'vaporId'}, 'player', $today);
-		stash::set('count', 'abuse', $a->{'vaporId'}, 'player', $count);
+		stash::set('last', $a->{'vaporId'}, 'abuse', $today);
+		stash::set('count', $a->{'vaporId'}, 'abuse', $count);
 	},
 
 	'upload'		=> sub {
@@ -6029,13 +6283,23 @@ core protecting the flag.
 		local($_)=$e->{'arguments'}[0];
 
 		if(m/y(es)?|1/i) {
-			stash::delete('block', $p->{'vaporId'}, 'player');
+			$p->{'block'}=0;
+			if(db::enabled) {
+				db::player($p, {'block' => 0});
+			} else {
+				stash::delete('block', $p->{'vaporId'}, 'player');
+			}
 			chat::whisper($p, "Private on-server messaging enabled");
 		} elsif(m/no?|0/i) {
-			stash::set('block', $p->{'vaporId'}, 'player', 1);
+			$p->{'block'}=1;
+			if(db::enabled) {
+				db::player($p, {'block' => 1});
+			} else {
+				stash::set('block', $p->{'vaporId'}, 'player', 1);
+			}
 			chat::whisper($p, "Private on-server messaging disabled");
 		} else {
-			if(stash::get('block', $p->{'vaporId'}, 'player')) {
+			if($p->{'block'}) {
 				chat::whisper($p, "Private on-server messaging disabled");
 			} else {
 				chat::whisper($p, "Private on-server messaging enabled");
@@ -8201,7 +8465,7 @@ core protecting the flag.
 
 	'clientAdd'		=> sub {
 		my($e, $p)=@_;
-		my($anick)=stash::get('nick', 'abuse', $e->{'vaporId'}, 'player');
+		my($anick)=stash::get('nick', $e->{'vaporId'}, 'abuse');
 
 		#                       PlayerId|VaporID
 		if($e->{'nickname'}=~m/^(\d{1,2}|[0-9a-f-]{36})$/) {
@@ -8223,7 +8487,7 @@ core protecting the flag.
 					server::send('kick', $e->{'nickname'});
 				} 5;
 			} else {
-				stash::delete('nick', 'abuse', $e->{'vaporId'}, 'player');
+				stash::delete('nick', $e->{'vaporId'}, 'abuse');
 			}
 			return(undef);
 		}
@@ -8983,8 +9247,10 @@ core protecting the flag.
 
 		map::end;
 
-		#This is a good time to do slow stuff:
-		altbouncer::upload(5) if(altbouncer::count > 250);
+		#This is a good time to do other stuff:
+		if(altbouncer::count > 250) {
+			queue::background { altbouncer::upload } 0;
+		}
 	},
 
 	'restartMap'	=> sub {
@@ -9267,9 +9533,32 @@ also only available from the console.
 		}
 	},
 
+	'updateNames'		=> sub {
+		queue::background { planeball::update } 0;
+	},
+
+	'setPlayerName'	=> sub {
+		my($search, $name)=@_;
+		my($player)=db::select('player', qq{
+				name='$search'            OR
+				nickname='$search'        OR
+				vaporid LIKE '\%$search'  ;
+			});
+
+		if($player) {
+			db::update('player', qq{vaporid="$player->{'vaporid'}"}, {
+					'name'	=> $name
+				});
+
+			ui::slog("Updated $player->{'vaporid'} ($player->{'nickname'}) to $name");
+		} else {
+			ui::slog("No updates performed, '$search' not found.");
+		}
+	},
+
 	'showPlayer'		=> sub {
 		my($s)=player::server;
-		my($player)=player::lookup(@_);
+		my($p)=player::lookup(@_);
 		my(@keys)=qw(
 			vaporId
 			player
@@ -9279,21 +9568,24 @@ also only available from the console.
 			ip
 			country
 		);
+		my($name)=$p->{'nickname'};
 
-		chat::whisper($s, $player->{'nickname'}, ':');
+		$name.=" ($p->{'name'})" if($p->{'name'});
+
+		chat::whisper($s, $name, ':');
 		chat::whisper($s, '  joined:',
-			scalar(localtime($server::Start + $player->{'time'}/$config::Clock)));
-		chat::whisper($s, '  level ace:', $player->{'level'}, $player->{'aceRank'});
+			scalar(localtime($server::Start + $p->{'time'}/$config::Clock)));
+		chat::whisper($s, '  level ace:', $p->{'level'}, $p->{'aceRank'});
 		foreach my $key (@keys) {
-			chat::whisper($s, "  $key:", $player->{$key});
+			chat::whisper($s, "  $key:", $p->{$key});
 		}
 
-		chat::whisper($s, "  $player->{'plane'}:",
-			"$player->{'perkRed'},",
-			"$player->{'perkGreen'},",
-			"$player->{'perkBlue'},",
-			"$player->{'skin'}",
-		) if(exists($player->{'plane'}));
+		chat::whisper($s, "  $p->{'plane'}:",
+			"$p->{'perkRed'},",
+			"$p->{'perkGreen'},",
+			"$p->{'perkBlue'},",
+			"$p->{'skin'}",
+		) if(exists($p->{'plane'}));
 
 	},
 
@@ -9357,7 +9649,7 @@ also only available from the console.
 	},
 
 	'shutdown'		=> sub {
-		altbouncer::upload(15);
+		altbouncer::upload;
 		server::shutdown;
 		db::shutdown;
 		ui::shutdown;
@@ -9403,6 +9695,8 @@ knowledge of ports, players, log files, standard output, etc.
 my($REQ, $SOUT, $TRIGGER);
 
 ui::setup_screen;
+
+db::upgrade;
 
 stash::upgrade;
 
@@ -9510,11 +9804,11 @@ while(1) {
 						server::send('changeMap',
 							config::lobby || config::random_map);
 						map::end;
-						altbouncer::upload(10);
+						queue::background { altbouncer::upload } 0;
 					}
 
 					if(altbouncer::count > 100) {
-						altbouncer::upload(10);
+						queue::background { altbouncer::upload } 0;
 					}
 				}
 			}
@@ -9544,10 +9838,12 @@ while(1) {
 }
 
 END {
-	server::shutdown;
-	db::shutdown;
-	ui::shutdown;
-	exit(0);
+	unless($queue::Child) {
+		server::shutdown;
+		db::shutdown;
+		ui::shutdown;
+		exit(0);
+	}
 }
 
 =head1 NOTES

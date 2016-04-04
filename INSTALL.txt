@@ -37,7 +37,8 @@ Required:
 Recommended:
   1. GeoIP
   2. curl
-  3. xz (or on some systems xz-lzma-compat), you want the lzma binary.
+  3. perl-HTML-Parser
+  4. xz (or on some systems xz-lzma-compat), you want the lzma binary.
 
 Optional:
   1. git
