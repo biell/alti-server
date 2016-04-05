@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.33';
+my($VERSION)='2.34';
 
 =head1 NAME
 
@@ -974,6 +974,7 @@ Supported databases are SQLite and PostgreSQL.
 			$Type='sqlite';
 		} else {
 			ui::slog('No database libraries, falling back to stash-only mode');
+			$Type=undef;
 		}
 	}
 
