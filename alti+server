@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.34';
+my($VERSION)='2.35';
 
 =head1 NAME
 
@@ -1037,6 +1037,10 @@ Supported databases are SQLite and PostgreSQL.
 		}
 	}
 
+	sub enabled {
+		return(defined($Type));
+	}
+
 	sub shutdown {
 		if($Dbh) {
 			$Dbh->disconnect;
@@ -1055,16 +1059,16 @@ Supported databases are SQLite and PostgreSQL.
 	}
 
 	sub upgrade {
-		my($version)=&info('version');
+		my($version);
+
+		return unless(&enabled);
+
+		($version)=&info('version');
 
 		if(!$version) {
 			&init;
 			$Dbh->do(qq{INSERT INTO info values ('version', 1);});
 		}
-	}
-
-	sub enabled {
-		return(defined($Type));
 	}
 
 	sub type {
