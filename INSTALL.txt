@@ -38,7 +38,9 @@ Recommended:
   1. GeoIP
   2. curl
   3. perl-HTML-Parser
-  4. xz (or on some systems xz-lzma-compat), you want the lzma binary.
+  4. perl-DBI
+  5. perl-DBD-SQLite
+  6. xz (or on some systems xz-lzma-compat), you want the lzma binary.
 
 Optional:
   1. git

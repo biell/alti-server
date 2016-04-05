@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.35';
+my($VERSION)='2.36';
 
 =head1 NAME
 
@@ -3751,6 +3751,7 @@ are pulled from ladder, and changes in ladder are reflected here.
 {	package planeball;
 
 	eval('use HTML::Parser');
+	eval('use HTML::Entities');
 
 	my($Curl)=utils::which('curl', 'good', 'PlaneBall support disabled');
 	my($Players)='https://planeball.com/players/';
@@ -3822,9 +3823,9 @@ are pulled from ladder, and changes in ladder are reflected here.
 		return unless($In);
 
 		if($Mode eq 'header') {
-			$Head[$Index]=$text;
+			$Head[$Index]=decode_entities($text);
 		} elsif($Mode eq 'data') {
-			$Data->{$Head[$Index]}=$text;
+			$Data->{$Head[$Index]}=decode_entities($text);
 		}
 	}
 
