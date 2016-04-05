@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.32';
+my($VERSION)='2.33';
 
 =head1 NAME
 
@@ -1070,6 +1070,14 @@ Supported databases are SQLite and PostgreSQL.
 		return($Type);
 	}
 
+	sub begin {
+		$Dbh->begin_work();
+	}
+
+	sub commit {
+		$Dbh->commit();
+	}
+
 	sub select {
 		my($table, $where)=@_;
 		my(@rows)=();
@@ -1187,7 +1195,7 @@ Supported databases are SQLite and PostgreSQL.
 				});
 		} else {
 			$cols=$Dbh->selectcol_arrayref(qq{
-				SELECT nickname FROM aliases WHERE vaporid=$p->{'vaporId'};
+				SELECT nickname FROM aliases WHERE vaporid="$p->{'vaporId'}";
 			});
 
 			if(ref($cols) eq 'ARRAY') {
@@ -1213,9 +1221,52 @@ Supported databases are SQLite and PostgreSQL.
 					SELECT record,date,players
 						FROM records
 						WHERE map="$map"
-						ORDER BY record
-						LIMIT 5;
+						ORDER BY record;
 				}));
+		}
+	}
+
+	sub extra_records {
+		my($map)=@_;
+		my($cols);
+
+		$cols=$Dbh->selectcol_arrayref(qq{
+			SELECT id FROM records
+				WHERE map="$map"
+				ORDER BY record
+				LIMIT 16 OFFSET 100;
+		});
+
+		if(ref($cols) eq 'ARRAY') {
+			return(@$cols);
+		} else {
+			return();
+		}
+	}
+
+	sub rank {
+		my($p, $type, $value)=@_;
+		my($rating);
+
+		if($value) {
+			&upsert('rank',
+					qq{vaporid="$p->{'vaporId'}" AND type="$type"},
+					{'rating' => $value},
+				);
+		} else {
+			$rating=&select('rank', 
+					qq{vaporid="$p->{'vaporId'}" AND type="$type"},
+				);
+
+			if($rating) {
+				return($rating->{'rating'});
+			} else {
+				&insert('rank',
+						qq{vaporid="$p->{'vaporId'}" AND type="$type"},
+						{'rating' => 800},
+					);
+				return(800);
+			}
 		}
 	}
 }
@@ -3798,12 +3849,16 @@ are pulled from ladder, and changes in ladder are reflected here.
 		$p->handler('end'   => \&_state, 'event, tagname, attr');
 		$p->handler('text'  => \&_data,  'text');
 
+		db::begin;
+
 		open($get, '-|', $Curl, '-s', $Players);
 		while(<$get>) {
 			$p->parse($_);
 		}
 		close($get);
 		$p->eof;
+
+		db::commit;
 	}
 
 }
@@ -3958,6 +4013,25 @@ they make the top 5.
 		}
 	}
 
+	sub fmt_record {
+		my($place, $record, $date, $players)=@_;
+
+		if($players) {
+			return(sprintf('%s : %s  (%s %s)',
+					utils::nth($place),
+					utils::secs2mins($record),
+					utils::date($date),
+					$players,
+				));
+		} else {
+			return(sprintf('%s : %s  (%s)',
+					utils::nth($place),
+					utils::secs2mins($record),
+					utils::date($date),
+				));
+		}
+	}
+
 	sub whisper {
 		my($e, $p)=@_;
 		my($time)=($e->{'time'} - $Start)/$config::Clock;
@@ -3974,20 +4048,7 @@ they make the top 5.
 		return unless(ref($records) eq 'ARRAY');
 
 		foreach my $record (@$records) {
-			if(exists($record->[2])) {
-				chat::whisper($p, sprintf('%s : %s  (%s %s)',
-						utils::nth($i++),
-						utils::secs2mins($record->[0]),
-						utils::date($record->[1]),
-						$record->[2],
-					));
-			} else {
-				chat::whisper($p, sprintf('%s : %s  (%s)',
-						utils::nth($i++),
-						utils::secs2mins($record->[0]),
-						utils::date($record->[1]),
-					));
-			}
+			chat::whisper($p, &fmt_record($i++, @$record));
 		}
 
 		chat::whisper($p, 'you',  ':', utils::secs2mins($time));
@@ -4101,14 +4162,19 @@ they make the top 5.
 
 		if(db::enabled) {
 			if($save) {
+				foreach my $id (db::extra_records(map::name)) {
+					db::delete('records', qq{id=$id});
+				}
+
 				db::records(map::name, [$time, @holder]);
 				$records=db::records(map::name);
-				splice(@$records, 5);
-				
+
 				foreach my $record (@$records) {
-					last if($record->[0]==$time);
+					last if($record->[1]==$holder[0]);
 					$place++;
 				}
+
+				splice(@$records, 5);
 			}
 		} else {
 			$records=stash::get(map::name, 'records');
@@ -4124,18 +4190,22 @@ they make the top 5.
 							$place++;
 						}
 					}
+					if(@$records<5 && @$records<$place) {
+						push(@$records, [$time, @holder]);
+					}
 				} else {
 					$records=[[$time, @holder]];
+				}
+
+				if($place && $place<=5) {
+					stash::set(map::name, 'records', $records);
+				} else {
+					$place=0;
 				}
 			}
 		}
 
 		if(@$records) {
-			if($save && $place<=5) {
-				push(@$records, [$time, @holder]) if(@$records<$place);
-				stash::set(map::name, 'records', $records);
-			}
-
 			if($save) {
 				chat::all('Record Times');
 			} elsif(map::type('race')) {
@@ -4147,8 +4217,10 @@ they make the top 5.
 			&print;
 
 			if($save) {
-				if($place<=5) {
+				if($place && $place<=5) {
 					chat::all('Congratulations, you placed',  utils::nth($place));
+				} elsif($place) {
+					chat::all(&fmt_record($place, $time, @holder));
 				} elsif(map::type('race')) {
 					chat::all('win',  ':', utils::secs2mins($time));
 				} else {
@@ -4201,6 +4273,8 @@ they make the top 5.
 
 		return unless(ref($records) eq 'HASH');
 
+		db::begin;
+
 		foreach my $map (keys(%$records)) {
 			if(ref($records->{$map}) eq 'ARRAY') {
 				foreach my $record (@{$records->{$map}}) {
@@ -4208,6 +4282,8 @@ they make the top 5.
 				}
 			}
 		}
+
+		db::commit;
 
 		stash::delete('records');
 	}
@@ -4221,6 +4297,37 @@ they make the top 5.
 	}
 
 }
+
+=head2 Rankings
+
+B<alti+server> can be configured to rank players players similar to ladder.
+These rankings can also be configured to select evenly matched teams.
+
+{	package rank;
+
+	sub rating {
+		my($p, $update)=@_;
+		my($mode)=map::mode;
+		my($type)=map::type;
+		my($rating);
+
+		if($type eq 'std') {
+			$rating=db::rank($p, $mode)+$update;
+			if($update) {
+				db::rank($p, $mode, $rating);
+			}
+		} else {
+			$rating=db::rank($p, $type)+$update;
+			if($update) {
+				db::rank($p, $type, $rating);
+			}
+		}
+
+		return($rating);
+	}
+}
+
+=cut
 
 =head2 Race Tournaments
 
