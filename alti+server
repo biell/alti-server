@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.36';
+my($VERSION)='2.37';
 
 =head1 NAME
 
@@ -3579,12 +3579,13 @@ is updated with them as the games progress.
 
 		$db=db::player($p);
 
-		#Pull player settings from stash:
-		$p->{'block'}=stash::get('block', $p->{'vaporId'}, 'player');
-
-		#Pull player settings from db:
-		foreach my $key (keys(%$db)) {
-			$p->{$key}=$db->{$key};
+		if(db::enabled) {
+			foreach my $key ('name', 'block') {
+				$p->{$key}=$db->{$key};
+			}
+			$p->{'lastSeen'}=$db->{'seen'};
+		} else {
+			$p->{'block'}=stash::get('block', $p->{'vaporId'}, 'player');
 		}
 
 		return if($p->{'isBot'});
