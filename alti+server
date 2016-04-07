@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.37';
+my($VERSION)='2.38';
 
 =head1 NAME
 
@@ -1774,9 +1774,11 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	our($Port)=0;
 	our($Ping)=500; #reset from launcher_config.xml
-	our($Goals)=6;  #reset from launcher_config.xml
 	our($Maxp)=14;  #reset from launcher_config.xml
-	our(%Warmup)=();  #set from launcher_config.xml
+
+	our(%Launcher)=(
+		'goals' => 6,
+	);
 
 	our($Clock)=1000;  #Clock is in milliseconds
 
@@ -2038,15 +2040,33 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 		&reconcile_option($config, 'secretCode');
 
-		$Goals=POSIX::ceil($config->{'PlaneBallGameMode'}{'goalsPerRound'}/2);
+		$Launcher{'goals'}=
+			POSIX::ceil($config->{'PlaneBallGameMode'}{'goalsPerRound'}/2);
 
-		$Warmup{'1bd'}=$config->{'ObjectiveGameMode'}{'warmupTimeSeconds'};
-		$Warmup{'1de'}=$config->{'ObjectiveGameMode'}{'warmupTimeSeconds'};
-		$Warmup{'1dm'}=$config->{'ObjectiveGameMode'}{'warmupTimeSeconds'};
-		$Warmup{'ball'}=$config->{'PlaneBallGameMode'}{'warmupTimeSeconds'};
-		$Warmup{'ffa'}=$config->{'FreeForAllGameMode'}{'warmupTimeSeconds'};
-		$Warmup{'tbd'}=$config->{'BaseDestroyGameMode'}{'warmupTimeSeconds'};
-		$Warmup{'tdm'}=$config->{'TeamDeathMatchGameMode'}{'warmupTimeSeconds'};
+		$Launcher{'warmup'}={
+			'1bd' => $config->{'ObjectiveGameMode'}{'warmupTimeSeconds'},
+			'1de' => $config->{'ObjectiveGameMode'}{'warmupTimeSeconds'},
+			'1dm' => $config->{'ObjectiveGameMode'}{'warmupTimeSeconds'},
+			'ball' => $config->{'PlaneBallGameMode'}{'warmupTimeSeconds'},
+			'ffa' => $config->{'FreeForAllGameMode'}{'warmupTimeSeconds'},
+			'tbd' => $config->{'BaseDestroyGameMode'}{'warmupTimeSeconds'},
+			'tdm' => $config->{'TeamDeathMatchGameMode'}{'warmupTimeSeconds'},
+		};
+
+		$Launcher{'roundTime'}={
+			'1bd' => $config->{'ObjectiveGameMode'}{'roundTimeSeconds'},
+			'1de' => $config->{'ObjectiveGameMode'}{'roundTimeSeconds'},
+			'1dm' => $config->{'ObjectiveGameMode'}{'roundTimeSeconds'},
+			'ball' => $config->{'PlaneBallGameMode'}{'roundTimeSeconds'},
+			'ffa' => $config->{'FreeForAllGameMode'}{'roundTimeSeconds'},
+			'tbd' => $config->{'BaseDestroyGameMode'}{'roundTimeSeconds'},
+			'tdm' => $config->{'TeamDeathMatchGameMode'}{'roundTimeSeconds'},
+		};
+
+		$Launcher{'score'}={
+			'ffa' => $config->{'FreeForAllGameMode'}{'scoreLimit'},
+			'tdm' => $config->{'TeamDeathMatchGameMode'}{'scoreLimit'},
+		};
 
 		%Commands=map(($_->{'ConsoleCommand'} => undef), @{$config->
 				{'consoleCommandPermissions'}
@@ -2587,6 +2607,10 @@ them to the AltBouncer system.
 
 	my(%Seen)=();
 
+	sub clear {
+		%Seen=();
+	}
+
 	sub add {
 		my($p)=@_;
 		my($log)=IO::Handle->new;
@@ -2671,7 +2695,7 @@ them to the AltBouncer system.
 
 		unless(xml::valid($File)) {
 			ui::slog('Generated invalid XML file, not uploading');
-			%Seen=();
+			&clear;
 			return;
 		}
 
@@ -2692,10 +2716,10 @@ them to the AltBouncer system.
 			ui::slog('ERROR : CURL EXIT STATUS:', $?>>8, $CURL_RV{$?>>8});
 		} elsif($rejected) {
 			ui::slog('WARN  : curl upload rejected by AltBouncer');
-			%Seen=();
+			&clear;
 		} else {
 			ui::slog('INFO  : curl upload to AltBouncer successful');
-			%Seen=();
+			&clear;
 		}
 	}
 }
@@ -3752,7 +3776,6 @@ are pulled from ladder, and changes in ladder are reflected here.
 {	package planeball;
 
 	eval('use HTML::Parser');
-	eval('use HTML::Entities');
 
 	my($Curl)=utils::which('curl', 'good', 'PlaneBall support disabled');
 	my($Players)='https://planeball.com/players/';
@@ -3824,9 +3847,9 @@ are pulled from ladder, and changes in ladder are reflected here.
 		return unless($In);
 
 		if($Mode eq 'header') {
-			$Head[$Index]=decode_entities($text);
+			$Head[$Index]=$text;
 		} elsif($Mode eq 'data') {
-			$Data->{$Head[$Index]}=decode_entities($text);
+			$Data->{$Head[$Index]}=$text;
 		}
 	}
 
@@ -3854,7 +3877,7 @@ are pulled from ladder, and changes in ladder are reflected here.
 		$p->report_tags(qw(table tr th td));
 		$p->handler('start' => \&_state, 'event, tagname, attr');
 		$p->handler('end'   => \&_state, 'event, tagname, attr');
-		$p->handler('text'  => \&_data,  'text');
+		$p->handler('text'  => \&_data,  'dtext');
 
 		db::begin;
 
@@ -3989,37 +4012,6 @@ they make the top 5.
 	my($Destroy)=undef;
 
 
-	sub print {
-		my($i)=1;
-		my($records);
-		
-		if(db::enabled) {
-			$records=db::records(map::name);
-			splice(@$records, 5);
-		} else {
-			$records=stash::get(map::name, 'records');
-		}
-
-		return unless(ref($records) eq 'ARRAY');
-
-		foreach my $record (@$records) {
-			if(exists($record->[2])) {
-				chat::all(sprintf('%s : %s  (%s  %s)',
-						utils::nth($i++),
-						utils::secs2mins($record->[0]),
-						utils::date($record->[1]),
-						$record->[2],
-					));
-			} else {
-				chat::all(sprintf('%s : %s  (%s)',
-						utils::nth($i++),
-						utils::secs2mins($record->[0]),
-						utils::date($record->[1]),
-					));
-			}
-		}
-	}
-
 	sub fmt_record {
 		my($place, $record, $date, $players)=@_;
 
@@ -4030,20 +4022,29 @@ they make the top 5.
 					utils::date($date),
 					$players,
 				));
-		} else {
+		} elsif($date) {
 			return(sprintf('%s : %s  (%s)',
 					utils::nth($place),
 					utils::secs2mins($record),
 					utils::date($date),
 				));
+		} else {
+			return(sprintf('%s : %s',
+					utils::nth($place),
+					utils::secs2mins($record),
+				));
 		}
 	}
 
-	sub whisper {
-		my($e, $p)=@_;
-		my($time)=($e->{'time'} - $Start)/$config::Clock;
+	sub print {
+		my(%opt)=(
+				'player'	=> undef,
+				'delta'	=> undef,
+				'short'	=> 0,
+				@_
+			);
 		my($i)=1;
-		my($records);
+		my($records, $time);
 		
 		if(db::enabled) {
 			$records=db::records(map::name);
@@ -4055,10 +4056,31 @@ they make the top 5.
 		return unless(ref($records) eq 'ARRAY');
 
 		foreach my $record (@$records) {
-			chat::whisper($p, &fmt_record($i++, @$record));
+			if(ref($opt{'player'})) {
+				if($opt{'short'}) {
+					chat::whisper($opt{'player'},
+						&fmt_record($i++, $record->[0]));
+				} else {
+					chat::whisper($opt{'player'},
+						&fmt_record($i++, @$record));
+				}
+			} else {
+				if($opt{'short'}) {
+					chat::all(&fmt_record($i++, $record->[0]));
+				} else {
+					chat::all(&fmt_record($i++, @$record));
+				}
+			}
 		}
 
-		chat::whisper($p, 'you',  ':', utils::secs2mins($time));
+		if($opt{'delta'}) {
+			$time=($opt{'delta'} - $Start)/$config::Clock;
+			if(ref($opt{'player'})) {
+				chat::whisper($opt{'player'}, 'you',  ':', utils::secs2mins($time));
+			} else {
+				chat::all('you',  ':', utils::secs2mins($time));
+			}
+		}
 	}
 
 	sub mark {
@@ -4079,8 +4101,7 @@ they make the top 5.
 
 		foreach my $record (@$records) {
 			queue::schedule {
-				chat::all(utils::nth($i++), ':',
-					utils::secs2mins($record->[0]))
+				chat::all(&fmt_record($i++, $record->[0]));
 			} $record->[0]-3;
 		}
 	}
@@ -4312,25 +4333,93 @@ These rankings can also be configured to select evenly matched teams.
 
 {	package rank;
 
+	my(%Rate); tie %Rate, 'Tie::RefHash';
+	my($Min)=60;
+	my($Base)=600;
+
 	sub rating {
-		my($p, $update)=@_;
-		my($mode)=map::mode;
+		my($p)=@_;
 		my($type)=map::type;
+
+		$type=map::mode if($type eq 'std');
+
+		return(db::rank($p, $type));
+	}
+
+	sub scale {
+		my($map, $type, $time, $p)=@_;
+		my($mode)=map::mode;
+		my($goals)=$config::Launcher{'goals'};
+		my($duration, $rusty, $quality);
+
+		if($config::Launcher{'roundTime'}{$mode}) {
+			$duration=$config::Launcher{'roundTime'}{$mode};
+		} elsif(map::mode('ball') && map::bases) {
+			$duration=$Base*$goals/6 + $Base/2;
+		} elsif(map::mode('ball')) {
+			$duration=$Base*$goals/6;
+		} elsif(map::mode('tbd')) {
+			$duration=$Base;
+		} elsif(map::mode('1bd', '1de', '1dm')) {
+			$duration=$Base/2;
+		} elsif(map::mode('ffa', 'tdm')) {
+			$duration=$config::Launcher{'score'}{$mode}*15;
+		}
+
+		$rusty=utils::delta($p->{'lastSeen'})/604800;
+		if($rusty>40) {
+			$rusty=0.2;
+		} elsif($rusty<2) {
+			$rusty=1;
+		} else {
+			$rusty=1-$rusty/50;
+		}
+
+		$quality=1-abs(1-($time/$duration)**(1/3));
+
+		return($quality*$rusty);
+	}
+
+	sub update {
+		my($p)=@_;
+		my($update)=$Rate{$p}[0];
+		my($type)=map::type;
+		my($delta)=time();
 		my($rating);
 
-		if($type eq 'std') {
-			$rating=db::rank($p, $mode)+$update;
-			if($update) {
-				db::rank($p, $mode, $rating);
-			}
-		} else {
-			$rating=db::rank($p, $type)+$update;
-			if($update) {
-				db::rank($p, $type, $rating);
-			}
+		return(undef) unless(ref($Rate{$p}));
+
+		$delta-=$Rate{$p}[1];
+
+		$type=map::mode if($type eq 'std');
+
+		$update*=&scale(map::name, $type, $delta, $p);
+
+		$rating=db::rank($p, $type)+$update;
+
+		if($delta>$Min) {
+			$rating=1 if($rating<1);
+
+			db::rank($p, $type, $rating) if($update);
 		}
 
 		return($rating);
+	}
+
+	sub add {
+		my($p)=@_;
+
+		return if(ref($Rate{$p}));
+
+		$Rate{$p}=[0, time()];
+	}
+
+	sub remove {
+		my($p)=@_;
+
+		&update($p);
+		delete($Rate{$p});
+
 	}
 }
 
@@ -4456,7 +4545,7 @@ server switches the map and the race begins.
 			if($score<0) {
 				$Goals=abs($score);
 			} else {
-				$Goals=$config::Goals-$score;
+				$Goals=$config::Launcher{'goals'}-$score;
 			}
 			print $Log "goals,$Goals\n";
 		}
@@ -4757,7 +4846,7 @@ and provide slightly enhanced game play.
 	sub progress {
 		my($p, $amount)=@_;
 		my($side)=map::side($p);
-		my($goals)=$config::Goals;
+		my($goals)=$config::Launcher{'goals'};
 		my($new)=POSIX::floor($amount*$goals);
 
 		if($side eq 'left') {
@@ -4844,7 +4933,7 @@ and provide slightly enhanced game play.
 	}
 
 	sub winner {
-		my($goals)=$config::Goals;
+		my($goals)=$config::Launcher{'goals'};
 
 		if($Score[0]>=$goals) {
 			return(map::left);
@@ -4895,7 +4984,7 @@ play though extended interfaces and server support.
 
 	sub score {
 		my($p)=@_;
-		my($goals)=$config::Goals;
+		my($goals)=$config::Launcher{'goals'};
 		my(@score)=ball::score($p);
 
 		return if(race::on);
@@ -5210,7 +5299,7 @@ play though extended interfaces and server support.
 		unless($Stats{$p->{'team'}}{'cp'}) {
 			@powerups=utils::uniq(values(%$checkpoints));
 
-			for(my $i=0; $i<$config::Goals; $i++) {
+			for(my $i=0; $i<$config::Launcher{'goals'}; $i++) {
 				$Stats{$p->{'team'}}{'cp'}[$i]=$powerups[$i%@powerups];
 			}
 		}
@@ -5219,7 +5308,7 @@ play though extended interfaces and server support.
 		unless($p->{'stats'}{'cp'}) {
 			@powerups=utils::uniq(values(%$checkpoints));
 
-			for(my $i=0; $i<$config::Goals; $i++) {
+			for(my $i=0; $i<$config::Launcher{'goals'}; $i++) {
 				$p->{'stats'}{'cp'}[$i]=$powerups[$i%@powerups];
 			}
 		}
@@ -5646,7 +5735,7 @@ play though extended interfaces and server support.
 					foreach my $racer (race::list) {
 						plus::assign($racer, $assign);
 					}	
-				} $config::Warmup{map::mode}/4;
+				} $config::Launcher{'warmup'}{map::mode}/4;
 			}
 		}
 
@@ -5859,7 +5948,7 @@ the value of C<restartMap> in seconds for downloads to complete.
 	sub complete {
 		my($client)=@_;
 		my($delta)=utils::delta($Time);
-		my($warmup)=$config::Warmup{map::mode}+2;
+		my($warmup)=$config::Launcher{'warmup'}{map::mode}+2;
 		my($limit)=config::option('restartMapTime')/2;
 		my($types)=config::option('restartMapTypes');
 
@@ -5889,7 +5978,7 @@ the value of C<restartMap> in seconds for downloads to complete.
 	sub release {
 		my($map)=@_;
 		my($delta)=utils::delta($Time);
-		my($warmup)=$config::Warmup{map::mode};
+		my($warmup)=$config::Launcher{'warmup'}{map::mode};
 		my($limit)=config::option('restartMapTime');
 		my($types)=config::option('restartMapTypes');
 
@@ -7087,7 +7176,7 @@ core protecting the flag.
 
 		if(map::type(@records)) {
 			queue::schedule {
-				records::print;
+				records::print('short' => 1);
 			} 10;
 		}
 	},
@@ -7541,7 +7630,7 @@ core protecting the flag.
 	'enable ballScore'	=> sub {
 		my($e, $p)=@_;
 		my($scores)=stash::get('ballScore', map::name, 'map');
-		my($goals)=$config::Goals;
+		my($goals)=$config::Launcher{'goals'};
 		my($l, $r);
 
 		return unless(map::mode('ball'));
@@ -7560,7 +7649,7 @@ core protecting the flag.
 
 	'set ballScore' 	=> sub {
 		my($e, $p, $l, $r)=@_;
-		my($goals)=$config::Goals;
+		my($goals)=$config::Launcher{'goals'};
 
 		return unless(map::mode('ball'));
 
@@ -7872,7 +7961,7 @@ core protecting the flag.
 	'list records'	=> sub {
 		my($e, $p)=@_;
 
-		records::whisper($e, $p);
+		records::print('player' => $p, 'delta' => $e->{'time'});
 	},
 
 	'del record'	=> sub {
@@ -9453,6 +9542,7 @@ core protecting the flag.
 		#This is a good time to do other stuff:
 		if(altbouncer::count > 250) {
 			queue::background { altbouncer::upload } 0;
+			altbouncer::clear;
 		}
 	},
 
@@ -9747,11 +9837,14 @@ also only available from the console.
 				nickname='$search'        OR
 				vaporid LIKE '\%$search'  ;
 			});
+		my($lookup)=player::lookup($player->{'vaporid'});
 
 		if($player) {
 			db::update('player', qq{vaporid="$player->{'vaporid'}"}, {
 					'name'	=> $name
 				});
+
+			$lookup->{'name'}=$name if(ref($lookup));
 
 			ui::slog("Updated $player->{'vaporid'} ($player->{'nickname'}) to $name");
 		} else {
@@ -10008,10 +10101,12 @@ while(1) {
 							config::lobby || config::random_map);
 						map::end;
 						queue::background { altbouncer::upload } 0;
+						altbouncer::clear;
 					}
 
 					if(altbouncer::count > 100) {
 						queue::background { altbouncer::upload } 0;
+						altbouncer::clear;
 					}
 				}
 			}
