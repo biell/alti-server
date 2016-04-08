@@ -241,12 +241,6 @@ manage Alti+ game maps.
     `/unset` command.  Once the map is loaded, the value of `nextMap` is
     erased automatically.
 
-  * **/set planes [Loopy|Bomber|Explodet|Biplane|Miranda] [...]**<br>
-    Specify that only the list of planes provided here are allowed on this
-    map.  When players attempt to spawn with the wrong plane, they will
-    be benched and the server will display a message explaining the valid
-    plane list.  Nicknames whale and randa are also allowed.
-
   * **/set gravity [0|1|2|3]**<br>
     Set the default gravity configuration for this map. This setting will
     be kept between server restarts for this map. If this map is removed
@@ -339,6 +333,18 @@ manage Alti+ game maps.
     Store text to be displayed at the loading of a map, and to new players
     when they join.  This is intended to help players figure out what to
     do on the map, and what it is all about.
+
+  * **/add plane [+|-] [Loopy|Bomber|Explodet|Biplane|Miranda] [perks] ..**<br>
+    Specify that only the list of planes provided here are allowed on this
+    map.  A `+` is used to add an allowed configuration, and `-` is used
+    to forbid a configuration.  If neither are present, `+` is assumed.
+    When players attempt to spawn with the wrong plane, they will
+    be benched and the server will display a message explaining the valid
+    plane list.  Nicknames whale and randa are also allowed. You can specify
+    planes and perks, but be careful with perks, because players may not
+    have a pre-defined setup for your list.  This is most useful when
+    disallowing a specific perk/plane combination (like randa/rubber on
+    coop). 
 
   * **/add portal [name] [px],[py] [sx],[sy],[sa]**<br>
     When a player auto-uses the health powerup located at `px`,`py`, then

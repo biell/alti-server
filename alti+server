@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.38';
+my($VERSION)='2.39';
 
 =head1 NAME
 
@@ -722,6 +722,16 @@ L<perl(1)> should be used to ensure basic operation.
 		return(sort(keys(%uniq)));
 	}
 
+	sub simplify {
+		local($_)=@_;
+
+		s/^[\s,;|]+//;
+		s/[\s,;|]+$//;
+		s/([\s,;|])+/$1/g;
+
+		return($_);
+	}
+
 	sub invert {
 		my($hash)=@_;
 		my($inverted)={};
@@ -928,6 +938,102 @@ L<perl(1)> should be used to ensure basic operation.
 
 		return($string);
 	}
+
+	sub plane {
+		local($_)=@_;
+
+		s/loop\w*/Loopy/i;
+		s/[bd]ombe\w*/Bomber/i;
+		s/whale/Explodet/i;
+		s/expl\w*/Explodet/i;
+		s/bip\w*/Biplane/i;
+		s/\w*randa/Miranda/i;
+		s/mir\w*/Miranda/i;
+
+		return($_);
+	}
+
+	sub is_plane {
+		local($_)=&plane(@_);
+		return(m/(Loopy|Bomber|Explodet|Biplane|Miranda)/);
+	}
+
+	sub green {
+		local($_)=@_;
+
+		s/rubber.*/Rubberized Hull/i;
+		s/ha.*/Heavy Armor/i;
+		s/.*armor/Heavy Armor/i;
+		s/repair.*/Repair Drone/i;
+		s/flex.*/Flexible Wings/i;
+
+		return($_);
+	}
+
+	sub is_green {
+		local($_)=&green(@_);
+		return(m/(Rubberized Hull|Heavy Armor|Repair Drone|Flexible Wings)/);
+	}
+
+	sub red {
+		local($_)=@_;
+
+		s/track.*/Tracker/i;
+		s/df.*/Double Fire/i;
+		s/double.*/Double Fire/i;
+		s/acid.*/Acid Bomb/i;
+
+		s/sup.*/Suppressor/i;
+		s/.*[db]ombs.*/Bombs/i;
+		s/flak/Flak Tailgun/i;
+
+		s/direct.*/Director/i;
+		s/thermo.*/Thermobarics/i;
+		s/remote.*/Remote Mine/i;
+		s/rm.*/Remote Mine/i;
+
+		s/dog.*/Dogfighter/i;
+		s/recoil.*/Recoilless Gun/i;
+		s/hc.*/Heavy Cannon/i;
+		s/.*cannon/Heavy Cannon/i;
+
+		s/trick.*/Trickster/i;
+		s/laser/Laser/i;
+		s/time.*/Time Anchor/i;
+		s/.*anchor/Time Anchor/i;
+		s/ta.*/Time Anchor/i;
+
+		return($_);
+	}
+
+	sub is_red {
+		local($_)=&red(@_);
+		my($re)=join('|',
+			'Tracker', 'Double Fire', 'Acid Bomb',
+			'Suppressor', 'Bombs', 'Flak Tailgun',
+			'Director', 'Thermobarics', 'Remote Mine',
+			'Dogfighter', 'Recoilless Gun', 'Heavy Cannon',
+			'Trickster', 'Laser', 'Time Anchor',
+		);
+		return(m/($re)/);
+	}
+
+	sub blue {
+		local($_)=@_;
+
+		s/turbo.*/Turbocharger/i;
+		s/ultra.*/Ultracapacitor/i;
+		s/rev.*/Reverse Thrust/i;
+		s/ace.*/Ace Instincts/i;
+
+		return($_);
+	}
+
+	sub is_blue {
+		local($_)=&blue(@_);
+		return(m/(Turbocharger|Ultracapacitor|Reverse Thrust|Ace Instincts)/);
+	}
+
 }
 
 
@@ -1255,11 +1361,14 @@ Supported databases are SQLite and PostgreSQL.
 
 		if($value) {
 			&upsert('rank',
-					qq{vaporid="$p->{'vaporId'}" AND type="$type"},
-					{'rating' => $value},
+					qq{vaporid="$p->{'vaporId'}" AND type="$type"}, {
+							'vaporid' => $p->{'vaporId'},
+							'type'    => $type,
+							'rating'  => $value,
+						}
 				);
 		} else {
-			$rating=&select('rank', 
+			($rating)=&select('rank', 
 					qq{vaporid="$p->{'vaporId'}" AND type="$type"},
 				);
 
@@ -1267,8 +1376,11 @@ Supported databases are SQLite and PostgreSQL.
 				return($rating->{'rating'});
 			} else {
 				&insert('rank',
-						qq{vaporid="$p->{'vaporId'}" AND type="$type"},
-						{'rating' => 800},
+						qq{vaporid="$p->{'vaporId'}" AND type="$type"}, {
+							'vaporid' => $p->{'vaporId'},
+							'type'    => $type,
+							'rating'  => 800,
+						}
 					);
 				return(800);
 			}
@@ -2391,7 +2503,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'set' => {
 		'name'			=> 'set',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys'], 'string'],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2399,7 +2511,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'unset' => {
 		'name'			=> 'unset',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys']],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys']],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2407,7 +2519,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'add' => {
 		'name'			=> 'add',
-		'arguments'		=> [['note', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone'], 'string'],
+		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2415,7 +2527,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'del' => {
 		'name'			=> 'del',
-		'arguments'		=> [['note', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
+		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3108,6 +3220,8 @@ types which alter the normal behavior.
 	my($Cpu)=0;
 	my($Ds)=undef;
 	my(%Pickups)=();
+	my(%Turrets)=();
+	my(%Bases)=();
 	my(%Goals)=();
 
 	our($Xmid, $Ymid)=(0, 0);
@@ -3144,7 +3258,15 @@ types which alter the normal behavior.
 		my($file)=<$cache/$map.altx/*.alte>;
 		my(%parser)=(
 			'SuppressEmpty'	=> 1,
-			'ForceArray'		=> ['View', 'powerupSpawner', 'String'],
+			'ForceArray'		=> [
+								'View',
+								'spawnPoints',
+								'powerupSpawner',
+								'Goal',
+								'Turret',
+								'Base',
+								'String'
+							],
 			'ValueAttr'		=> [ 'value', 'index' ],
 			'GroupTags'		=> {
 				'views'			=> 'View',
@@ -3395,7 +3517,7 @@ types which alter the normal behavior.
 	}
 
 	sub spawn_points {
-		my($spawns)=$Ds->{'views'}{'Game'}{'spawnPoints'}{'spawnPoints'};
+		my($spawns)=$Ds->{'views'}{'Game'}{'spawnPoints'}[0]{'spawnPoints'};
 
 		if(ref($spawns) eq 'ARRAY') {
 			return(@$spawns);
@@ -3405,7 +3527,7 @@ types which alter the normal behavior.
 	}
 
 	sub bases {
-		my($bases)=$Ds->{'views'}{'Game'}{'Base'}{'Base'};
+		my($bases)=$Ds->{'views'}{'Game'}{'Base'}[0]{'Base'};
 
 		if(ref($bases) eq 'ARRAY') {
 			return(@$bases);
@@ -3415,7 +3537,7 @@ types which alter the normal behavior.
 	}
 
 	sub turrets {
-		my($turrets)=$Ds->{'views'}{'Game'}{'Turret'}{'Turret'};
+		my($turrets)=$Ds->{'views'}{'Game'}{'Turret'}[0]{'Turret'};
 
 		if(ref($turrets) eq 'ARRAY') {
 			return(@$turrets);
@@ -3496,7 +3618,7 @@ types which alter the normal behavior.
 
 	sub new {
 		my($mapref)=@_;
-		my(@views)=();
+		my($obj);
 
 		$Map=$mapref;
 		&set_type($Map->{'map'});
@@ -3505,25 +3627,38 @@ types which alter the normal behavior.
 		$Cpu=List::Util::sum(server::cpu_secs);
 		$Ds=&definition($Map->{'map'});
 		%Pickups=();
+		%Turrets=();
+		%Bases=();
 		%Goals=();
 
 		$Xmid=$Ds->{'views'}{'Game'}{'bounds'}{'maxX'}/2;
 		$Ymid=$Ds->{'views'}{'Game'}{'bounds'}{'maxY'}/2;
 
-		if(ref($Ds->{'views'}{'Game'}{'Goal'}{'Goal'}) eq 'ARRAY') {
-			foreach my $goal (@{$Ds->{'views'}{'Game'}{'Goal'}{'Goal'}}) {
+		$obj=$Ds->{'views'}{'Game'}{'Goal'}[0]{'Goal'};
+		if(ref($obj) eq 'ARRAY') {
+			foreach my $goal (@$obj) {
 				&register_goal($goal);
 			}
 		}
 
-		@views=map($Ds->{'views'}{$_}{'powerupSpawner'},
-			keys(%{$Ds->{'views'}}));
-
-		foreach my $view (@views) {
-			next unless($view);
-
-			foreach my $pu (@{$view->[0]{'powerupSpawner'}}) {
+		$obj=$Ds->{'views'}{'Game'}{'powerupSpawner'}[0]{'powerupSpawner'};
+		if(ref($obj) eq 'ARRAY') {
+			foreach my $pu (@$obj) {
 				$Pickups{"$pu->{'x'},$pu->{'y'}"}=$pu->{'selectedPowerups'};
+			}
+		}
+
+		$obj=$Ds->{'views'}{'Game'}{'Turret'}[0]{'Turret'};
+		if(ref($obj) eq 'ARRAY') {
+			foreach my $tu (@$obj) {
+				$Turrets{"$tu->{'x'},$tu->{'y'}"}=$tu->{'team'};
+			}
+		}
+
+		$obj=$Ds->{'views'}{'Game'}{'Base'}[0]{'Base'};
+		if(ref($obj) eq 'ARRAY') {
+			foreach my $ba (@$obj) {
+				$Bases{"$ba->{'x'},$ba->{'y'}"}=$ba->{'team'};
 			}
 		}
 	}
@@ -3744,6 +3879,22 @@ is updated with them as the games progress.
 		return(scalar(&list(@_)));
 	}
 
+	sub handicap {
+		my($team)=@_;
+		my($left)=scalar(grep(map::left($_->{'team'}), @Players));
+		my($right)=scalar(grep(map::right($_->{'team'}), @Players));
+
+		return(1) unless($left && $right);
+
+		if(map::left($team)) {
+			return($right/$left);
+		} elsif(map::right($team)) {
+			return($left/$right);
+		} else {
+			return(0);
+		}
+	}
+
 	sub none {
 		return(@Players==0);
 	}
@@ -3756,6 +3907,12 @@ is updated with them as the games progress.
 
 	sub admins {
 		return(@Admins);
+	}
+
+	sub reset {
+		foreach my $player (&list) {
+			delete($player->{'team'});
+		}
 	}
 
 }
@@ -3988,7 +4145,7 @@ debugging or to make funny comments.
 		my($time)=time();
 
 		return(0) unless($multiplier>0);
-		return(0) unless(int(rand($multiplier*player::count))==0);
+		return(0) unless(int(rand($multiplier * player::count))==0);
 		return(0) unless($time>$Delay);
 
 		$Delay=$time+3;
@@ -4331,40 +4488,34 @@ they make the top 5.
 B<alti+server> can be configured to rank players players similar to ladder.
 These rankings can also be configured to select evenly matched teams.
 
+=cut
+
 {	package rank;
 
-	my(%Rate); tie %Rate, 'Tie::RefHash';
 	my($Min)=60;
 	my($Base)=600;
 
-	sub rating {
-		my($p)=@_;
-		my($type)=map::type;
-
-		$type=map::mode if($type eq 'std');
-
-		return(db::rank($p, $type));
-	}
-
 	sub scale {
-		my($map, $type, $time, $p)=@_;
+		my($p)=@_;
 		my($mode)=map::mode;
-		my($goals)=$config::Launcher{'goals'};
+		my($goal_ratio)=$config::Launcher{'goals'}/6;
+		my($competition)=player::count()/$config::Maxp;
 		my($duration, $rusty, $quality);
 
 		if($config::Launcher{'roundTime'}{$mode}) {
 			$duration=$config::Launcher{'roundTime'}{$mode};
 		} elsif(map::mode('ball') && map::bases) {
-			$duration=$Base*$goals/6 + $Base/2;
+			$duration=$Base*$goal_ratio + $Base/2;
 		} elsif(map::mode('ball')) {
-			$duration=$Base*$goals/6;
+			$duration=$Base*$goal_ratio;
 		} elsif(map::mode('tbd')) {
 			$duration=$Base;
 		} elsif(map::mode('1bd', '1de', '1dm')) {
-			$duration=$Base/2;
+			$duration=$Base/3;
 		} elsif(map::mode('ffa', 'tdm')) {
 			$duration=$config::Launcher{'score'}{$mode}*15;
 		}
+		$duration*=900; #1000 milliseconds, but you only play 90% of the time
 
 		$rusty=utils::delta($p->{'lastSeen'})/604800;
 		if($rusty>40) {
@@ -4375,51 +4526,87 @@ These rankings can also be configured to select evenly matched teams.
 			$rusty=1-$rusty/50;
 		}
 
-		$quality=1-abs(1-($time/$duration)**(1/3));
+		$quality=1-abs(1-($p->{'played'}/$duration)**(1/3));
 
+		#return($quality*$rusty*$competition);
 		return($quality*$rusty);
 	}
 
-	sub update {
+	sub rate {
 		my($p)=@_;
-		my($update)=$Rate{$p}[0];
+		my($stats)=$p->{'stats'};
+		my($rate)=0;
+		my(@ratio);
+
+		#Team:
+		if($p->{'stats'}{'differential'}>0) {
+			$rate=15;
+		} elsif($p->{'stats'}{'differential'}<0) {
+			$rate=-25;
+		}
+
+		#Individual:
+		$rate+=$stats->{'base'};
+		$rate+=$stats->{'turret'}/3;
+		$rate+=$stats->{'capture'};
+		$rate+=$stats->{'goals'};
+		$rate+=$stats->{'assists'}/3;
+		$rate+=$stats->{'saves'}/10;
+		$rate+=$stats->{'interception'}/10;
+		$rate-=$stats->{'intercepted'}/5;
+		$rate-=$stats->{'crashes'}/5;
+
+		if(map::mode('tbd')) {
+			@ratio=sort(-4, 4, $stats->{'kills'}/2-$stats->{'died'}/4);
+			$rate+=$ratio[1];
+		} elsif(map::mode('tdm', 'ffa')) {
+			@ratio=sort(-5, 5, $stats->{'kills'}/2-$stats->{'died'}/2);
+			$rate+=$ratio[1];
+		} elsif(map::mode('1bd', '1dm', '1de')) {
+			$rate+=$stats->{'kills'};
+			$rate-=$stats->{'died'}/3;
+		}
+
+		return($rate);
+	}
+
+	sub enter {
+		my($p)=@_;
 		my($type)=map::type;
-		my($delta)=time();
-		my($rating);
-
-		return(undef) unless(ref($Rate{$p}));
-
-		$delta-=$Rate{$p}[1];
+		my($rating, $update);
 
 		$type=map::mode if($type eq 'std');
 
-		$update*=&scale(map::name, $type, $delta, $p);
+		$update=&rate($p) * &scale($p);
 
-		$rating=db::rank($p, $type)+$update;
+		$rating=db::rank($p, $type);
 
-		if($delta>$Min) {
+		if($p->{'played'}>$Min) {
+			$rating+=$update;
 			$rating=1 if($rating<1);
 
-			db::rank($p, $type, $rating) if($update);
+			db::rank($p, $type, int($rating)) if($update);
 		}
 
 		return($rating);
 	}
 
-	sub add {
-		my($p)=@_;
+	sub score {
+		my($team, $score)=@_;
+		my($update)=$score*player::handicap($team);
+		my($minimum)=$config::Maxp*0.75;
 
-		return if(ref($Rate{$p}));
+		#return unless(player::count>$minimum);
 
-		$Rate{$p}=[0, time()];
-	}
+		foreach my $player (player::list) {
+			next if(map::spec($player));
 
-	sub remove {
-		my($p)=@_;
-
-		&update($p);
-		delete($Rate{$p});
-
+			if($player->{'team'}==$team) {
+				$player->{'stats'}{'differential'}+=$update;
+			} else {
+				$player->{'stats'}{'differential'}-=$update;
+			}
+		}
 	}
 }
 
@@ -4866,11 +5053,12 @@ and provide slightly enhanced game play.
 	sub shoot {
 		my($e)=@_;
 
-		$Carrier->{'carrier'}=0;
+		$Shot=$e->{'time'};
 
 		$Passer=$Carrier;
+
+		$Passer->{'carrier'}=0;
 		$Carrier=undef;
-		$Shot=$e->{'time'};
 	}
 
 	sub catch {
@@ -4890,14 +5078,19 @@ and provide slightly enhanced game play.
 		if($Last == $Team) {
 			unless($Passer == $Carrier) {
 				if($airtime>900 && $airtime<2200 && chat::snarky) {
-					chat::laud("Nice Pass $p->{'nickname'}!");
+					chat::laud("Nice Pass $Passer->{'nickname'}!");
 				}
 				push(@Relay, $p);
-				$p->{'stats'}{'pass'}++;
+				$Passer->{'stats'}{'pass'}++;
+				$Carrier->{'stats'}{'catch'}++;
 			}
 		} else {
+			$Passer->{'stats'}{'intercepted'}++;
+			$Carrier->{'stats'}{'interception'}++;
 			@Relay=();
 		}
+
+		$Passer=undef;
 
 		return(1);
 	}
@@ -5048,6 +5241,50 @@ play though extended interfaces and server support.
 		} else {
 			$a=int($a);
 		}
+	}
+
+	sub plane_check {
+		my($p)=@_;
+		my($planes)=stash::get('planes', map::name, 'map');
+		my($setup)=join(',', @$p{'plane','perkGreen','perkRed','perkBlue'});
+		my($allow, $deny)=(1, '');
+		my($planere);
+
+		return(1) unless(ref($planes) eq 'HASH');
+
+		foreach my $restriction (values(%$planes)) {
+			if($restriction eq '+') {
+				$allow=0;
+				last;
+			}
+		}
+
+		foreach my $config (keys(%$planes)) {
+			$planere=$config;
+			$planere=~s/^,/.*,/;
+			$planere=~s/,$/,.*/;
+			1 while($planere=~s/,,/,.*,/);
+
+			if($setup=~m/$planere/) {
+				if($planes->{$config} eq '+') {
+					$allow=1;
+				} elsif($planes->{$config} eq '-') {
+					$deny=utils::simplify($config);
+				}
+			}
+		}
+
+		if($deny) {
+			chat::whisper($p, 'Disallowed plane configuration:', $deny);
+			return(0);
+		} elsif(!$allow) {
+			chat::whisper($p, 'Plane restricitons:', join(', ',
+				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
+			));
+			return(0);
+		}
+
+		return(1);
 	}
 
 	sub spawns {
@@ -5255,11 +5492,13 @@ play though extended interfaces and server support.
 		my($flags)=stash::get($p->{'team'}, 'powerups', map::name, 'map');
 
 		return unless($flags);
-		return if(utils::delta($Captured)<5000);
+		return if( ($e->{'time'}-$Captured) < 4000 );
 		return unless(map::mode('ball'));
 		return if(&game_over);
 
 		if($flags->{$pickup}) {
+			rank::score($p->{'team'}, 1);
+
 			foreach my $player (player::list) {
 				&bench($player);
 			}
@@ -5707,12 +5946,11 @@ play though extended interfaces and server support.
 		$Active=0;
 		$Captured=0;
 
-		foreach my $player (player::list) {
-			delete($player->{'team'});
-		}
+		player::reset;
 
 		records::init;
 		race::init;
+
 		&round;
 
 		if(map::type('ruin')) {
@@ -7535,72 +7773,138 @@ core protecting the flag.
 
 		chat::whisper($p, 'Allow only certain planes to join the game');
 		chat::whisper($p, '/list planes');
-		chat::whisper($p, '/set planes <Loopy|Bomber|Explodet|Biplane|Miranda>');
-		chat::whisper($p, '/unset planes');
+		chat::whisper($p, '/add plane <+|-><Loopy|Bomber|Explodet|Biplane|Miranda> <perk> <...>');
+		chat::whisper($p, '/del plane <+|-><Loopy|Bomber|Explodet|Biplane|Miranda> <perk> <...>');
+		chat::whisper($p, 'With + or - adds or removes, otherwise sets');
 	},
 
 	'list planes'	=> sub {
 		my($e, $p)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
+		my($spec);
 
-		chat::whisper($p, 'planes:', $planes || 'all');
+		if(ref($planes) eq 'HASH') {
+			chat::whisper($p, 'planes:', join(', ',
+				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
+			));
+		} else {
+			chat::whisper($p, 'planes: all');
+		}
 	},
 
 	'enable planes'	=> sub {
 		my($e, $p)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
 
-		if(defined($planes)) {
-			chat::all('planes:', $planes);
+		return unless(defined($planes));
+
+		#convert to new format:
+		unless(ref($planes)) {
+			foreach my $plane (split(m/\|+/, $planes)) {
+				$planes={} unless(ref($planes));
+				$planes->{"$plane,,,"}='+';
+			}
+			stash::set('planes', map::name, 'map', $planes);
+		}
+
+		if(ref($planes) eq 'HASH') {
+			chat::all('planes:', join(', ',
+				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
+			));
+		} else {
+			chat::all('planes: all');
 		}
 	},
 
-	'set planes'	=> sub {
-		my($e, $p, @planes)=@_;
-		my(%planes)=();
-		my($planere);
+	'add plane'	=> sub {
+		my($e, $p, @plane)=@_;
+		my($planes)=stash::get('planes', map::name, 'map');
+		my($tuple);
 
 		if(map::mode('ffa')) {
 			chat::whisper($p, 'Plane enforcement is not possible in FFA');
 			return;
 		}
 
-		foreach(split(m/[\s,;\|]+/, join(',', @planes))) {
-			s/["']//g;
-
-			s/loop.*/Loopy/i;
-			s/[bd]omb.*/Bomber/i;
-			s/whale/Explodet/i;
-			s/expl.*/Explodet/i;
-			s/bip.*/Biplane/i;
-			s/.*randa/Miranda/i;
-			s/mir.*/Miranda/i;
-
-			if(m/all|none/) {
-				stash::delete('planes', map::name, 'map');
-				chat::all('Plane enforcement for', map::name, 'is disabled');
-				return;
-			} elsif(m/Loopy|Bomber|Explodet|Biplane|Miranda/) {
-				$planes{$_}=1;
-			}
+		if($plane[0]=~m/all|none/i) {
+			stash::delete('planes', map::name, 'map');
+			chat::all('Plane enforcement for', map::name, 'is disabled');
+			return;
+		} elsif($plane[0]=~m/^([+-])(\w.+)/) {
+			splice(@plane, 0, 1, $1, $2);
+		} elsif($plane[0]=~m/^\w/) {
+			unshift(@plane, '+');
 		}
 
-		$planere=join('|', keys(%planes));
-		stash::set('planes', map::name, 'map', $planere);
-		chat::all(map::name, 'only allows planes:', $planere);
+		$plane[1]=utils::plane($plane[1]);
 
-		foreach my $m (player::list) {
-			plus::bench($m) unless($m->{'plane'}=~m/$planere/);
+		for(my $i=2; $i<@plane; $i++) {
+			$plane[$i]=utils::green($plane[$i]);
+			$plane[$i]=utils::red($plane[$i]);
+			$plane[$i]=utils::blue($plane[$i]);
 		}
+
+		$tuple=join(',',
+			join('', grep(utils::is_plane($_), @plane)),
+			join('', grep(utils::is_green($_), @plane)),
+			join('', grep(utils::is_red($_), @plane)),
+			join('', grep(utils::is_blue($_), @plane)),
+		);
+
+		$planes->{$tuple}=$plane[0];
+
+		stash::set('planes', map::name, 'map', $planes);
+		chat::all(map::name, 'Added plane restriction:', @plane);
 	},
 
-	'unset planes'	=> sub {
-		my($e, $p)=@_;
+	'del plane'	=> sub {
+		my($e, $p, @plane)=@_;
+		my($planes)=stash::get('planes', map::name, 'map');
+		my($tuple);
 
-		if(stash::delete('planes', map::name, 'map')) {
-			chat::all('Deleted plane requirements');
+		unless($planes) {
+			chat::whisper($p, 'There are no plane restrictions');
+			return;
+		}
+
+		if($plane[0]=~m/all|none/i) {
+			stash::delete('planes', map::name, 'map');
+			chat::all('Plane enforcement for', map::name, 'is disabled');
+			return;
+		}
+
+		if($plane[0] eq '+' || $plane[0] eq '-') {
+			shift(@plane);
+		}
+
+		$plane[0]=~s/^[+-]//;
+
+		$plane[0]=utils::plane($plane[0]);
+
+		for(my $i=1; $i<@plane; $i++) {
+			$plane[$i]=utils::green($plane[$i]);
+			$plane[$i]=utils::red($plane[$i]);
+			$plane[$i]=utils::blue($plane[$i]);
+		}
+
+		$tuple=join(',',
+			join('', grep(utils::is_plane($_), @plane)),
+			join('', grep(utils::is_green($_), @plane)),
+			join('', grep(utils::is_red($_), @plane)),
+			join('', grep(utils::is_blue($_), @plane)),
+		);
+
+		if(exists($planes->{$tuple})) {
+			delete($planes->{$tuple});
+			if(%$planes) {
+				stash::set('planes', map::name, 'map', $planes);
+				chat::all(map::name, 'Removed plane restriction:', @plane);
+			} else {
+				stash::delete('planes', map::name, 'map');
+				chat::all('Plane enforcement for', map::name, 'is disabled');
+			}
 		} else {
-			chat::whisper($p, 'No plane requirements exist');
+			chat::all(map::name, 'Could not find restriction:', @plane);
 		}
 	},
 
@@ -8546,8 +8850,8 @@ core protecting the flag.
 
 		chat::whisper($p, 'Mark a powerup special to the game type (e.g. flag or race)');
 		chat::whisper($p, '/list powerups');
-		chat::whisper($p, '/add powerup <name> <team> <x> <y>');
-		chat::whisper($p, '/del powerup <name> <team>');
+		chat::whisper($p, '/add powerup <name> <team> <x>,<y>');
+		chat::whisper($p, '/del powerup <name> <team> <x>,<y>');
 	},
 
 	'list powerups'	=> sub {
@@ -8600,7 +8904,7 @@ core protecting the flag.
 	},
 	
 	'del powerup'	=> sub {
-		my($e, $p, $px, $py, $team)=@_;
+		my($e, $p, $team, $px, $py)=@_;
 		my($powerup);
 		my($color);
 
@@ -8740,7 +9044,7 @@ core protecting the flag.
 		}
 
 		if(-r $map && file::name_ok($map)) {
-			chat::whisper($p, map::name, ':', file::sum($sum, $map));
+		chat::whisper($p, map::name, ':', file::sum($sum, $map));
 		}
 	},
 
@@ -8787,6 +9091,7 @@ core protecting the flag.
 		return unless($e && $p);
 
 		$p->{'stats'}={};
+		$p->{'spawn'}=undef;
 
 		player::add($p);
 
@@ -8831,6 +9136,10 @@ core protecting the flag.
 		player::remove($p);
 
 		return if($p->{'isBot'});
+
+		$p->{'played'}+=$e->{'time'} - $p->{'spawn'};
+
+		rank::enter($p);
 
 		map::busy;
 
@@ -8890,14 +9199,10 @@ core protecting the flag.
 
 		#Display the intro after users join (first teamChange to spec):
 		unless($p->{'stats'}{'intro'}) {
-			$planes=stash::get('planes', map::name, 'map');
 			$intro=stash::get('intro', map::name, 'map');
 
-			if($planes) {
-				queue::schedule {
-					chat::whisper($p, 'Allowed Planes:', $planes)
-				} 3;
-			}
+			queue::schedule { $HOOKS{'enable planes'}->(@_); } 3;
+
 			if($intro) {
 				foreach my $msg (split(m/\s*;+\s*/, $intro)) {
 					queue::schedule { chat::whisper($p, $msg) } 5;
@@ -8961,15 +9266,16 @@ core protecting the flag.
 
 	'spawn'	=> sub {
 		my($e, $p)=@_;
-		my($planere)=stash::get('planes', map::name, 'map');
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
 		my(@records)=split(m/\W+/, config::option('recordsTypes'));
 		my($match);
 
-		$p->{'plane'}=$e->{'plane'};
 		$p->{'team'}=$e->{'team'};
 		$p->{'stats'}{'turret'}=0;
+
+		@$p{'plane','perkGreen','perkRed','perkBlue','skin'}=
+			@$e{'plane','perkGreen','perkRed','perkBlue','skin'};
 
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
@@ -8987,10 +9293,8 @@ core protecting the flag.
 			return;
 		}
 
-		unless($p->{'plane'}=~m/$planere/) {
+		unless(plus::plane_check($p)) {
 			plus::bench($p);
-			chat::whisper($p, "Allowed planes: $planere");
-			return;
 		}
 
 		#Ensure players are on the correct team:
@@ -9025,9 +9329,6 @@ core protecting the flag.
 		$p->{'alive'}=1;
 		$p->{'spawn'}=$e->{'time'};
 
-		@$p{'plane','perkRed','perkGreen','perkBlue','skin'}=
-			@$e{'plane','perkRed','perkGreen','perkBlue','skin'};
-
 		race::spawn($p);
 
 		if(chat::snarky) {
@@ -9050,8 +9351,14 @@ core protecting the flag.
 		my($a2)=player::lookup($e->{'secondaryAssister'});
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 
+		$p->{'stats'}{'goals'}++;
+		$a->{'stats'}{'assists'}++;
+		$a2->{'stats'}{'assists'}++;
+
 		records::help($p, 20);
 		ball::goal($e, $p);
+
+		rank::score($p->{'team'}, 1);
 
 		if($spawn_mode && $spawn_mode!~m/default|normal|start/) {
 	 		foreach my $player (player::list) {
@@ -9298,6 +9605,10 @@ core protecting the flag.
 
 		return if($v->{'isBot'});
 
+		$p->{'played'}+=$e->{'time'}-$p->{'spawn'};
+
+		rank::score($p->{'team'}, 1) if(map::mode('tdm'));
+
 		plus::killed($v);
 		plus::check_spawn($v);
 
@@ -9306,6 +9617,7 @@ core protecting the flag.
 				$e->{'source'} eq 'plane' &&
 				$e->{'time'}-$v->{'spawn'} < 1750
 			) { #crash
+				$p->{'stats'}{'crash'}++;
 				if(rand(2)<1) {
 					$e->{'victimVelocityX'}*=-10;
 				} else {
@@ -9340,6 +9652,7 @@ core protecting the flag.
 			chat::snark($v, "$v->{'nickname'} says Ouch!!");
 		}
 
+		$p->{'stats'}{'kills'}++;
 		$p->{'stats'}{'kill'}{$v->{'nickname'}}++;
 		$v->{'stats'}{'died'}++;
 
@@ -9364,7 +9677,11 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		if($e->{'target'} eq 'base') {
+
 			records::help($p, $e->{'xp'}-5);
+			$p->{'stats'}{'base'}+=$e->{'xp'}/30;
+
+			rank::score($p->{'team'}, $e->{'xp'}/30);
 		} else {
 			records::help($p, 1);
 		}
@@ -9376,7 +9693,7 @@ core protecting the flag.
 		$p->{'stats'}{$e->{'target'}}++;
 
 		if($e->{'target'} eq 'base') {
-			records::help($p, $e->{'xp'}+10);
+			records::help($p, 10);
 		} else {
 			records::help($p, 2);
 		}
@@ -9533,6 +9850,12 @@ core protecting the flag.
 				chat::whisper($v, 'Your Nemisis:', $n->{'nickname'})
 					if($n->{'stats'}{'kill'}{$v->{'nickname'}}>2);
 			}
+		}
+
+		foreach my $p (player::list) {
+			$p->{'played'}+=$e->{'time'} - $p->{'spawn'};
+
+			rank::enter($p);
 		}
 
 		queue::schedule { records::enter($e) } 2;
