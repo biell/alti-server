@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.39';
+my($VERSION)='2.40';
 
 =head1 NAME
 
@@ -1096,6 +1096,7 @@ Supported databases are SQLite and PostgreSQL.
 			qq{
 				CREATE TABLE IF NOT EXISTS player (
 					vaporid CHAR(36) PRIMARY KEY,
+					id INTEGER,
 					name TEXT,
 					nickname TEXT,
 					seen INTEGER,
@@ -1106,11 +1107,12 @@ Supported databases are SQLite and PostgreSQL.
 
 			qq{
 				CREATE TABLE IF NOT EXISTS rank (
-					vaporid CHAR(36),
+					id INTEGER,
 					type TEXT,
 					rating INTEGER,
-					PRIMARY KEY (vaporid, type),
-					FOREIGN KEY (vaporid) REFERENCES player(vaporid)
+					differential REAL,
+					PRIMARY KEY (id, type),
+					FOREIGN KEY (id) REFERENCES player(id)
 				);
 			},
 
@@ -1143,6 +1145,76 @@ Supported databases are SQLite and PostgreSQL.
 		}
 	}
 
+	sub upgrade_v2 {
+		my(@stmts)=(
+			qq{
+				ALTER TABLE player RENAME TO player_orig;
+			},
+			qq{
+				CREATE TABLE player (
+					vaporid CHAR(36) PRIMARY KEY,
+					id INTEGER,
+					name TEXT,
+					nickname TEXT,
+					seen INTEGER,
+					ip TEXT,
+					block INTEGER
+				);
+			},
+			qq{
+				INSERT INTO player
+					(vaporid, name, nickname, seen, ip, block)
+				SELECT
+					vaporid, name, nickname, seen, ip, block
+				FROM player_orig;
+			},
+			qq{
+				DROP TABLE player_orig;
+			},
+			qq{
+				DROP TABLE rank;
+			},
+			qq{
+				CREATE TABLE rank (
+					id INTEGER,
+					type TEXT,
+					rating INTEGER,
+					differential REAL,
+					PRIMARY KEY (id, type),
+					FOREIGN KEY (id) REFERENCES player(id)
+				);
+			},
+		);
+		my($i)=100;
+		my($cols);
+
+		$Dbh->begin_work();
+		foreach my $stmt (@stmts) {
+			$Dbh->do($stmt);
+		}
+		$Dbh->commit();
+
+		$Dbh->begin_work();
+		$cols=$Dbh->selectcol_arrayref(qq{
+			SELECT DISTINCT name FROM player WHERE name IS NOT NULL;
+		});
+		foreach my $name (@$cols) {
+			$Dbh->do(qq{UPDATE player SET id=$i WHERE name="$name";});
+			$i++;
+		}
+
+		$cols=$Dbh->selectcol_arrayref(qq{
+			SELECT vaporid FROM player WHERE name IS NULL;
+		});
+		foreach my $vaporid (@$cols) {
+			$Dbh->do(qq{UPDATE player SET id=$i WHERE vaporid="$vaporid";});
+			$i++;
+		}
+
+		$Dbh->do(qq{INSERT INTO info VALUES ('nextid', $i);});
+		$Dbh->commit();
+	}
+
 	sub enabled {
 		return(defined($Type));
 	}
@@ -1173,7 +1245,12 @@ Supported databases are SQLite and PostgreSQL.
 
 		if(!$version) {
 			&init;
-			$Dbh->do(qq{INSERT INTO info values ('version', 1);});
+			$Dbh->do(qq{INSERT INTO info VALUES ('version', 2);});
+		}
+
+		if($version<2) {
+			&upgrade_v2;
+			$Dbh->do(qq{UPDATE info SET value=2 WHERE key='version';});
 		}
 	}
 
@@ -1283,6 +1360,14 @@ Supported databases are SQLite and PostgreSQL.
 	}
 
 	#Table interface:
+	sub nextid {
+		my($key, $id)=&select('info', qq{key='nextid'});
+
+		&update('info', qq{key='nextid'}, { 'nextid' => $id+1 });
+
+		return($id);
+	}
+
 	sub player {
 		my($p, $update)=@_;
 		my($row);
@@ -1357,34 +1442,28 @@ Supported databases are SQLite and PostgreSQL.
 
 	sub rank {
 		my($p, $type, $value)=@_;
-		my($rating);
+		my($rating)=&select('rank', qq{id="$p->{'id'}" AND type="$type"});
+
+		unless(ref($rating) eq 'HASH') {
+			$rating={
+				'id'           => $p->{'id'},
+				'type'         => $type,
+				'rating'       => 800,
+				'differential' => 0,
+			};
+			&insert('rank', $rating);
+		}
 
 		if($value) {
-			&upsert('rank',
-					qq{vaporid="$p->{'vaporId'}" AND type="$type"}, {
-							'vaporid' => $p->{'vaporId'},
-							'type'    => $type,
-							'rating'  => $value,
-						}
-				);
-		} else {
-			($rating)=&select('rank', 
-					qq{vaporid="$p->{'vaporId'}" AND type="$type"},
-				);
+			$rating->{'rating'}+=int($value);
+			$rating->{'differential'}+=$p->{'stats'}{'differential'};
 
-			if($rating) {
-				return($rating->{'rating'});
-			} else {
-				&insert('rank',
-						qq{vaporid="$p->{'vaporId'}" AND type="$type"}, {
-							'vaporid' => $p->{'vaporId'},
-							'type'    => $type,
-							'rating'  => 800,
-						}
-					);
-				return(800);
-			}
+			$rating->{'rating'}=1 if($rating->{'rating'}<1);
+
+			&update('rank', qq{id="$p->{'id'}" AND type="$type"}, $rating);
 		}
+
+		return($rating->{'rating'});
 	}
 }
 
@@ -2698,7 +2777,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 	},
 );
 
-
 =head2 AltBouncer
 
 Keep AltBouncer up-to-date.  If the C<altBouncer> configuration option is
@@ -3736,28 +3814,30 @@ is updated with them as the games progress.
 		$Pdb{$p->{'player'}}	=
 		$Pdb{$p->{'vaporId'}}	= $p;
 
-		$db=db::player($p);
+		return if($p->{'isBot'});
 
 		if(db::enabled) {
-			foreach my $key ('name', 'block') {
+			$db=db::player($p);
+
+			foreach my $key ('id', 'name', 'block') {
 				$p->{$key}=$db->{$key};
 			}
 			$p->{'lastSeen'}=$db->{'seen'};
+			$p->{'id'}||=db::nextid;
+
+			db::player($p, {
+					'vaporid'		=> $p->{'vaporId'},
+					'id'			=> $p->{'id'},
+					'nickname'	=> $p->{'nickname'},
+					'seen'		=> time(),
+					'ip'			=> $p->{'ip'},
+					'block'		=> $p->{'block'}//0,
+				});
+	
+			db::aliases($p, $p->{'nickname'});
 		} else {
 			$p->{'block'}=stash::get('block', $p->{'vaporId'}, 'player');
 		}
-
-		return if($p->{'isBot'});
-
-		db::player($p, {
-				'vaporid'		=> $p->{'vaporId'},
-				'nickname'	=> $p->{'nickname'},
-				'seen'		=> time(),
-				'ip'			=> $p->{'ip'},
-				'block'		=> $p->{'block'}//0,
-			});
-
-		db::aliases($p, $p->{'nickname'});
 	}
 
 	sub name {
@@ -3884,7 +3964,7 @@ is updated with them as the games progress.
 		my($left)=scalar(grep(map::left($_->{'team'}), @Players));
 		my($right)=scalar(grep(map::right($_->{'team'}), @Players));
 
-		return(1) unless($left && $right);
+		return(0) unless($left && $right);
 
 		if(map::left($team)) {
 			return($right/$left);
@@ -4573,22 +4653,15 @@ These rankings can also be configured to select evenly matched teams.
 	sub enter {
 		my($p)=@_;
 		my($type)=map::type;
-		my($rating, $update);
+		my($update);
 
 		$type=map::mode if($type eq 'std');
 
 		$update=&rate($p) * &scale($p);
 
-		$rating=db::rank($p, $type);
-
 		if($p->{'played'}>$Min) {
-			$rating+=$update;
-			$rating=1 if($rating<1);
-
-			db::rank($p, $type, int($rating)) if($update);
+			db::rank($p, $type, $update) if($update);
 		}
-
-		return($rating);
 	}
 
 	sub score {
@@ -4608,6 +4681,7 @@ These rankings can also be configured to select evenly matched teams.
 			}
 		}
 	}
+
 }
 
 =cut
@@ -5039,11 +5113,13 @@ and provide slightly enhanced game play.
 		if($side eq 'left') {
 			return if($new==$Score[0]);
 
-			$Score[0]=$new
+			$Score[0]=$new;
+			rank::score($p->{'team'}, 1);
 		} elsif($side eq 'right') {
 			return if($new==$Score[1]);
 
-			$Score[1]=$new
+			$Score[1]=$new;
+			rank::score($p->{'team'}, 1);
 		} else {
 			return;
 		}
@@ -10158,6 +10234,7 @@ also only available from the console.
 		my($player)=db::select('player', qq{
 				name='$search'            OR
 				nickname='$search'        OR
+				id='$search'              OR
 				vaporid LIKE '\%$search'  ;
 			});
 		my($lookup)=player::lookup($player->{'vaporid'});
@@ -10180,6 +10257,7 @@ also only available from the console.
 		my($p)=player::lookup(@_);
 		my(@keys)=qw(
 			vaporId
+			id
 			player
 			team
 			infractions
