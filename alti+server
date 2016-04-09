@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.43';
+my($VERSION)='2.44';
 
 =head1 NAME
 
@@ -1361,11 +1361,11 @@ Supported databases are SQLite and PostgreSQL.
 
 	#Table interface:
 	sub nextid {
-		my($key, $id)=&select('info', qq{key='nextid'});
+		my($next)=&select('info', qq{key='nextid'});
 
-		&update('info', qq{key='nextid'}, { 'nextid' => $id+1 });
+		&update('info', qq{key='nextid'}, { 'value' => $next->{'value'}+1 });
 
-		return($id);
+		return($next->{'value'});
 	}
 
 	sub player {
