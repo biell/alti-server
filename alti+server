@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.41';
+my($VERSION)='2.42';
 
 =head1 NAME
 
@@ -4038,7 +4038,7 @@ are pulled from ladder, and changes in ladder are reflected here.
 			$nickname=$player->{'nickname'} || $data->{'Nickname'};
 			$update={
 				'vaporid'  => $data->{'Vapor'},
-				'id'       => $player->{'id'} // $other->{'id'} // db::nextid,
+				'id'       => $player->{'id'} || $other->{'id'} || db::nextid,
 				'name'     => $data->{'AKA'},
 				'nickname' => $nickname,
 				'block'    => $player->{'block'}//0,
