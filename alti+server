@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.42';
+my($VERSION)='2.43';
 
 =head1 NAME
 
@@ -4026,6 +4026,7 @@ are pulled from ladder, and changes in ladder are reflected here.
 	sub _update_db {
 		my($data)=@_;
 		my($player, $other, $nickname, $update);
+		my($id);
 
 		return unless($data->{'Vapor'} && $data->{'AKA'});
 
@@ -4034,11 +4035,19 @@ are pulled from ladder, and changes in ladder are reflected here.
 		($other)=db::select('player', qq{name="$data->{'AKA'}"});
 		($player)=db::select('player', qq{vaporid="$data->{'Vapor'}"});
 
+		if(ref($player) && $player->{'id'}) {
+			$id=$player->{'id'};
+		} elsif(ref($other) && $other->{'id'}) {
+			$id=$other->{'id'};
+		} else {
+			$id=db::nextid;
+		}
+
 		unless($player && $player->{'name'} eq $data->{'AKA'}) {
 			$nickname=$player->{'nickname'} || $data->{'Nickname'};
 			$update={
 				'vaporid'  => $data->{'Vapor'},
-				'id'       => $player->{'id'} || $other->{'id'} || db::nextid,
+				'id'       => $id,
 				'name'     => $data->{'AKA'},
 				'nickname' => $nickname,
 				'block'    => $player->{'block'}//0,
