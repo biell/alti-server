@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.47';
+my($VERSION)='2.48';
 
 =head1 NAME
 
@@ -4621,6 +4621,8 @@ These rankings can also be configured to select evenly matched teams.
 
 		$quality=1-abs(1-($p->{'played'}/$duration)**(1/3));
 
+		ui::slog("scale: nickname=$p->{'nickname'}, id=$p->{'id'}, duration=$duration, rusty=$rusty,\n  quality=$quality, competition=$competition");
+
 		return($quality*$rusty*$competition);
 	}
 
@@ -4659,6 +4661,8 @@ These rankings can also be configured to select evenly matched teams.
 			$rate-=$stats->{'died'}/3;
 		}
 
+		ui::slog("rate: nickname=$p->{'nickname'}, id=$p->{'id'}, diff=$stats->{'differential'}, rate=$rate,\n  base=$stats->{'base'}, turret=$stats->{'turret'}, capture=$stats->{'capture'},\n  goals=$stats->{'goals'}, assists=$stats->{'assists'}, saves=$stats->{'saves'},\n  interception=$stats->{'interception'}, -intercepted=$stats->{'intercepted'}, crashes=$stats->{'crashes'},\n  ratio=(@ratio)");
+
 		return($rate);
 	}
 
@@ -4673,7 +4677,7 @@ These rankings can also be configured to select evenly matched teams.
 
 		$update=$rate * $scale;
 
-		ui::slog("nickname=$p->{'nickname'}, id=$p->{'id'}, rate=$rate, scale=$scale, update=$update, played=$p->{'played'}, Min=$Min");
+		ui::slog("enter: nickname=$p->{'nickname'}, id=$p->{'id'},\n  rate=$rate, scale=$scale, update=$update,\n  played=$p->{'played'}, Min=$Min");
 
 		if($p->{'played'}>$Min*1000) {
 			db::rank($p, $type, $update) if($update);
@@ -6636,11 +6640,18 @@ core protecting the flag.
 	'help'		=> sub {
 		my($e, $p)=@_;
 		my($type)=@{$e->{'arguments'}};
+		my(@lookup);
 
 		if(exists($HOOKS{"help $type"})) {
 			$HOOKS{"help $type"}->($e, $p);
 			if(config::commands('!')) {
 				chat::whisper($p, 'Admin commands use `/! cmd ...` syntax');
+			}
+		} elsif(@lookup=grep(m/help $type.*/i, keys(%HOOKS))) {
+			if(@lookup==1) {
+				$HOOKS{$lookup[0]}->($e, $p);
+			} else {
+				config::command_help($p, 'help');
 			}
 		} else {
 			config::command_help($p, 'help');
@@ -6650,9 +6661,16 @@ core protecting the flag.
 	'list'		=> sub {
 		my($e, $p)=@_;
 		my($type)=@{$e->{'arguments'}};
+		my(@lookup);
 
 		if(exists($HOOKS{"list $type"})) {
 			$HOOKS{"list $type"}->($e, $p);
+		} elsif(@lookup=grep(m/list $type.*/i, keys(%HOOKS))) {
+			if(@lookup==1) {
+				$HOOKS{$lookup[0]}->($e, $p);
+			} else {
+				config::command_help($p, 'list');
+			}
 		} else {
 			config::command_help($p, 'list');
 		}
@@ -7877,10 +7895,10 @@ core protecting the flag.
 		my($spec);
 
 		if(ref($planes) eq 'HASH') {
-			chat::whisper($p, 'planes:', join(', ',
+			chat::whisper($p, 'planes:', join('; ',
 				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
 			));
-		} else {
+		} elsif($e->{'command'} eq 'list') {
 			chat::whisper($p, 'planes: all');
 		}
 	},
@@ -7901,7 +7919,7 @@ core protecting the flag.
 		}
 
 		if(ref($planes) eq 'HASH') {
-			chat::all('planes:', join(', ',
+			chat::all('planes:', join('; ',
 				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
 			));
 		} else {
