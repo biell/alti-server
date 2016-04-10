@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='2.44';
+my($VERSION)='2.46';
 
 =head1 NAME
 
@@ -1456,7 +1456,8 @@ Supported databases are SQLite and PostgreSQL.
 
 		if($value) {
 			$rating->{'rating'}+=int($value);
-			$rating->{'differential'}+=$p->{'stats'}{'differential'};
+			$rating->{'differential'}=sprintf("%.1f",
+				$rating->{'differential'}+$p->{'stats'}{'differential'});
 
 			$rating->{'rating'}=1 if($rating->{'rating'}<1);
 
@@ -2241,7 +2242,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 			'ball' => $config->{'PlaneBallGameMode'}{'warmupTimeSeconds'},
 			'ffa' => $config->{'FreeForAllGameMode'}{'warmupTimeSeconds'},
 			'tbd' => $config->{'BaseDestroyGameMode'}{'warmupTimeSeconds'},
-			'tdm' => $config->{'TeamDeathMatchGameMode'}{'warmupTimeSeconds'},
+			'tdm' => $config->{'TeamDeathmatchGameMode'}{'warmupTimeSeconds'},
 		};
 
 		$Launcher{'roundTime'}={
@@ -2251,12 +2252,12 @@ has occured.  After too many infractions, the player is kicked by the server.
 			'ball' => $config->{'PlaneBallGameMode'}{'roundTimeSeconds'},
 			'ffa' => $config->{'FreeForAllGameMode'}{'roundTimeSeconds'},
 			'tbd' => $config->{'BaseDestroyGameMode'}{'roundTimeSeconds'},
-			'tdm' => $config->{'TeamDeathMatchGameMode'}{'roundTimeSeconds'},
+			'tdm' => $config->{'TeamDeathmatchGameMode'}{'roundTimeSeconds'},
 		};
 
 		$Launcher{'score'}={
 			'ffa' => $config->{'FreeForAllGameMode'}{'scoreLimit'},
-			'tdm' => $config->{'TeamDeathMatchGameMode'}{'scoreLimit'},
+			'tdm' => $config->{'TeamDeathmatchGameMode'}{'scoreLimit'},
 		};
 
 		%Commands=map(($_->{'ConsoleCommand'} => undef), @{$config->
@@ -4607,7 +4608,7 @@ These rankings can also be configured to select evenly matched teams.
 		} elsif(map::mode('ffa', 'tdm')) {
 			$duration=$config::Launcher{'score'}{$mode}*15;
 		}
-		$duration*=900; #1000 milliseconds, but you only play 90% of the time
+		$duration*=1000; #milliseconds
 
 		$rusty=utils::delta($p->{'lastSeen'})/604800;
 		if($rusty>40) {
@@ -4620,8 +4621,7 @@ These rankings can also be configured to select evenly matched teams.
 
 		$quality=1-abs(1-($p->{'played'}/$duration)**(1/3));
 
-		#return($quality*$rusty*$competition);
-		return($quality*$rusty);
+		return($quality*$rusty*$competition);
 	}
 
 	sub rate {
@@ -4631,9 +4631,9 @@ These rankings can also be configured to select evenly matched teams.
 		my(@ratio);
 
 		#Team:
-		if($p->{'stats'}{'differential'}>0) {
+		if($stats->{'differential'}>0) {
 			$rate=15;
-		} elsif($p->{'stats'}{'differential'}<0) {
+		} elsif($stats->{'differential'}<0) {
 			$rate=-25;
 		}
 
@@ -4665,13 +4665,17 @@ These rankings can also be configured to select evenly matched teams.
 	sub enter {
 		my($p)=@_;
 		my($type)=map::type;
+		my($rate)=&rate($p);
+		my($scale)=&scale($p);
 		my($update);
 
 		$type=map::mode if($type eq 'std');
 
-		$update=&rate($p) * &scale($p);
+		$update=$rate * $scale;
 
-		if($p->{'played'}>$Min) {
+		ui::slog("nickname=$p->{'nickname'}, id=$p->{'id'}, rate=$rate, scale=$scale, update=$update, played=$p->{'played'}, Min=$Min");
+
+		if($p->{'played'}>$Min*1000) {
 			db::rank($p, $type, $update) if($update);
 		}
 	}
@@ -4681,7 +4685,7 @@ These rankings can also be configured to select evenly matched teams.
 		my($update)=$score*player::handicap($team);
 		my($minimum)=$config::Maxp*0.75;
 
-		#return unless(player::count>$minimum);
+		return unless(player::count>$minimum);
 
 		foreach my $player (player::list) {
 			next if(map::spec($player));
@@ -5588,6 +5592,7 @@ play though extended interfaces and server support.
 			rank::score($p->{'team'}, 1);
 
 			foreach my $player (player::list) {
+				$player->{'played'}+=$e->{'time'}-$player->{'spawn'};
 				&bench($player);
 			}
 
@@ -9442,6 +9447,10 @@ core protecting the flag.
 		$p->{'stats'}{'goals'}++;
 		$a->{'stats'}{'assists'}++;
 		$a2->{'stats'}{'assists'}++;
+
+		foreach my $player (player::list) {
+			$player->{'played'}+=$e->{'time'}-$player->{'spawn'};
+		}
 
 		records::help($p, 20);
 		ball::goal($e, $p);
