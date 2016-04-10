@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.46';
+my($VERSION)='2.47';
 
 =head1 NAME
 
@@ -9294,7 +9294,7 @@ core protecting the flag.
 		unless($p->{'stats'}{'intro'}) {
 			$intro=stash::get('intro', map::name, 'map');
 
-			queue::schedule { $HOOKS{'enable planes'}->(@_); } 3;
+			queue::schedule { $HOOKS{'list planes'}->($e, $p); } 3;
 
 			if($intro) {
 				foreach my $msg (split(m/\s*;+\s*/, $intro)) {
