@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.48';
+my($VERSION)='2.49';
 
 =head1 NAME
 
@@ -4632,6 +4632,7 @@ These rankings can also be configured to select evenly matched teams.
 		my($rate)=0;
 		my(@ratio);
 
+		ui::slog(json::encode($stats));
 		#Team:
 		if($stats->{'differential'}>0) {
 			$rate=15;
@@ -4651,17 +4652,17 @@ These rankings can also be configured to select evenly matched teams.
 		$rate-=$stats->{'crashes'}/5;
 
 		if(map::mode('tbd')) {
-			@ratio=sort(-4, 4, $stats->{'kills'}/2-$stats->{'died'}/4);
+			@ratio=sort({$a<=>$b} -4, 4, $stats->{'kills'}/2-$stats->{'died'}/4);
 			$rate+=$ratio[1];
 		} elsif(map::mode('tdm', 'ffa')) {
-			@ratio=sort(-5, 5, $stats->{'kills'}/2-$stats->{'died'}/2);
+			@ratio=sort({$a<=>$b} -5, 5, $stats->{'kills'}/2-$stats->{'died'}/2);
 			$rate+=$ratio[1];
 		} elsif(map::mode('1bd', '1dm', '1de')) {
 			$rate+=$stats->{'kills'};
 			$rate-=$stats->{'died'}/3;
 		}
 
-		ui::slog("rate: nickname=$p->{'nickname'}, id=$p->{'id'}, diff=$stats->{'differential'}, rate=$rate,\n  base=$stats->{'base'}, turret=$stats->{'turret'}, capture=$stats->{'capture'},\n  goals=$stats->{'goals'}, assists=$stats->{'assists'}, saves=$stats->{'saves'},\n  interception=$stats->{'interception'}, -intercepted=$stats->{'intercepted'}, crashes=$stats->{'crashes'},\n  ratio=(@ratio)");
+		ui::slog("rate: nickname=$p->{'nickname'}, id=$p->{'id'}, diff=$stats->{'differential'}, rate=$rate,\n  base=$stats->{'base'}, turret=$stats->{'turret'}, capture=$stats->{'capture'},\n  goals=$stats->{'goals'}, assists=$stats->{'assists'}, saves=$stats->{'saves'},\n  interception=$stats->{'interception'}, -intercepted=$stats->{'intercepted'}, -crashes=$stats->{'crashes'},\n kills=$stats->{'kills'}, -died=$stats->{'died'}, ratio=(@ratio)");
 
 		return($rate);
 	}
@@ -4689,7 +4690,8 @@ These rankings can also be configured to select evenly matched teams.
 		my($update)=$score*player::handicap($team);
 		my($minimum)=$config::Maxp*0.75;
 
-		return unless(player::count>$minimum);
+		#Uncomment when rating goes live:
+		#return unless(player::count>$minimum);
 
 		foreach my $player (player::list) {
 			next if(map::spec($player));
@@ -10527,7 +10529,9 @@ while(1) {
 				server::check_tail;
 	
 				ui::slog('INFO  : alti+server uptime:',
-					server::uptime);
+					server::uptime, ', altitude time:', 
+					POSIX::strftime("%Y%m%dT%H%M%S", gmtime(time()))
+				);
 
 				ui::slog('INFO  : CPU Totals (user system):',
 					server::cpu_hrs);
