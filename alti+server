@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.49';
+my($VERSION)='2.50';
 
 =head1 NAME
 
@@ -4588,6 +4588,12 @@ These rankings can also be configured to select evenly matched teams.
 	my($Min)=60;
 	my($Base)=600;
 
+	sub _quality_curve { # modified logistic curve)
+		my($seconds)=@_;
+
+		return(sprintf('%0.2f', 1/(1+1.01**(abs($seconds)-600))));
+	}
+
 	sub scale {
 		my($p)=@_;
 		my($mode)=map::mode;
@@ -4608,7 +4614,6 @@ These rankings can also be configured to select evenly matched teams.
 		} elsif(map::mode('ffa', 'tdm')) {
 			$duration=$config::Launcher{'score'}{$mode}*15;
 		}
-		$duration*=1000; #milliseconds
 
 		$rusty=utils::delta($p->{'lastSeen'})/604800;
 		if($rusty>40) {
@@ -4619,7 +4624,7 @@ These rankings can also be configured to select evenly matched teams.
 			$rusty=1-$rusty/50;
 		}
 
-		$quality=1-abs(1-($p->{'played'}/$duration)**(1/3));
+		$quality=&_quality_curve($duration - $p->{'played'}/1000);
 
 		ui::slog("scale: nickname=$p->{'nickname'}, id=$p->{'id'}, duration=$duration, rusty=$rusty,\n  quality=$quality, competition=$competition");
 
