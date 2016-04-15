@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.50';
+my($VERSION)='2.51';
 
 =head1 NAME
 
@@ -4624,7 +4624,7 @@ These rankings can also be configured to select evenly matched teams.
 			$rusty=1-$rusty/50;
 		}
 
-		$quality=&_quality_curve($duration - $p->{'played'}/1000);
+		$quality=&_quality_curve($duration - $p->{'stats'}{'played'}/1000);
 
 		ui::slog("scale: nickname=$p->{'nickname'}, id=$p->{'id'}, duration=$duration, rusty=$rusty,\n  quality=$quality, competition=$competition");
 
@@ -4659,15 +4659,18 @@ These rankings can also be configured to select evenly matched teams.
 		if(map::mode('tbd')) {
 			@ratio=sort({$a<=>$b} -4, 4, $stats->{'kills'}/2-$stats->{'died'}/4);
 			$rate+=$ratio[1];
+			$rate+=$stats->{'powerkill'}/5;
 		} elsif(map::mode('tdm', 'ffa')) {
 			@ratio=sort({$a<=>$b} -5, 5, $stats->{'kills'}/2-$stats->{'died'}/2);
 			$rate+=$ratio[1];
 		} elsif(map::mode('1bd', '1dm', '1de')) {
 			$rate+=$stats->{'kills'};
 			$rate-=$stats->{'died'}/3;
+		} elsif(map::mode('ball')) {
+			$rate+=$stats->{'powerkill'}/20;
 		}
 
-		ui::slog("rate: nickname=$p->{'nickname'}, id=$p->{'id'}, diff=$stats->{'differential'}, rate=$rate,\n  base=$stats->{'base'}, turret=$stats->{'turret'}, capture=$stats->{'capture'},\n  goals=$stats->{'goals'}, assists=$stats->{'assists'}, saves=$stats->{'saves'},\n  interception=$stats->{'interception'}, -intercepted=$stats->{'intercepted'}, -crashes=$stats->{'crashes'},\n kills=$stats->{'kills'}, -died=$stats->{'died'}, ratio=(@ratio)");
+		ui::slog("rate: nickname=$p->{'nickname'}, id=$p->{'id'}, diff=$stats->{'differential'}, rate=$rate,\n  base=$stats->{'base'}, turret=$stats->{'turret'}, capture=$stats->{'capture'},\n  goals=$stats->{'goals'}, assists=$stats->{'assists'}, saves=$stats->{'saves'},\n  interception=$stats->{'interception'}, -intercepted=$stats->{'intercepted'}, -crashes=$stats->{'crashes'},\n kills=$stats->{'kills'}, powerkill=$stats->{'powerkill'}, -died=$stats->{'died'}, ratio=(@ratio)");
 
 		return($rate);
 	}
@@ -4683,9 +4686,9 @@ These rankings can also be configured to select evenly matched teams.
 
 		$update=$rate * $scale;
 
-		ui::slog("enter: nickname=$p->{'nickname'}, id=$p->{'id'},\n  rate=$rate, scale=$scale, update=$update,\n  played=$p->{'played'}, Min=$Min");
+		ui::slog("enter: nickname=$p->{'nickname'}, id=$p->{'id'},\n  rate=$rate, scale=$scale, update=$update,\n  played=$p->{'stats'}{'played'}, Min=$Min");
 
-		if($p->{'played'}>$Min*1000) {
+		if($p->{'stats'}{'played'}>$Min*1000) {
 			db::rank($p, $type, $update) if($update);
 		}
 	}
@@ -5188,7 +5191,7 @@ and provide slightly enhanced game play.
 				$Carrier->{'stats'}{'catch'}++;
 			}
 		} else {
-			$Passer->{'stats'}{'intercepted'}++;
+			$Passer->{'stats'}{'intercepted'}++ if($Passer);
 			$Carrier->{'stats'}{'interception'}++;
 			@Relay=();
 		}
@@ -5199,6 +5202,11 @@ and provide slightly enhanced game play.
 	}
 
 	sub drop {
+		my($v)=@_;
+
+		return unless($v->{'carrier'});
+
+		$v->{'carrier'}=0;
 		$Passer=undef;
 		$Carrier=undef;
 	}
@@ -5583,9 +5591,9 @@ play though extended interfaces and server support.
 
 		$obj=join(',', @$e{'positionX','positionY'}) unless($obj);
 
-		$rv=0 if($time<$p->{'stats'}{'timer'}{$obj});
+		$rv=0 if($time<$p->{'timer'}{$obj});
 			
-		$p->{'stats'}{'timer'}{$obj}=$time+800;
+		$p->{'timer'}{$obj}=$time+800;
 		return($rv);
 	}
 
@@ -5603,7 +5611,7 @@ play though extended interfaces and server support.
 			rank::score($p->{'team'}, 1);
 
 			foreach my $player (player::list) {
-				$player->{'played'}+=$e->{'time'}-$player->{'spawn'};
+				$player->{'stats'}{'played'}+=$e->{'time'}-$player->{'spawn'};
 				&bench($player);
 			}
 
@@ -9255,7 +9263,7 @@ core protecting the flag.
 
 		return if($p->{'isBot'});
 
-		$p->{'played'}+=$e->{'time'} - $p->{'spawn'};
+		$p->{'stats'}{'played'}+=$e->{'time'} - $p->{'spawn'};
 
 		rank::enter($p);
 
@@ -9474,7 +9482,7 @@ core protecting the flag.
 		$a2->{'stats'}{'assists'}++;
 
 		foreach my $player (player::list) {
-			$player->{'played'}+=$e->{'time'}-$player->{'spawn'};
+			$player->{'stats'}{'played'}+=$e->{'time'}-$player->{'spawn'};
 		}
 
 		records::help($p, 20);
@@ -9542,7 +9550,6 @@ core protecting the flag.
 		}
 
 		if($powerup eq 'Ball') {
-			$p->{'carrier'}=0;
 			ball::shoot($e);
 		} elsif($powerup eq 'Bomb') {
 			$p->{'carrier'}=0;
@@ -9721,15 +9728,21 @@ core protecting the flag.
 
 		return unless($v);
 
-		$v->{'carrier'}=0;
+		$p->{'powerkill'}++ if($v->{'carier'});
+
 		$v->{'alive'}=0;
-		ball::drop;
+		ball::drop($v);
+
+		rank::score($p->{'team'}, 1) if(map::mode('tdm', '1dm'));
+
+		$p->{'stats'}{'kills'}++;
 
 		return if($v->{'isBot'});
 
-		$p->{'played'}+=$e->{'time'}-$p->{'spawn'};
+		$p->{'stats'}{'kill'}{$v->{'nickname'}}++;
 
-		rank::score($p->{'team'}, 1) if(map::mode('tdm'));
+		$v->{'stats'}{'played'}+=$e->{'time'}-$v->{'spawn'};
+		$v->{'stats'}{'died'}++;
 
 		plus::killed($v);
 		plus::check_spawn($v);
@@ -9773,10 +9786,6 @@ core protecting the flag.
 		if(List::Util::max(map(abs, @$e{'victimVelocityX', 'victimVelocityY'})) > 18) {
 			chat::snark($v, "$v->{'nickname'} says Ouch!!");
 		}
-
-		$p->{'stats'}{'kills'}++;
-		$p->{'stats'}{'kill'}{$v->{'nickname'}}++;
-		$v->{'stats'}{'died'}++;
 
 		records::help($p, 2);
 		if($p->{'team'} == $v->{'team'}) {
@@ -9975,7 +9984,7 @@ core protecting the flag.
 		}
 
 		foreach my $p (player::list) {
-			$p->{'played'}+=$e->{'time'} - $p->{'spawn'};
+			$p->{'stats'}{'played'}+=$e->{'time'} - $p->{'spawn'};
 
 			rank::enter($p);
 		}
