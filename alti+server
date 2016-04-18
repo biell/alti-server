@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.51';
+my($VERSION)='2.52';
 
 =head1 NAME
 
@@ -695,6 +695,11 @@ L<perl(1)> should be used to ensure basic operation.
 
 	$Geoip=&which('geoiplookup', 'good', 'Country lookups not available');
 	$Ping=&which('ping', 'good', 'Cannot check server availability');
+
+	sub mid {
+		my(@list)=sort {$a<=>$b} @_;
+		return($list[int(@list/2)]);
+	}
 
 	sub minmax {
 		my($pair);
@@ -4626,51 +4631,50 @@ These rankings can also be configured to select evenly matched teams.
 
 		$quality=&_quality_curve($duration - $p->{'stats'}{'played'}/1000);
 
-		ui::slog("scale: nickname=$p->{'nickname'}, id=$p->{'id'}, duration=$duration, rusty=$rusty,\n  quality=$quality, competition=$competition");
-
 		return($quality*$rusty*$competition);
 	}
 
 	sub rate {
 		my($p)=@_;
 		my($stats)=$p->{'stats'};
+		my($minute)=$stats->{'played'}/60000;
 		my($rate)=0;
-		my(@ratio);
-
-		ui::slog(json::encode($stats));
-		#Team:
-		if($stats->{'differential'}>0) {
-			$rate=15;
-		} elsif($stats->{'differential'}<0) {
-			$rate=-25;
-		}
 
 		#Individual:
 		$rate+=$stats->{'base'};
 		$rate+=$stats->{'turret'}/3;
 		$rate+=$stats->{'capture'};
 		$rate+=$stats->{'goals'};
-		$rate+=$stats->{'assists'}/3;
-		$rate+=$stats->{'saves'}/10;
-		$rate+=$stats->{'interception'}/10;
-		$rate-=$stats->{'intercepted'}/5;
-		$rate-=$stats->{'crashes'}/5;
+		$rate+=$stats->{'assists'}/$minute;
+		$rate+=$stats->{'saves'}/$minute;
+		$rate+=$stats->{'interception'}/$minute;
+		$rate-=$stats->{'intercepted'}/$minute;
+		$rate-=$stats->{'crashes'}/$minute;
 
 		if(map::mode('tbd')) {
-			@ratio=sort({$a<=>$b} -4, 4, $stats->{'kills'}/2-$stats->{'died'}/4);
-			$rate+=$ratio[1];
-			$rate+=$stats->{'powerkill'}/5;
+			$rate+=$stats->{'powerkill'}/$minute;
+			$rate+=$stats->{'kills'}/$minute;
+			$rate-=$stats->{'died'}/$minute;
 		} elsif(map::mode('tdm', 'ffa')) {
-			@ratio=sort({$a<=>$b} -5, 5, $stats->{'kills'}/2-$stats->{'died'}/2);
-			$rate+=$ratio[1];
+			$rate+=$stats->{'kills'}/$minute;
+			$rate-=$stats->{'died'}/$minute;
 		} elsif(map::mode('1bd', '1dm', '1de')) {
+			$rate+=$stats->{'powerkill'};
 			$rate+=$stats->{'kills'};
 			$rate-=$stats->{'died'}/3;
 		} elsif(map::mode('ball')) {
-			$rate+=$stats->{'powerkill'}/20;
+			$rate+=$stats->{'powerkill'}/$minute;
 		}
 
-		ui::slog("rate: nickname=$p->{'nickname'}, id=$p->{'id'}, diff=$stats->{'differential'}, rate=$rate,\n  base=$stats->{'base'}, turret=$stats->{'turret'}, capture=$stats->{'capture'},\n  goals=$stats->{'goals'}, assists=$stats->{'assists'}, saves=$stats->{'saves'},\n  interception=$stats->{'interception'}, -intercepted=$stats->{'intercepted'}, -crashes=$stats->{'crashes'},\n kills=$stats->{'kills'}, powerkill=$stats->{'powerkill'}, -died=$stats->{'died'}, ratio=(@ratio)");
+		#Maximum 5 point individual effort swing
+		$rate=utils::mid(-5, $rate, 5);
+
+		#Team:
+		if($stats->{'differential'}>0) {
+			$rate+=19;
+		} elsif($stats->{'differential'}<0) {
+			$rate-=21;
+		}
 
 		return($rate);
 	}
@@ -4686,9 +4690,18 @@ These rankings can also be configured to select evenly matched teams.
 
 		$update=$rate * $scale;
 
-		ui::slog("enter: nickname=$p->{'nickname'}, id=$p->{'id'},\n  rate=$rate, scale=$scale, update=$update,\n  played=$p->{'stats'}{'played'}, Min=$Min");
+		ui::slog("enter: nickname=$p->{'nickname'}, id=$p->{'id'}, type=$type,\n",
+			"rate=$rate, scale=$scale, update=$update,\n",
+			"played=$p->{'stats'}{'played'}, Min=$Min\n",
+			"diff=$p->{'stats'}{'differential'}, rate=$rate,\n",
+			"base=$p->{'stats'}{'base'}, turret=$p->{'stats'}{'turret'}, capture=$p->{'stats'}{'capture'},\n",
+			"goals=$p->{'stats'}{'goals'}, assists=$p->{'stats'}{'assists'}, saves=$p->{'stats'}{'saves'},\n",
+			"interception=$p->{'stats'}{'interception'}, -intercepted=$p->{'stats'}{'intercepted'}, -crashes=$p->{'stats'}{'crashes'},\n",
+			"kills=$p->{'stats'}{'kills'}, powerkill=$p->{'stats'}{'powerkill'}, -died=$p->{'stats'}{'died'}",
+			"json=", json::encode($p->{'stats'}),
+		);
 
-		if($p->{'stats'}{'played'}>$Min*1000) {
+		if($p->{'stats'}{'played'}/1000>$Min) {
 			db::rank($p, $type, $update) if($update);
 		}
 	}
@@ -6199,7 +6212,7 @@ with their name.
 		return(0) unless(&url_ok($_[-1]));
 
 		$pid=IPC::Open3::open3($in, $out, $err,
-			$Curl, '-s', '--max-filesize', config::option('ulSizeLimit'), @_);
+			$Curl, '-k', '-s', '--max-filesize', config::option('ulSizeLimit'), @_);
 
 		$_=join('', <$out>);
 
@@ -9728,7 +9741,7 @@ core protecting the flag.
 
 		return unless($v);
 
-		$p->{'powerkill'}++ if($v->{'carier'});
+		$p->{'stats'}{'powerkill'}++ if($v->{'carier'});
 
 		$v->{'alive'}=0;
 		ball::drop($v);
