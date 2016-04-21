@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.52';
+my($VERSION)='2.53';
 
 =head1 NAME
 
@@ -71,6 +71,9 @@ my(%OPTIONS)=(
 	updateServer	=> 'vapor.nimblygames.com',	#Nimbly update server
 );
 
+my(@MODES)=qw(1bd 1de 1dm ball ffa tbd tdm);
+my(@TYPES)=qw(coop flag mdg race ruin zone);
+
 =head1 DESCRIPTION
 
 The B<alti+server> server script is a perl wrapper around the Altitude
@@ -102,6 +105,7 @@ use Data::Dumper;
 
 my($FATAL_SERVER_ERRORS)=join('|',
 	'Server config size \(\d+ bytes\) exceeds max allowed size',
+	'A fatal error has been detected by the Java Runtime Environment',
 	'java.io.IOException: Oversized packet (\d+ bytes) to IP',
 	'No suitable Java Virtual Machine could be found',
 	'no available nuons!',
@@ -300,6 +304,14 @@ delete($ENV{'COLUMNS'});
 			$Swin->refresh();
 			$Iput->refresh();
 		}
+	}
+
+	sub save_log {
+		my($save)=join('-',
+			$Outfile, 
+			POSIX::strftime("%Y%m%dT%H%M", gmtime(time))
+		);
+		rename($Outfile, $save);
 	}
 
 	sub display {
@@ -1269,6 +1281,10 @@ Supported databases are SQLite and PostgreSQL.
 
 	sub commit {
 		$Dbh->commit();
+	}
+
+	sub query {
+		return($Dbh->selectall_arrayref(join(' ', @_)));
 	}
 
 	sub select {
@@ -2312,6 +2328,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Commands{'showPlayer'}=['player'];
 		$Commands{'showTeams'}=undef;
 		$Commands{'showSeen'}=undef;
+		$Commands{'showRatings'}=[[@MODES, @TYPES]];
 		$Commands{'showPowerups'}=undef;
 		$Commands{'chatLeft'}=['string'];
 		$Commands{'chatRight'}=['string'];
@@ -2647,6 +2664,14 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'enabled'			=> config::option('allowUploads'),
 	},
 
+	'rank' => {
+		'name'			=> 'rank',
+		'arguments'		=> ['player'],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
+	},
+
 	'prey' => {
 		'name'			=> 'prey',
 		'arguments'		=> ['player'],
@@ -2978,6 +3003,14 @@ directly with it to manage the instance.
 		$Streams->add($Server);
 
 		$Start=time();
+	}
+
+	sub save_log {
+		my($save)=join('-',
+			$Logfile, 
+			POSIX::strftime("%Y%m%dT%H%M", gmtime(time))
+		);
+		rename($Logfile, $save);
 	}
 
 	sub reopen_log {
@@ -4238,6 +4271,14 @@ debugging or to make funny comments.
 		}
 	}
 
+	sub laudy {
+		my($multiplier)=config::option('snarkChance')/4;
+
+		return(0) unless(int(rand($multiplier))==0);
+
+		return(1);
+	}
+
 	sub snarky {
 		my($multiplier)=config::option('snarkChance');
 		my($time)=time();
@@ -4604,7 +4645,7 @@ These rankings can also be configured to select evenly matched teams.
 		my($mode)=map::mode;
 		my($goal_ratio)=$config::Launcher{'goals'}/6;
 		my($competition)=player::count()/$config::Maxp;
-		my($duration, $rusty, $quality);
+		my($duration, $quality);
 
 		if($config::Launcher{'roundTime'}{$mode}) {
 			$duration=$config::Launcher{'roundTime'}{$mode};
@@ -4620,18 +4661,9 @@ These rankings can also be configured to select evenly matched teams.
 			$duration=$config::Launcher{'score'}{$mode}*15;
 		}
 
-		$rusty=utils::delta($p->{'lastSeen'})/604800;
-		if($rusty>40) {
-			$rusty=0.2;
-		} elsif($rusty<2) {
-			$rusty=1;
-		} else {
-			$rusty=1-$rusty/50;
-		}
-
 		$quality=&_quality_curve($duration - $p->{'stats'}{'played'}/1000);
 
-		return($quality*$rusty*$competition);
+		return($quality*$competition);
 	}
 
 	sub rate {
@@ -5231,6 +5263,7 @@ and provide slightly enhanced game play.
 		&update_score(map::side($p));
 
 		return if($p->{'isBot'});
+		return unless(chat::laudy);
 
 		if(!$p->{'carrier'} && 3000<$airtime && $airtime<6000) {
 			chat::laud("Nice Shot $p->{'nickname'}!");
@@ -6177,12 +6210,13 @@ with their name.
 	sub name_ok {
 		local($_)=@_;
 		my($mapdir)=config::option('mapDir');
+		my($modere)=join('|', @MODES);
 
 		s|^$INSTALL_ROOT/maps/$mapdir/*||;
 		s|^$mapdir/*||;
 
 		return(0) unless(m/^[\w.?!%:=+-]{5,}$/);
-		return(0) unless(m/^(1bd|1de|1dm|ball|ffa|tbd|tdm)_|^lobby/);
+		return(0) unless(m/^($modere)_|^lobby/);
 		return(0) if(m/\.\./);
 
 		return(1);
@@ -9258,7 +9292,7 @@ core protecting the flag.
 
 		altbouncer::add($p);
 
-		if(chat::snarky) {
+		if(chat::laudy) {
 			chat::whisper($p, 'Oh', $p->{'nickname'},
 				', you will always be', $p->{'vaporId'}, 'to me.');
 		}
@@ -9509,10 +9543,12 @@ core protecting the flag.
 			}
 		}
 
-		if(ball::passes>3) {
-			chat::laud('Nice teamwork', map::team_color($p->{'team'}));
-		} elsif(ball::passes>2) {
-			chat::laud('Good passing', map::team_color($p->{'team'}));
+		if(chat::laudy) {
+			if(ball::passes>3) {
+				chat::laud('Nice teamwork', map::team_color($p->{'team'}));
+			} elsif(ball::passes>2) {
+				chat::laud('Good passing', map::team_color($p->{'team'}));
+			}
 		}
 
 		ball::reset;
@@ -10391,6 +10427,27 @@ also only available from the console.
 		chat::whisper($s, 'seen list is empty') unless($found);
 	},
 
+	'showRatings'		=> sub {
+		my($type)=@_;
+		my($s)=player::server;
+		my($ratings)=db::query(qq{
+			SELECT DISTINCT
+				rank.id,rating,differential,name,nickname
+			FROM rank,player
+			WHERE player.id=rank.id AND rank.type="$type"
+			ORDER BY rank.rating
+		});
+
+		chat::whisper($s, sprintf('%5s %6s %6s  %s',qw(ID RATING DIFF NAME)));
+
+		foreach my $row (@$ratings) {
+			chat::whisper($s, sprintf('%5d %6d %6.1f  %s',
+				@$row[0,1,2],
+				$row->[3] || $row->[4]
+			));
+		}
+	},
+
 	'showPowerups'		=> sub {
 		my($s)=player::server;
 		my($coords, @types);
@@ -10539,6 +10596,9 @@ while(1) {
 						exit(1);
 					}
 				}
+
+				ui::save_log;
+				server::save_log;
 
 				config::write_launcher_config;
 

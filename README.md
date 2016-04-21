@@ -641,6 +641,15 @@ file to save space for more maps.
     Clear all records for `map`.  Afterwards, records will be started fresh
     if the map is played again and `recordTypes` is set to include `map`.
 
+  * **/setPlayerName [player] [name]**<br>
+    Set the real name for `player` to be `name`.  `player` can be the
+    current name field, nickname, server unique ID, or a partial vaporID.
+
+  * **/updateNames**<br>
+    Connect to ladder and merge in the "AKA" field (overwritting any local
+    changes) into the server's `name` field for each player.  This process
+    will also link accounts which have been linked in ladder.
+
   * **/showPlayer [player]**<br>
     Print information on `player`
 
@@ -650,6 +659,10 @@ file to save space for more maps.
   * **/showSeen**<br>
     If user information is being kept per the "altBouncer" option, then
     display the users currently queued for the next altbouncer update.
+
+  * **/showRatings [mode|type]**<br>
+    List in console the ratings for either `mode` or `type`.  The output
+    will be sorted in ascending order.
 
   * **/showPowerups**<br>
     List all the powerups defined for the current map.  This is useful for
