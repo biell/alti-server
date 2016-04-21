@@ -128,6 +128,16 @@ manage Alti+ game maps.
     should usually not be needed, as the correct side should be set by the
     server or map maker with the `/set assignTeam [left|right]` command.
 
+  * **/rank [player] [type]**<br>
+    Display the rating for `player` on games of `type`.  If `type` is not
+    specfied, it defaults to the current map type.  If `player` is the
+    keyword **me**, then the requestors rating is displayed.  So, to list
+    your own rank, the fastest way is to run `/rank me` unless your
+    nickname is actually shorter than that.
+
+    If `player` is a queston mark `?` or the word `help`, a brief help message
+    is displayed.
+
   * **/vote prey [player]**<br>
     If there is an mdg (Most Dangerous Game assymetric game play) map in
     the rotation, this command will be present.  Normally, the single player

@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.54';
+my($VERSION)='2.55';
 
 =head1 NAME
 
@@ -1404,15 +1404,27 @@ Supported databases are SQLite and PostgreSQL.
 	}
 
 	sub psearch {
-		my($search)=@_;
-		my($player)=db::select('player', qq{
-				id='$search'              OR
-				name     LIKE '$search\%' OR
-				nickname LIKE '$search\%' OR
-				vaporid  LIKE '\%$search' ;
-			});
+		my($search)=lc($_[0]);
+		my(@player);
+		
+		if($search=~m/^\d+$/) {
+			@player=db::select('player', qq{ id='$search' });
+		} else {
+			@player=db::select('player', qq{
+					lower(name)     = '$search' OR
+					lower(nickname) = '$search' OR
+					lower(vaporid)  = '$search' ;
+				});
+			unless(@player and length($search)>2) {
+				@player=db::select('player', qq{
+						lower(name)     LIKE '$search\%' OR
+						lower(nickname) LIKE '$search\%' OR
+						lower(vaporid)  LIKE '\%$search' ;
+					});
+			}
+		}
 
-		return($player);
+		return(@player);
 	}
 
 	sub player {
@@ -4122,6 +4134,7 @@ are pulled from ladder, and changes in ladder are reflected here.
 		return unless($data->{'Vapor'} && $data->{'AKA'});
 
 		$data->{'AKA'}=~s/^\@//;
+		$data->{'AKA'}=~s/"/\\"/g;
 
 		($other)=db::select('player', qq{name="$data->{'AKA'}"});
 		($player)=db::select('player', qq{vaporid="$data->{'Vapor'}"});
@@ -4811,29 +4824,34 @@ These rankings can also be configured to select evenly matched teams.
 
 	sub show {
 		my($p, $type, $search)=@_;
-		my($player)=db::psearch($search);
-		my($name)=$player->{'name'} || $player->{'nickname'},
-		my($r, $better);
+		my($name, $r, $better);
 
-		($r)=db::select('rank', qq{id="$player->{'id'}" AND type="$type"});
+		foreach my $player (db::psearch($search)) {
+			$name=$player->{'name'} || $player->{'nickname'},
 
-		unless($r) {
-			chat::whisper($p, "$name: no $type rank");
-			return;
+			($r)=db::select('rank', qq{id="$player->{'id'}" AND type="$type"});
+
+			if($r) {
+				$better=db::count('rank', qq{
+					type="$type" AND (
+						rating>$r->{'rating'} OR (
+							rating=$r->{'rating'} AND
+							differential>$r->{'differential'}
+						)
+					)
+				});
+
+				chat::whisper($p, sprintf('%s: %s rating=%d, diff=%0.1f, rank=%s',
+					$name, $type,
+					@$r{'rating', 'differential'},
+					utils::nth($better+1),
+				));
+			} else {
+				chat::whisper($p, "$name: no $type rank");
+				return;
+			}
 		}
 
-		$better=db::count('rank', qq{
-			type="$type" AND (
-				rating>$r->{'rating'} OR (
-				rating=$r->{'rating'} AND differential>$r->{'differential'})
-			)
-		});
-
-		chat::whisper($p, sprintf('%s: %s rating=%d, diff=%0.1f, rank=%s',
-			$name, $type,
-			@$r{'rating', 'differential'},
-			utils::nth($better+1),
-		));
 	}
 
 }
@@ -7549,6 +7567,10 @@ core protecting the flag.
 		} else {
 			$type=map::type;
 			$type=map::mode if($type eq 'std');
+		}
+
+		if($search=~m/me|my|mine/i) {
+			$search=$p->{'id'};
 		}
 
 		rank::show($p, $type, $search);
