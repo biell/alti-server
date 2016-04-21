@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.53';
+my($VERSION)='2.54';
 
 =head1 NAME
 
@@ -1284,7 +1284,22 @@ Supported databases are SQLite and PostgreSQL.
 	}
 
 	sub query {
+		return(undef) unless(&enabled);
+
 		return($Dbh->selectall_arrayref(join(' ', @_)));
+	}
+
+	sub count {
+		my($table, $where)=@_;
+		my($count)=undef;
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where);
+
+		($count)=$Dbh->selectrow_array(
+				qq{SELECT COUNT(1) FROM $table WHERE $where});
+
+		return($count);
 	}
 
 	sub select {
@@ -1356,8 +1371,7 @@ Supported databases are SQLite and PostgreSQL.
 		return(undef) unless(&enabled);
 		return(undef) unless($table && $where && $set);
 
-		($count)=$Dbh->selectrow_array(
-				qq{SELECT COUNT(1) FROM $table WHERE $where;});
+		$count=&count($table, $where);
 
 		if($count<1) {
 			&insert($table, $set);
@@ -1387,6 +1401,18 @@ Supported databases are SQLite and PostgreSQL.
 		&update('info', qq{key='nextid'}, { 'value' => $next->{'value'}+1 });
 
 		return($next->{'value'});
+	}
+
+	sub psearch {
+		my($search)=@_;
+		my($player)=db::select('player', qq{
+				id='$search'              OR
+				name     LIKE '$search\%' OR
+				nickname LIKE '$search\%' OR
+				vaporid  LIKE '\%$search' ;
+			});
+
+		return($player);
 	}
 
 	sub player {
@@ -2581,12 +2607,27 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'enabled'			=> 1,
 		'restrict'		=> 'normal|small',
 	},
+	'?' => {
+		'name'			=> '?',
+		'arguments'		=> ['string'],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 1,
+		'restrict'		=> 'normal|small',
+	},
+	'l' => {
+		'name'			=> 'l',
+		'arguments'		=> ['string'],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 1,
+		'restrict'		=> 'normal|small',
+	},
 
 	'help' => {
 		'name'			=> 'help',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
 	},
 
 	'upload' => {
@@ -2601,6 +2642,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'ballScore', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
 	},
 
 	'set' => {
@@ -2666,9 +2708,9 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'rank' => {
 		'name'			=> 'rank',
-		'arguments'		=> ['player'],
+		'arguments'		=> ['string'],
 		'voteThreshold'	=> 0,
-		'enabled'			=> 1,
+		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
 	},
 
@@ -3075,6 +3117,16 @@ directly with it to manage the instance.
 
 	sub output {
 		return($Server->getline);
+	}
+
+	sub flush {
+		my(@lines);
+
+		$Server->blocking(0);
+		@lines=$Server->getlines;
+		$Server->blocking(1);
+
+		return(join('', @lines));
 	}
 
 	sub interrupt {
@@ -4755,6 +4807,33 @@ These rankings can also be configured to select evenly matched teams.
 				$player->{'stats'}{'differential'}-=$update;
 			}
 		}
+	}
+
+	sub show {
+		my($p, $type, $search)=@_;
+		my($player)=db::psearch($search);
+		my($name)=$player->{'name'} || $player->{'nickname'},
+		my($r, $better);
+
+		($r)=db::select('rank', qq{id="$player->{'id'}" AND type="$type"});
+
+		unless($r) {
+			chat::whisper($p, "$name: no $type rank");
+			return;
+		}
+
+		$better=db::count('rank', qq{
+			type="$type" AND (
+				rating>$r->{'rating'} OR (
+				rating=$r->{'rating'} AND differential>$r->{'differential'})
+			)
+		});
+
+		chat::whisper($p, sprintf('%s: %s rating=%d, diff=%0.1f, rank=%s',
+			$name, $type,
+			@$r{'rating', 'differential'},
+			utils::nth($better+1),
+		));
 	}
 
 }
@@ -6706,7 +6785,7 @@ core protecting the flag.
 
 		if(exists($HOOKS{"help $type"})) {
 			$HOOKS{"help $type"}->($e, $p);
-			if(config::commands('!')) {
+			if(config::option('configSize')=~m/small/i) {
 				chat::whisper($p, 'Admin commands use `/! cmd ...` syntax');
 			}
 		} elsif(@lookup=grep(m/help $type.*/i, keys(%HOOKS))) {
@@ -6718,6 +6797,10 @@ core protecting the flag.
 		} else {
 			config::command_help($p, 'help');
 		}
+	},
+
+	'?'			=> sub {
+		$HOOKS{'help'}->(@_);
 	},
 
 	'list'		=> sub {
@@ -6736,6 +6819,10 @@ core protecting the flag.
 		} else {
 			config::command_help($p, 'list');
 		}
+	},
+
+	'l'			=> sub {
+		$HOOKS{'list'}->(@_);
 	},
 
 	'set'		=> sub {
@@ -7443,6 +7530,28 @@ core protecting the flag.
 			}
 			chat::all("$mapname deleted");
 		}
+	},
+
+	'rank'		=> sub {
+		my($e, $p)=@_;
+		my($search)=@{$e->{'arguments'}};
+		my($typere)=join('|', @MODES, @TYPES);
+		my($type);
+
+		if($search=~m/help|\?/i) {
+			chat::whisper($p, 'Usage: /rank <player> [mode]');
+			chat::whisper($p, ' <player> can be an initial nickname, ending vaporID, or server ID number');
+			return;
+		}
+
+		if($search=~s/\s+($typere)\s*$//i) {
+			$type=lc($1);
+		} else {
+			$type=map::type;
+			$type=map::mode if($type eq 'std');
+		}
+
+		rank::show($p, $type, $search);
 	},
 
 	'help map'	=> sub {
@@ -10335,12 +10444,7 @@ also only available from the console.
 
 	'setPlayerName'	=> sub {
 		my($search, $name)=@_;
-		my($player)=db::select('player', qq{
-				name='$search'            OR
-				nickname='$search'        OR
-				id='$search'              OR
-				vaporid LIKE '\%$search'  ;
-			});
+		my($player)=db::psearch($search);
 		my($lookup)=player::lookup($player->{'vaporid'});
 
 		if($player) {
@@ -10579,6 +10683,9 @@ while(1) {
 			} elsif($SOUT=~m/Error processing packet .*, playerId=(\d+)/) {
 				player::infraction(player::lookup($1), 1);
 			} elsif($SOUT=~m/$FATAL_SERVER_ERRORS/) {
+				ui::slog($SOUT);
+				ui::slog(server::flush);
+
 				server::interrupt;
 				server::shutdown;
 
