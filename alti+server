@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.57';
+my($VERSION)='2.58';
 
 =head1 NAME
 
@@ -1931,7 +1931,7 @@ to see if it looks like it will be sufficient.
 		my($pid);
 		
 		#6 tends to be the default, and Altitude seems not to be that good:
-		$pid=IPC::Open3::open3($in, $out, $err, $Compress, '-4', '-c');
+		$pid=IPC::Open3::open3($in, $out, $err, $Compress, '-2', '-c');
 
 		print $in @_;
 		close($in);
@@ -2167,6 +2167,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 			foreach my $arg (@{$cmd->{'arguments'}}) {
 				$arg='string' if(ref($arg));
 			}
+		} else {
+			foreach my $arg (@{$cmd->{'arguments'}}) {
+				$arg=[sort(@$arg)] if(ref($arg));
+			}
 		}
 
 		delete($cmd->{'enabled'});
@@ -2211,7 +2215,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 			if($update_maps) {
 				if(m{</mapList>}i) {
-					foreach my $map (sort(@Maps)) {
+					foreach my $map (@Maps) {
 						s{^}{        <String value="$map" />\r\n}s;
 					}
 					$maplist=0;
@@ -2456,6 +2460,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 			ui::slog('Excluding map due to packet size constraint:',
 				pop(@Maps));
 		}
+		$Maplimit=@Maps;
 
 		@Maps=List::Util::shuffle(@Maps);
 
@@ -10720,7 +10725,7 @@ while(1) {
 				server::interrupt;
 				server::shutdown;
 
-				if($SOUT=~m/(\d+) bytes/) {
+				if($SOUT=~m/config size \((\d+) bytes/) {
 					config::resize($1);
 
 					sleep(2);
