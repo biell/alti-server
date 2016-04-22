@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.55';
+my($VERSION)='2.56';
 
 =head1 NAME
 
@@ -1310,7 +1310,7 @@ Supported databases are SQLite and PostgreSQL.
 		return(undef) unless(&enabled);
 		return(undef) unless($table && $where);
 
-		$sth=$Dbh->prepare("SELECT * FROM $table WHERE $where");
+		$sth=$Dbh->prepare("SELECT DISTINCT * FROM $table WHERE $where");
 		$sth->execute;
 
 		while($row=$sth->fetchrow_hashref) {
@@ -4134,7 +4134,7 @@ are pulled from ladder, and changes in ladder are reflected here.
 		return unless($data->{'Vapor'} && $data->{'AKA'});
 
 		$data->{'AKA'}=~s/^\@//;
-		$data->{'AKA'}=~s/"/\\"/g;
+		$data->{'AKA'}=~s/"/""/g;
 
 		($other)=db::select('player', qq{name="$data->{'AKA'}"});
 		($player)=db::select('player', qq{vaporid="$data->{'Vapor'}"});
@@ -9908,7 +9908,7 @@ core protecting the flag.
 
 		return unless($v);
 
-		$p->{'stats'}{'powerkill'}++ if($v->{'carier'});
+		$p->{'stats'}{'powerkill'}++ if($v->{'carrier'});
 
 		$v->{'alive'}=0;
 		ball::drop($v);
