@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.56';
+my($VERSION)='2.57';
 
 =head1 NAME
 
@@ -1310,7 +1310,7 @@ Supported databases are SQLite and PostgreSQL.
 		return(undef) unless(&enabled);
 		return(undef) unless($table && $where);
 
-		$sth=$Dbh->prepare("SELECT DISTINCT * FROM $table WHERE $where");
+		$sth=$Dbh->prepare("SELECT * FROM $table WHERE $where");
 		$sth->execute;
 
 		while($row=$sth->fetchrow_hashref) {
@@ -1405,8 +1405,9 @@ Supported databases are SQLite and PostgreSQL.
 
 	sub psearch {
 		my($search)=lc($_[0]);
-		my(@player);
-		
+		my(@player)=();
+		my($sth, $row);
+
 		if($search=~m/^\d+$/) {
 			@player=db::select('player', qq{ id='$search' });
 		} else {
@@ -1424,7 +1425,11 @@ Supported databases are SQLite and PostgreSQL.
 			}
 		}
 
-		return(@player);
+		if(wantarray) {
+			return(@player);
+		} else {
+			return(shift(@player));
+		}
 	}
 
 	sub player {
@@ -4825,9 +4830,13 @@ These rankings can also be configured to select evenly matched teams.
 	sub show {
 		my($p, $type, $search)=@_;
 		my($name, $r, $better);
+		my(%seen)=();
 
 		foreach my $player (db::psearch($search)) {
 			$name=$player->{'name'} || $player->{'nickname'},
+
+			next if(exists($seen{$player->{'id'}}));
+			$seen{$player->{'id'}}=1;
 
 			($r)=db::select('rank', qq{id="$player->{'id'}" AND type="$type"});
 
