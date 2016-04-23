@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.60';
+my($VERSION)='2.61';
 
 =head1 NAME
 
@@ -4818,15 +4818,11 @@ These rankings can also be configured to select evenly matched teams.
 		ui::slog(sprintf(join("\n  ", 
 				"enter: name=%s, id=%d, type=%s, played=%d,",
 				"rate=%.2f, scale=%.2f, update=%.1f, diff=%.2f,",
-				"base=%d, turret=%d, capture=%d, goal=%d, assist=%d, saves=%d, int=%d,",
-				"-int'd=%d, -crash=%d, -died=%d, -fumble=%d",
 				"json=%s"
 			), (
 				$p->{'name'} || $p->{'nickname'},
 				$p->{'id'}, $type, $p->{'played'},
 				$rate, $scale, $update, $p->{'stats'}{'differential'},
-				$p->{'stats'}{'base'}, $p->{'stats'}{'turret'}, $p->{'stats'}{'capture'}, $p->{'stats'}{'goals'}, $p->{'stats'}{'assists'}, $p->{'stats'}{'saves'}, $p->{'stats'}{'interception'},
-				$p->{'stats'}{'intercepted'}, $p->{'stats'}{'crashes'}, $p->{'stats'}{'died'}, $p->{'stats'}{'fumble'},
 				json::encode($p->{'stats'}),
 			)
 
@@ -4907,9 +4903,9 @@ These rankings can also be configured to select evenly matched teams.
 		my(@players)=sort({ $a->{'rating'} <=> $b->{'rating'} } player::list);
 
 		push(@left, splice(@players, int(rand(@players)), 1));
-		push(@right, splice(@players, int(rand(@players)), 1)) if(@players>3);
-		push(@left, splice(@players, int(rand(@players)), 1))  if(@players>5);
-		push(@right, splice(@players, int(rand(@players)), 1)) if(@players>7);
+		push(@right, splice(@players, int(rand(@players)), 1)) if(@players>2);
+		push(@left, splice(@players, int(rand(@players)), 1))  if(@players>4);
+		push(@right, splice(@players, int(rand(@players)), 1)) if(@players>6);
 
 		$left=List::Util::sum(map($_->{'rating'}, @left));
 		$right=List::Util::sum(map($_->{'rating'}, @right));
@@ -4944,10 +4940,10 @@ These rankings can also be configured to select evenly matched teams.
 		} elsif(@players && $left<$right) {
 			$left+=$players[0]{'rating'};
 			push(@left, @players);
-		} elsif(int(rand(2))) {
+		} elsif(@players && int(rand(2))) {
 			$right+=$players[0]{'rating'};
 			push(@right, @players);
-		} else {
+		} elsif(@players) {
 			$left+=$players[0]{'rating'};
 			push(@left, @players);
 		}
