@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.58';
+my($VERSION)='2.59';
 
 =head1 NAME
 
@@ -24,6 +24,7 @@ my(%OPTIONS)=(
 	lobby		=> '',			#Lobby map for this server
 	secretCode	=> undef,			#The secret required to join the server
 	updateMapList	=> 1,               #Let alti+server change the mapList
+	assignRank	=> 0,			#Use the ranking engine to assign teams
 	enableTalk	=> 0,			#Enable server aided direct player chat
 	changePlane	=> 1,			#Number of players to disable /cp
 	hitchThreshold	=> 0.6,			#Length of serverHitch to report
@@ -102,6 +103,7 @@ use IPC::Open3;
 use List::Util;
 use Tie::RefHash;
 use Data::Dumper;
+use MIME::Base64;
 
 my($FATAL_SERVER_ERRORS)=join('|',
 	'Server config size \(\d+ bytes\) exceeds max allowed size',
@@ -931,6 +933,13 @@ L<perl(1)> should be used to ensure basic operation.
 		my($read)=IO::Handle->new;
 		my(@cmd);
 
+		if($string=~s/^{B64}//) {
+			$string=decode_base64($string);
+		} elsif($string=~s/^{xor}//) {
+			$string=decode_base64($string);
+			$string=~s/(.)/$1^'_'/ge;
+		}
+
 		1 while($string=~s/\$\{?(\w+)\}?/$ENV{"$1"}/);
 
 		if($string=~s/\s*\|\s*$//) {
@@ -1507,12 +1516,19 @@ Supported databases are SQLite and PostgreSQL.
 	sub rank {
 		my($p, $type, $value)=@_;
 		my($rating)=&select('rank', qq{id="$p->{'id'}" AND type="$type"});
+		my($init)=800;
 
 		unless(ref($rating) eq 'HASH') {
+			if($p->{'aceRank'}) {
+				$init=740+$p->{'level'};
+			} else {
+				$init=620+3*$p->{'level'};
+			}
+
 			$rating={
 				'id'           => $p->{'id'},
 				'type'         => $type,
-				'rating'       => 800,
+				'rating'       => $init,
 				'differential' => 0,
 			};
 			&insert('rank', $rating);
@@ -4762,6 +4778,7 @@ These rankings can also be configured to select evenly matched teams.
 			$rate+=$stats->{'powerkill'}/$minute;
 			$rate+=$stats->{'kills'}/$minute;
 			$rate-=$stats->{'died'}/$minute;
+			$rate-=$stats->{'fumble'}/$minute/2;
 		} elsif(map::mode('tdm', 'ffa')) {
 			$rate+=$stats->{'kills'}/$minute;
 			$rate-=$stats->{'died'}/$minute;
@@ -4771,6 +4788,7 @@ These rankings can also be configured to select evenly matched teams.
 			$rate-=$stats->{'died'}/3;
 		} elsif(map::mode('ball')) {
 			$rate+=$stats->{'powerkill'}/$minute;
+			$rate-=$stats->{'fumble'}/$minute;
 		}
 
 		#Maximum 5 point individual effort swing
@@ -4797,20 +4815,35 @@ These rankings can also be configured to select evenly matched teams.
 
 		$update=$rate * $scale;
 
-		ui::slog("enter: nickname=$p->{'nickname'}, id=$p->{'id'}, type=$type,\n",
-			"rate=$rate, scale=$scale, update=$update,\n",
-			"played=$p->{'stats'}{'played'}, Min=$Min\n",
-			"diff=$p->{'stats'}{'differential'}, rate=$rate,\n",
-			"base=$p->{'stats'}{'base'}, turret=$p->{'stats'}{'turret'}, capture=$p->{'stats'}{'capture'},\n",
-			"goals=$p->{'stats'}{'goals'}, assists=$p->{'stats'}{'assists'}, saves=$p->{'stats'}{'saves'},\n",
-			"interception=$p->{'stats'}{'interception'}, -intercepted=$p->{'stats'}{'intercepted'}, -crashes=$p->{'stats'}{'crashes'},\n",
-			"kills=$p->{'stats'}{'kills'}, powerkill=$p->{'stats'}{'powerkill'}, -died=$p->{'stats'}{'died'}",
-			"json=", json::encode($p->{'stats'}),
-		);
+		ui::slog(sprintf(join("\n  ", 
+				"enter: name=%s, id=%d, type=%s, played=%d,",
+				"rate=%.2f, scale=%.2f, update=%.1f, diff=%.2f,",
+				"base=%d, turret=%d, capture=%d, goal=%d, assist=%d, saves=%d, int=%d,",
+				"-int'd=%d, -crash=%d, -died=%d, -fumble=%d",
+				"json=%s"
+			), (
+				$p->{'name'} || $p->{'nickname'},
+				$p->{'id'}, $type, $p->{'played'},
+				$rate, $scale, $update, $p->{'stats'}{'differential'},
+				$p->{'stats'}{'base'}, $p->{'stats'}{'turret'}, $p->{'stats'}{'capture'}, $p->{'stats'}{'goals'}, $p->{'stats'}{'assists'}, $p->{'stats'}{'saves'}, $p->{'stats'}{'interception'},
+				$p->{'stats'}{'intercepted'}, $p->{'stats'}{'crashes'}, $p->{'stats'}{'died'}, $p->{'stats'}{'fumble'},
+				json::encode($p->{'stats'}),
+			)
+
+		));
 
 		if($p->{'stats'}{'played'}/1000>$Min) {
-			db::rank($p, $type, $update) if($update);
+			$p->{'rating'}=db::rank($p, $type, $update) if($update);
 		}
+	}
+
+	sub join {
+		my($p)=@_;
+		my($type)=map::type;
+
+		$type=map::mode if($type eq 'std');
+
+		$p->{'rating'}=db::rank($p, $type);
 	}
 
 	sub score {
@@ -4866,6 +4899,69 @@ These rankings can also be configured to select evenly matched teams.
 			}
 		}
 
+	}
+
+	sub teams {
+		my(@left, @right)=();
+		my($left, $right)=(0, 0);
+		my(@players)=sort({ $a->{'rating'} <=> $b->{'rating'} } player::list);
+
+		push(@left, splice(@players, int(rand(@players)), 1));
+		push(@right, splice(@players, int(rand(@players)), 1)) if(@players>3);
+		push(@left, splice(@players, int(rand(@players)), 1))  if(@players>5);
+		push(@right, splice(@players, int(rand(@players)), 1)) if(@players>7);
+
+		$left=List::Util::sum(map($_->{'rating'}, @left));
+		$right=List::Util::sum(map($_->{'rating'}, @right));
+
+		while(@players>1) {
+			if($left>$right) {
+				$left+=$players[0]{'rating'};
+				push(@left, unshift(@players));
+			} else {
+				$left+=$players[-1]{'rating'};
+				push(@left, pop(@players));
+			}
+
+			if($right>$left) {
+				$right+=$players[0]{'rating'};
+				push(@right, unshift(@players));
+			} else {
+				$right+=$players[-1]{'rating'};
+				push(@right, pop(@players));
+			}
+		}
+
+		if(@players && @left>@right) {
+			$right+=$players[0]{'rating'};
+			push(@right, @players);
+		} elsif(@players && @left<@right) {
+			$left+=$players[0]{'rating'};
+			push(@left, @players);
+		} elsif(@players && $left>$right) {
+			$right+=$players[0]{'rating'};
+			push(@right, @players);
+		} elsif(@players && $left<$right) {
+			$left+=$players[0]{'rating'};
+			push(@left, @players);
+		} elsif(int(rand(2))) {
+			$right+=$players[0]{'rating'};
+			push(@right, @players);
+		} else {
+			$left+=$players[0]{'rating'};
+			push(@left, @players);
+		}
+
+		if($left>$right && $left[-1]>$right[-1]) {
+			($left[-1], $right[-1])=($right[-1], $left[-1]);
+		} elsif($left<$right && $left[-1]<$right[-1]) {
+			($left[-1], $right[-1])=($right[-1], $left[-1]);
+		}
+
+		ui::slog("left  team ($left):", join(',', map(player::name($_), @left)));
+		ui::slog("right team ($right):", join(',', map(player::name($_), @right)));
+
+		return(\@left, \@right);
 	}
 
 }
@@ -6236,6 +6332,10 @@ play though extended interfaces and server support.
 					}
 				}
 			}
+		}
+		
+		if(map::mode('ffa')) {
+			1; #team assignments not allowed
 		} elsif(map::type('race')) {
 			if($assign && race::on) {
 				queue::schedule {
@@ -6244,7 +6344,19 @@ play though extended interfaces and server support.
 					}	
 				} $config::Launcher{'warmup'}{map::mode}/4;
 			}
+		} elsif(!$assign && config::option('assignRank')) {
+			queue::schedule {
+				my($left, $right)=rank::teams;
+
+				#foreach my $player (@$left) {
+				#	plus::assign($player, 'left');
+				#}	
+				#foreach my $player (@$right) {
+				#	plus::assign($player, 'right');
+				#}	
+			} $config::Launcher{'warmup'}{map::mode}/2;
 		}
+
 
 
 		if(!stash::get(map::name, 'map') || stash::get('INIT', map::name, 'map')) {
@@ -9415,6 +9527,8 @@ core protecting the flag.
 
 		return if($p->{'isBot'});
 
+		rank::join($p);
+
 		altbouncer::add($p);
 
 		if($p->{'country'}=utils::geoip($p->{'ip'})) {
@@ -9922,7 +10036,10 @@ core protecting the flag.
 
 		return unless($v);
 
-		$p->{'stats'}{'powerkill'}++ if($v->{'carrier'});
+		if($v->{'carrier'}) {
+			$p->{'stats'}{'powerkill'}++;
+			$v->{'stats'}{'fumble'}++;
+		}
 
 		$v->{'alive'}=0;
 		ball::drop($v);
@@ -10327,6 +10444,12 @@ also only available from the console.
 				} elsif($value=~m/(\d+)k/i) {
 					$value=$1*1024;
 				}
+			}
+
+			if($name=~m/pass/i) {
+				$value=~s/(.)/$1^'_'/ge;
+				$value='{xor}'.encode_base64($value);
+				chomp($value);
 			}
 
 			config::option_set($name, $value);
