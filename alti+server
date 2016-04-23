@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.59';
+my($VERSION)='2.60';
 
 =head1 NAME
 
@@ -4952,9 +4952,9 @@ These rankings can also be configured to select evenly matched teams.
 			push(@left, @players);
 		}
 
-		if($left>$right && $left[-1]>$right[-1]) {
+		if($left && $right && $left>$right && $left[-1]>$right[-1]) {
 			($left[-1], $right[-1])=($right[-1], $left[-1]);
-		} elsif($left<$right && $left[-1]<$right[-1]) {
+		} elsif($left && $right && $left<$right && $left[-1]<$right[-1]) {
 			($left[-1], $right[-1])=($right[-1], $left[-1]);
 		}
 
