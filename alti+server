@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.61';
+my($VERSION)='2.62';
 
 =head1 NAME
 
@@ -4821,7 +4821,7 @@ These rankings can also be configured to select evenly matched teams.
 				"json=%s"
 			), (
 				$p->{'name'} || $p->{'nickname'},
-				$p->{'id'}, $type, $p->{'played'},
+				$p->{'id'}, $type, $p->{'stats'}{'played'},
 				$rate, $scale, $update, $p->{'stats'}{'differential'},
 				json::encode($p->{'stats'}),
 			)
@@ -4867,7 +4867,7 @@ These rankings can also be configured to select evenly matched teams.
 		my(%seen)=();
 
 		foreach my $player (db::psearch($search)) {
-			$name=$player->{'name'} || $player->{'nickname'},
+			$name=$player->{'name'} || $player->{'nickname'};
 
 			next if(exists($seen{$player->{'id'}}));
 			$seen{$player->{'id'}}=1;
@@ -4919,7 +4919,7 @@ These rankings can also be configured to select evenly matched teams.
 				push(@left, pop(@players));
 			}
 
-			if($right>$left) {
+			if($left<$right) {
 				$right+=$players[0]{'rating'};
 				push(@right, unshift(@players));
 			} else {
