@@ -1,0 +1,44 @@
+#Start ARC Race 1 when all players are on-line
+#If it is 15 minutes past the hour and at least 2 players are on-line, start
+
+my %arc_race_1 = (
+	'mapChange'	=> sub {
+		$State{'arc_race_1'}={};
+	},
+
+	'teamChange'	=> sub {
+		my($e, $p)=@_;
+		my($map)=map::name;
+		my(@today)=gmtime(time);
+		my($count)=0;
+
+		#Ensure 9PM UTC on January 24th:
+		return unless( $today[4]==0 && $today[3]==24 && $today[2]==21 );
+
+		return unless( $map=~m/ball_race_(silverstone|eastern_creek)/ );
+
+		if($p->{'name'} eq 'biell') {
+			$State{'arc_race_1'}{'biell'}=1; 
+			server::send('raceAdd', $p->{'nickname'});
+		} elsif($p->{'name'} eq 'Soneji') {
+			$State{'arc_race_1'}{'Soneji'}=1; 
+			server::send('raceAdd', $p->{'nickname'});
+		} elsif($p->{'name'} eq 'Brutal') {
+			$State{'arc_race_1'}{'Brutal'}=1; 
+			server::send('raceAdd', $p->{'nickname'});
+		} elsif($p->{'name'} eq 'ufo') {
+			$State{'arc_race_1'}{'ufo'}=1; 
+			server::send('raceAdd', $p->{'nickname'});
+		}
+
+		$count=	$State{'arc_race_1'}{'biell'}
+			+	$State{'arc_race_1'}{'Soneji'}
+			+	$State{'arc_race_1'}{'Brutal'}
+			+	$State{'arc_race_1'}{'ufo'} ;
+
+		if($count==4 || ($today[1]>15 && $count>2) ) {
+			chat::all('Official race for', $map, 'begins in 20 seconds');
+			queue::schedule { server::send('raceStart'); } 20;
+		}
+	},
+);

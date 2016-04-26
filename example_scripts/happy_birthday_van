@@ -1,0 +1,19 @@
+#Say happy birthday when Van enters on his birthday
+
+my %happy_birthday_van = (
+	'clientAdd' => sub {
+		my($e, $p)=@_;
+		my(@today)=gmtime(time);
+
+		return unless(
+				$today[4]==3 &&	#January==0, April==3
+				$today[3]==24 &&
+				$p->{'vaporId'} eq '927d5410-28a1-4332-8f42-7c926d94bd73'
+			);
+			
+		queue::schedule { chat::all('Happy Birthday to you')   } 3;
+		queue::schedule { chat::all('Happy Birthday to you')   } 4;
+		queue::schedule { chat::all('Happy Birthday dear Van') } 5;
+		queue::schedule { chat::all('Happy Birthday to you')   } 6;
+	},
+);

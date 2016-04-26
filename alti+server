@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-#use strict;
+use strict;
 
 my($VERSION)='2.64';
 
@@ -2378,6 +2378,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 				[sort(keys(%OPTIONS))],
 				'string',
 			];
+		$Commands{'script'}=[
+				['list', 'reload', 'del'],
+				'string',
+			];
 		$Commands{'command'}=[
 				['list', 'enable', 'disable', 'unset'],
 				['all', sort(keys(%ALTIPLUS))]
@@ -4036,8 +4040,19 @@ is updated with them as the games progress.
 
 		$p->{'infractions'}+=$value;
 		if($p->{'infractions'}>$count) {
-			server::send('kick', $nick);
-			return(0);
+			if($p->{'admin'}) {
+				if($p->{'infractions'}>$count*2) {
+					$CONSOLE{'server'}->('del', 'admins', $p->{'vaporId'});
+					server::send('restartServer');
+					chat::whisper($p, 'Now look what you made me do');
+				} else {
+					chat::whisper($p, 'Some decorum, please', player::name($p));
+				}
+				return(int($p->{'infractions'}));
+			} else {
+				server::send('kick', $nick);
+				return(0);
+			}
 		} else {
 			return(int($p->{'infractions'}));
 		}
@@ -6622,6 +6637,130 @@ the value of C<restartMap> in seconds for downloads to complete.
 
 }
 
+=head2 Scripting
+
+The B<alti+server> contains a scripting engine which allows hooks to be
+added to events outside of the base B<alti+server> code.  Scripts are
+loaded from a directory named F<alti+scripts> located the same directory
+as the F<launcher_config.xml> file.  All files in this directory are
+automatically loaded.
+
+All scripts are loaded and run in the B<alti+server> runtime, there are
+B<ZERO> protections.  This is necessary to ensure scripts can interact
+fully with the server code.  A hash named C<%State> should be used to
+keep state between calls to hooks.
+
+A script is actually a perl hash definition which contains hooks for
+events which will be thrown by the server.  So, your file would look like:
+
+  #pretend people care about having player ID 0:
+  my %cool_script = (
+      'clientAdd' => sub {
+          my($e, $p)=@_;
+
+          chat::whisper($p, 'You beat the bots for the coveted player ID 0!')
+              if($p->{'id'}==0);
+      },
+
+	 'clientRemove:pre' => sub {
+          my($e, $p)=@_;
+
+          chat::all('player ID 0 is free, disconnect and reconnect to get it!')
+              if($p->{'id'}==0);
+	 },
+  );
+
+By default, these hooks
+will be executed after the server has internally serviced each hook.
+However, you can explicitly set this behavior by placing a C<:pre>
+or C<:post> string at the end of your hook name (e.g. C<clientRemove:pre>).
+
+=cut
+
+{	package script;
+
+	use File::Basename;
+
+	my(%State)=();
+	my(%Script)=();
+	my(@Scripts)=();
+	my($Sdir)="$INSTALL_ROOT/servers/alti+scripts";
+
+	mkdir($Sdir, 0750) unless(-d $Sdir);
+
+	sub install {
+		my($script)=IO::Handle->new;
+		my(%script_hooks)=();
+		my($name);
+		local($/)=undef;
+
+		foreach my $file (<$Sdir/*>) {
+			next unless(-r $file);
+			
+			$name=basename($file);
+
+			open($script, '<', $file);
+			if(%script_hooks=eval(<$script>)) {
+				foreach my $hook_key (keys(%script_hooks)) {
+					if($hook_key=~m/:/) {
+						$Script{$name}{$hook_key}=$script_hooks{$hook_key};
+					} else {
+						$Script{$name}{"$hook_key:post"}=$script_hooks{$hook_key};
+					}
+				}
+				ui::slog("Loaded script: $name");
+			} else {
+				ui::slog("Failed to load script $name:", $@);
+			}
+
+		}
+
+		@Scripts=sort(keys(%Script));
+	}
+
+	sub remove {
+		foreach my $script (@_?@_:@Scripts) {
+			ui::slog('|', 'Deleted script:', $script);
+			delete($Script{$script});
+		}
+
+		@Scripts=sort(keys(%Script));
+	}
+
+	sub list {
+		ui::slog('|', join(',', @Scripts));
+	}
+
+	sub pre {
+		my($e, $p)=@_;
+		my($type)=join(':', $e->{'type'}, 'pre');
+		my($command)=join(':', $e->{'command'}, 'pre');
+
+		foreach my $script (@Scripts) {
+			if(ref($Script{$script}{$type}) eq 'CODE') {
+				$Script{$script}{$type}->($e, $p);
+			} elsif(ref($Script{$script}{$command}) eq 'CODE') {
+				$Script{$script}{$command}->($e, $p);
+			}
+		}
+	}
+
+	sub post {
+		my($e, $p)=@_;
+		my($type)=join(':', $e->{'type'}, 'post');
+		my($command)=join(':', $e->{'command'}, 'post');
+
+		foreach my $script (@Scripts) {
+			if(ref($Script{$script}{$type}) eq 'CODE') {
+				$Script{$script}{$type}->($e, $p);
+			} elsif(ref($Script{$script}{$command}) eq 'CODE') {
+				$Script{$script}{$command}->($e, $p);
+			}
+		}
+	}
+
+}
+
 =head2 Normalized Hook Management
 
 The B<alti+server> makes supporting log hooks easier by normalizing the
@@ -7077,6 +7216,7 @@ core protecting the flag.
 		}
 
 		if($type=~m/chat/i) {
+			chat::whisper($a, 'Stop abusing chat');
 			server::send('addChatBlock', $a->{'vaporId'}, 'AllChat',
 				@duration, 'Stop abusing chat');
 			server::send('addChatBlock', $ip, 'AllChat',
@@ -10484,6 +10624,8 @@ also only available from the console.
 			if($name=~m/(superA|a)dmins/ && $value!~m/^[0-9a-f-]{36}$/) {
 				if($lookup=player::lookup($value)) {
 					$value=$lookup->{'vaporId'};
+				} elsif($lookup=db::psearch($value)) {
+					$value=$lookup->{'vaporid'};
 				} elsif(($lookup)=altbouncer::lookup($value)) {
 					$value=$lookup->{'vaporID'};
 				} else {
@@ -10507,6 +10649,18 @@ also only available from the console.
 		$current=config::option($name);
 		foreach my $entry (split(m/;/, $current)) {
 			chat::whisper($s, "$name:", $entry);
+		}
+	},
+
+	'script'		=> sub {
+		my($action, $name)=@_;
+
+		if($action=~m/^li/i) {
+			script::list;
+		} elsif($action=~m/^rel/i) {
+			script::install;
+		} elsif($action=~m/^rem|^del/i) {
+			script::remove($name);
 		}
 	},
 
@@ -10782,7 +10936,7 @@ knowledge of ports, players, log files, standard output, etc.
 
 =cut
 
-my($REQ, $SOUT, $TRIGGER);
+my($REQ, $SOUT, $TRIGGER, @EVENT);
 
 ui::setup_screen;
 
@@ -10811,14 +10965,18 @@ while(1) {
 		if(server::is_log($fh)) {
 			next unless($REQ=server::event);
 		
+			@EVENT=&event($REQ);
+
+			script::pre(@EVENT);
 			if($TRIGGER=server::triggers($REQ->{'type'})) {
 				my($trigger)=shift(@$TRIGGER);
-				$HOOKS{$trigger}->(&event($REQ), @$TRIGGER);
+				$HOOKS{$trigger}->(@EVENT, @$TRIGGER);
 			} elsif(exists($HOOKS{$REQ->{'type'}})) {
-				$HOOKS{$REQ->{'type'}}->(&event($REQ));
+				$HOOKS{$REQ->{'type'}}->(@EVENT);
 			} elsif(exists($HOOKS{$REQ->{'command'}})) {
-				$HOOKS{$REQ->{'command'}}->(&event($REQ));
+				$HOOKS{$REQ->{'command'}}->(@EVENT);
 			}
+			script::post(@EVENT);
 		} elsif(server::is_output($fh)) {
 			$SOUT=server::output;
 
