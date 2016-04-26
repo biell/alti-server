@@ -1040,6 +1040,15 @@ are on by default, and are defined as such:
     their team to get to the most checkpoints.  This award is designed for
     a game type of `race`.
 
+## Scripting Interface
+If you are OK writing perl, there is a scripting interface for `alti+server`.
+It isn't anything fancy, you have to write exactly the same code as you would
+to directly add your code to the base server code.  But, it allows for easy
+loading and unloading of script modules.  And, it is an easy way to change
+the behaviour of the server.  This is helpful for setting up league events
+and could be used for a map which required tight integration with the server
+code.  See the `example_scripts` directory on github for examples.
+
 ## Snarky Server
 The server can be configured to emit snarky comments from time to time by
 setting the code OPTION `snarkChance` to a positive value.  Setting this

@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='2.64';
+my($VERSION)='2.66';
 
 =head1 NAME
 
@@ -10959,6 +10959,8 @@ if(config::lobby) {
 config::write_launcher_config;
 
 server::start;
+
+script::install;
 
 while(1) {
 	foreach my $fh (server::data(queue::next)) {
