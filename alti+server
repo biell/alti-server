@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.66';
+my($VERSION)='2.67';
 
 =head1 NAME
 
@@ -4737,7 +4737,6 @@ These rankings can also be configured to select evenly matched teams.
 
 {	package rank;
 
-	my($Min)=60;
 	my($Base)=600;
 
 	sub _quality_curve { # modified logistic curve)
@@ -4777,6 +4776,8 @@ These rankings can also be configured to select evenly matched teams.
 		my($stats)=$p->{'stats'};
 		my($minute)=$stats->{'played'}/60000;
 		my($rate)=0;
+
+		return(0) unless($minute>1);
 
 		#Individual:
 		$rate+=$stats->{'base'};
@@ -4843,8 +4844,8 @@ These rankings can also be configured to select evenly matched teams.
 
 		));
 
-		if($p->{'stats'}{'played'}/1000>$Min) {
-			$p->{'rating'}=db::rank($p, $type, $update) if($update);
+		if($update) {
+			$p->{'rating'}=db::rank($p, $type, $update);
 		}
 	}
 
