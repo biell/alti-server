@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.67';
+my($VERSION)='2.68';
 
 =head1 NAME
 
@@ -74,6 +74,8 @@ my(%OPTIONS)=(
 
 my(@MODES)=qw(1bd 1de 1dm ball ffa tbd tdm);
 my(@TYPES)=qw(coop flag mdg race ruin zone);
+
+my($ROLL_LOGS)=4 * 2**20;
 
 =head1 DESCRIPTION
 
@@ -295,7 +297,7 @@ delete($ENV{'COLUMNS'});
 		if($Redirect) {
 			print $Redirect $entry, "\n";
 		} else {
-			rename($Outfile, $Outfile_o) if(-s $Outfile > 1048576);
+			rename($Outfile, $Outfile_o) if(-s $Outfile > $ROLL_LOGS);
 
 			open($slog, '>>', $Outfile);
 			print $slog $entry, "\n";
@@ -344,7 +346,7 @@ delete($ENV{'COLUMNS'});
 		my($clog)=IO::Handle->new;
 		my($time)=POSIX::strftime("%Y%m%dT%H%M%S", localtime(time()));
 
-		rename($Chatfile, $Chatfile_o) if(-s $Chatfile > 1048576);
+		rename($Chatfile, $Chatfile_o) if(-s $Chatfile > $ROLL_LOGS);
 
 		open($clog, '>>', $Chatfile);
 		printf($clog "[%s:%-16s:%s] %s\n", $time, $nick, $type, $msg);
@@ -4587,6 +4589,11 @@ they make the top 5.
 			if(@nicks) {
 				splice(@nicks, 5, scalar(@nicks), $etal) if(@nicks>5);
 				push(@holder, join(', ', map(player::name($_), @nicks)));
+				if($holder[-1]=~m/, $/) { #DEBUG trailing comma issue
+					foreach my $rp (@nicks) {
+						ui::slog('record:', $rp, $rp->{'name'}, $rp->{'nickname'}, $Helpers{$rp});
+					}
+				}
 			}
 		}
 
