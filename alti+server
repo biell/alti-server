@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.70';
+my($VERSION)='2.71';
 
 =head1 NAME
 
@@ -3978,7 +3978,7 @@ is updated with them as the games progress.
 	sub name {
 		my($p)=@_;
 
-		if($p->{'name'}=~m/\w/) {
+		if(length($p->{'name'})) {
 			return($p->{'name'});
 		} else {
 			return($p->{'nickname'});
@@ -4109,16 +4109,11 @@ is updated with them as the games progress.
 		return(scalar(&list(@_)));
 	}
 
-	sub info {
-		my(@info)=();
+	sub id {
+		my($p)=@_;
+		my(@fields)=qw(player vaporId name nickname team);
 
-		foreach my $player (&list) {
-			push(@info, { map(($_ => $player->{$_}),  qw(
-				player vaporId name nickname team
-			))});
-		}
-
-		return(@info);
+		return({ map(($_ => $p->{$_}), @fields) });
 	}
 
 	sub handicap {
@@ -4595,6 +4590,8 @@ they make the top 5.
 			}
 		} elsif(%Helpers && map::type('coop', 'ruin')) {
 			@nicks=sort({ $Helpers{$b} <=> $Helpers{$a} } keys(%Helpers));
+
+			ui::slog(json::encode([map(player::id($_), @nicks)]));
 
 			if($time>90 && $Helpers{$nicks[0]}>50) {
 				@nicks=grep($Helpers{$_}>25, @nicks);
@@ -9661,6 +9658,7 @@ core protecting the flag.
 	'clientAdd'		=> sub {
 		my($e, $p)=@_;
 		my($anick)=stash::get('nick', $e->{'vaporId'}, 'abuse');
+		my($name);
 
 		#                       PlayerId|VaporID
 		if($e->{'nickname'}=~m/^(\d{1,2}|[0-9a-f-]{36})$/) {
@@ -9700,10 +9698,16 @@ core protecting the flag.
 
 		altbouncer::add($p);
 
-		if($p->{'country'}=utils::geoip($p->{'ip'})) {
-			ui::display('', '', "< $p->{'nickname'} entered from $p->{'country'} >");
+		if($p->{'name'}) {
+			$name="$p->{'nickname'}($p->{'name'})";
 		} else {
-			ui::display('', '', "< $p->{'nickname'} entered >");
+			$name=$p->{'nickname'};
+		}
+
+		if($p->{'country'}=utils::geoip($p->{'ip'})) {
+			ui::display('', '', "< $name entered from $p->{'country'} >");
+		} else {
+			ui::display('', '', "< $name entered >");
 		}
 
 		foreach my $statement (split(m/;/, config::option('motd'))) {
@@ -9729,6 +9733,13 @@ core protecting the flag.
 	'clientRemove'		=> sub {
 		my($e, $p)=@_;
 		my($reason)='';
+		my($name);
+
+		if($p->{'name'}) {
+			$name="$p->{'nickname'}($p->{'name'})";
+		} else {
+			$name=$p->{'nickname'};
+		}
 
 		records::help($p, -10);
 
@@ -9747,9 +9758,9 @@ core protecting the flag.
 		if(exists($e->{'reason'}) && $e->{'reason'} ne 'Client left.') {
 			$reason=$e->{'reason'};
 			$reason=~s/\..*$//s;
-			ui::display('', '', "< $p->{'nickname'} $e->{'message'} ($reason)>");
+			ui::display('', '', "< $name $e->{'message'} ($reason)>");
 		} else {
-			ui::display('', '', "< $p->{'nickname'} $e->{'message'} >");
+			ui::display('', '', "< $name $e->{'message'} >");
 		}
 	},
 
@@ -10405,7 +10416,7 @@ core protecting the flag.
 
 		queue::clear;
 
-		ui::slog(json::encode([player::info]));
+		ui::slog(json::encode([map(player::id($_), player::list)]));
 
 		if(config::option('awards') && player::count>2) {
 			if($stats{'Crashes'} && List::Util::max(@{$stats{'Crashes'}})>8) {
