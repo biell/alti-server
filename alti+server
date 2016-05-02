@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.73';
+my($VERSION)='2.74';
 
 =head1 NAME
 
@@ -10223,53 +10223,55 @@ core protecting the flag.
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($angle);
 
-		return unless($v);
-
-		if($v->{'carrier'}) {
-			$p->{'stats'}{'powerkill'}++;
-			$v->{'stats'}{'fumble'}++;
+		if($p) {
+			rank::score($p->{'team'}, 1) if(map::mode('tdm', '1dm'));
 		}
 
-		$v->{'alive'}=0;
-		ball::drop($v);
+		if($v) {
+			$v->{'alive'}=0;
+			ball::drop($v);
+		}
 
-		rank::score($p->{'team'}, 1) if(map::mode('tdm', '1dm'));
+		if($p && !$p->{'isBot'}) {
+			$p->{'stats'}{'powerkill'}++ if($v->{'carrier'});
+			$p->{'stats'}{'kills'}++;
+			$p->{'stats'}{'kill'}{$v->{'nickname'}}++ unless($v->{'isBot'});
 
-		$p->{'stats'}{'kills'}++;
+			records::help($p, 2);
+		}
 
-		return if($v->{'isBot'});
+		if($v && !$v->{'isBot'}) {
+			$v->{'stats'}{'fumble'}++ if($v->{'carrier'});
+			$v->{'stats'}{'played'}+=$e->{'time'}-$v->{'spawn'};
+			$v->{'stats'}{'died'}++;
 
-		$p->{'stats'}{'kill'}{$v->{'nickname'}}++;
+			plus::killed($v);
+			plus::check_spawn($v);
 
-		$v->{'stats'}{'played'}+=$e->{'time'}-$v->{'spawn'};
-		$v->{'stats'}{'died'}++;
-
-		plus::killed($v);
-		plus::check_spawn($v);
-
-		if($spawn_mode eq 'died' || $spawn_mode eq 'crash') {
-			if(	$e->{'player'}==-1 &&
-				$e->{'source'} eq 'plane' &&
-				$e->{'time'}-$v->{'spawn'} < 1750
-			) { #crash
-				$p->{'stats'}{'crash'}++;
-				if(rand(2)<1) {
-					$e->{'victimVelocityX'}*=-10;
-				} else {
-					$e->{'victimVelocityY'}*=-10;
+			if($spawn_mode eq 'died' || $spawn_mode eq 'crash') {
+				if(	$e->{'player'}==-1 &&
+					$e->{'source'} eq 'plane' &&
+					$e->{'time'}-$v->{'spawn'} < 1750
+				) { #crash
+					$p->{'stats'}{'crash'}++;
+					if(rand(2)<1) {
+						$e->{'victimVelocityX'}*=-10;
+					} else {
+						$e->{'victimVelocityY'}*=-10;
+					}
 				}
+				plus::spawn_here($v,
+					$e->{'victimPositionX'}, $e->{'victimPositionY'},
+					$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
+			} elsif($spawn_mode=~m/near|after/) {
+				plus::spawn_near($v,
+					$e->{'victimPositionX'}, $e->{'victimPositionY'});
 			}
-			plus::spawn_here($v,
-				$e->{'victimPositionX'}, $e->{'victimPositionY'},
-				$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
-		} elsif($spawn_mode=~m/near|after/) {
-			plus::spawn_near($v,
-				$e->{'victimPositionX'}, $e->{'victimPositionY'});
 		}
 
-		return unless($p);
-		return unless($e->{'source'}=~m/plane/);
-		return if($p->{'isBot'});
+		return unless($p && $v);
+		return if($p->{'isBot'} || $v->{'isBot'});
+		return unless($e->{'source'} eq 'plane');
 
 		if(map::type('mdg')) {
 			if(map::mode('ball')) {
@@ -10287,7 +10289,6 @@ core protecting the flag.
 			chat::snark($v, "$v->{'nickname'} says Ouch!!");
 		}
 
-		records::help($p, 2);
 		if($p->{'team'} == $v->{'team'}) {
 			records::help($p, -4);
 			chat::snark($v, "$v->{'nickname'} was killed by friendly fire");
