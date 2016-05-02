@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.71';
+my($VERSION)='2.72';
 
 =head1 NAME
 
@@ -1243,6 +1243,14 @@ Supported databases are SQLite and PostgreSQL.
 		$Dbh->commit();
 	}
 
+	sub protect {
+		local($_)=@_;
+
+		s/"/""/g;
+
+		return($_);
+	}
+
 	sub enabled {
 		return(defined($Type));
 	}
@@ -1346,6 +1354,7 @@ Supported databases are SQLite and PostgreSQL.
 			if($v=~m/^[\d.]+$/) {
 				push(@values, $v);
 			} else {
+				$v=&protect($v);
 				push(@values, '"'.$v.'"');
 			}
 		}
@@ -1367,6 +1376,7 @@ Supported databases are SQLite and PostgreSQL.
 			if($v=~m/^[\d.]+$/) {
 				push(@pairs, "$k=$v");
 			} else {
+				$v=&protect($v);
 				push(@pairs, sprintf('%s="%s"', $k, $v));
 			}
 		}
@@ -4188,7 +4198,6 @@ are pulled from ladder, and changes in ladder are reflected here.
 		return unless($data->{'Vapor'} && $data->{'AKA'});
 
 		$data->{'AKA'}=~s/^\@//;
-		$data->{'AKA'}=~s/"/""/g;
 
 		($other)=db::select('player', qq{name="$data->{'AKA'}"});
 		($player)=db::select('player', qq{vaporid="$data->{'Vapor'}"});
