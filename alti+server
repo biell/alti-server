@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.72';
+my($VERSION)='2.73';
 
 =head1 NAME
 
@@ -3988,10 +3988,10 @@ is updated with them as the games progress.
 	sub name {
 		my($p)=@_;
 
-		if(length($p->{'name'})) {
-			return($p->{'name'});
+		if($p) {
+			return($p->{'name'} || $p->{'nickname'});
 		} else {
-			return($p->{'nickname'});
+			return();
 		}
 	}
 
@@ -4613,7 +4613,7 @@ they make the top 5.
 				push(@holder, join(', ', map(player::name($_), @nicks)));
 				if($holder[-1]=~m/, (,|$)/) { #DEBUG trailing comma issue
 					foreach my $rp (@nicks) {
-						ui::slog('record:', $rp, $rp->{'name'}, $rp->{'nickname'}, $Helpers{$rp});
+						ui::slog('record:', $Helpers{$rp}, json::encode($rp));
 					}
 				}
 			}
