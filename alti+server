@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.68';
+my($VERSION)='2.69';
 
 =head1 NAME
 
@@ -4589,7 +4589,7 @@ they make the top 5.
 			if(@nicks) {
 				splice(@nicks, 5, scalar(@nicks), $etal) if(@nicks>5);
 				push(@holder, join(', ', map(player::name($_), @nicks)));
-				if($holder[-1]=~m/, $/) { #DEBUG trailing comma issue
+				if($holder[-1]=~m/, (,|$)/) { #DEBUG trailing comma issue
 					foreach my $rp (@nicks) {
 						ui::slog('record:', $rp, $rp->{'name'}, $rp->{'nickname'}, $Helpers{$rp});
 					}
