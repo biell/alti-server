@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.69';
+my($VERSION)='2.70';
 
 =head1 NAME
 
@@ -3978,7 +3978,11 @@ is updated with them as the games progress.
 	sub name {
 		my($p)=@_;
 
-		return($p->{'name'} || $p->{'nickname'});
+		if($p->{'name'}=~m/\w/) {
+			return($p->{'name'});
+		} else {
+			return($p->{'nickname'});
+		}
 	}
 
 	sub rename {
@@ -4103,6 +4107,18 @@ is updated with them as the games progress.
 
 	sub count {
 		return(scalar(&list(@_)));
+	}
+
+	sub info {
+		my(@info)=();
+
+		foreach my $player (&list) {
+			push(@info, { map(($_ => $player->{$_}),  qw(
+				player vaporId name nickname team
+			))});
+		}
+
+		return(@info);
 	}
 
 	sub handicap {
@@ -10388,6 +10404,8 @@ core protecting the flag.
 		my($player, $n);
 
 		queue::clear;
+
+		ui::slog(json::encode([player::info]));
 
 		if(config::option('awards') && player::count>2) {
 			if($stats{'Crashes'} && List::Util::max(@{$stats{'Crashes'}})>8) {
