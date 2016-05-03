@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='2.74';
+my($VERSION)='2.76';
 
 =head1 NAME
 
@@ -9707,7 +9707,7 @@ core protecting the flag.
 
 		altbouncer::add($p);
 
-		if($p->{'name'}) {
+		if($p->{'name'} && $p->{'name'} ne $p->{'nickname'}) {
 			$name="$p->{'nickname'}($p->{'name'})";
 		} else {
 			$name=$p->{'nickname'};

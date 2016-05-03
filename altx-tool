@@ -2,7 +2,7 @@
 
 use strict;
 
-my($VERSION)='1.49';
+my($VERSION)='2.76';
 
 =head1 NAME
 
@@ -20,7 +20,7 @@ use Pod::Usage;
 
 =head1 SYNOPSIS
 
-altx-tool <-xcutphHV> <-I exe> <-d dir> <file> [name1] [name2] [...]
+altx-tool <-xcutpehHV> <-I exe> <-d dir> <file> [name1] [name2] [...]
 
 =head2 Options
 
@@ -56,6 +56,14 @@ file is listed on the command-line after the archive file, it will be
 used as the F<plus.txt> file.  Otherwise, an editor will be started
 on a temporary file to be included into the map archive.
 
+=item --alte or -e
+
+Edit the XML file describing the map.  The map's F<.alte> file will be
+extracted to a temporary location, and an editor will be started.  When
+the editor is closed, the file will be added back to the map archive file
+if it was changed.  Otherwise, it will be discarded and the original
+map file will be left untouched. 
+
 =item --lzma=/path/to/lzma  or -I /path/to/lzma
 
 Specify the path to the C<lzma> binary (which comes with the xz compression
@@ -90,6 +98,7 @@ my(@OPTIONS)=qw(
 	update|u
 	list|t
 	plus|p
+	alte|edit|e
 	lzma|use-compress-program|I=s
 	directory|d=s
 	help|h
@@ -135,6 +144,11 @@ expected in an archive tool.  Additionally, it also supports extended
 functionality to support C<alti+server> systems.
 
 =cut
+
+sub age {
+	my(@st)=stat($_[0]);
+	return($st[9]);
+}
 
 sub pipe_seek {
 	my($fh, $seek)=@_;
@@ -448,6 +462,102 @@ are used to execute the text editor for Altitude+ configuration.
 
 =cut
 
+sub edit {
+	my($archive, $infile)=@_;
+	my($editor)=$ENV{'EDITOR'} || $ENV{'VISUAL'} || 'vi';
+	my($write, $tmpfile)=File::Temp::tempfile('alteXXXXXXXX', DIR => '/var/tmp');
+	my($read, $import)=(IO::Handle->new, IO::Handle->new);
+	my($found, $time)=(0, 0);
+	my($altefile, $files, $sizes, $index);
+	my($buf);
+
+	($read, $files, $sizes)=&open_archive($archive);
+
+	for($index=0; $index<@$files; $index++) {
+		if($files->[$index]=~m/\.alte$/) {
+			$altefile=$files->[$index];
+			$found=1;
+			last;
+		}
+
+		&pipe_seek($read, $sizes->[$index]);
+	}
+
+	if($found) {
+		read($read, $buf, $sizes->[$index]);
+		$buf=~s/\s*$/\n/s;
+		print $write $buf;
+
+		close($read);
+		($read, $files, $sizes)=&open_archive($archive);
+
+		$files->[$index]=undef;
+		$sizes->[$index]*=-1;
+	} else {
+		close($read);
+		print STDERR "Not a valid map archive, no .alte file found\n";
+		exit(1);
+	}
+	close($write);
+	
+	if($infile) {
+		open($import, '<', $infile);
+		open($write, '>', $tmpfile);
+
+		while(read($import, $buf, 4096)) {
+			print $write $buf;
+		}
+
+		close($write);
+		close($import);
+	} else {
+		$time=&age($tmpfile);
+		system($editor, $tmpfile);
+		return unless(-s $tmpfile || $found);
+		return if(&age($tmpfile)==$time);
+	}
+
+	$archive=~s/\.altx$//;
+
+	open($write, '>', $archive);
+
+	print $write pack('V', scalar(@$files)-$found+1);
+
+	foreach my $file (@$files, $altefile) {
+		next unless($file);
+
+		$file=~s|^\./||;
+		print $write pack('v', length($file)), $file;
+	}
+	foreach my $size (@$sizes, -s $tmpfile) {
+		print $write pack('V', $size) unless($size<0);
+	}
+
+	foreach my $size (@$sizes) {
+		if($size<0) {
+			&pipe_seek($read, -$size);
+		} else {
+			while($size>8192) {
+				$size-=read($read, $buf, 8192);
+				print $write $buf;
+			}
+			read($read, $buf, $size);
+			print $write $buf;
+		}
+	}
+	close($read);
+
+	open($read, '<', $tmpfile);
+	while(read($read, $buf, 8192)) {
+		print $write $buf;
+	}
+	close($read);
+	unlink($tmpfile);
+
+	close($write);
+	system($ARG{'lzma'}, '-zf', '-S', '.altx', $archive);
+}
+
 sub plus {
 	my($archive, $infile)=@_;
 	my($editor)=$ENV{'EDITOR'} || $ENV{'VISUAL'} || 'vi';
@@ -569,6 +679,8 @@ if($ARG{'list'}) {
 	&extract(@ARGV);
 } elsif($ARG{'update'}) {
 	&update(@ARGV);
+} elsif($ARG{'alte'}) {
+	&edit(@ARGV);
 } elsif($ARG{'plus'}) {
 	&plus(@ARGV);
 }
