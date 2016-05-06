@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.76';
+my($VERSION)='2.77';
 
 =head1 NAME
 
@@ -1062,502 +1062,6 @@ L<perl(1)> should be used to ensure basic operation.
 		return(m/(Turbocharger|Ultracapacitor|Reverse Thrust|Ace Instincts)/);
 	}
 
-}
-
-
-=head2 Backends
-
-Some data can be stored in a database.  B<alti+server> will automatically
-enable more liberal data collection and storage when a database backend
-is present than it otherwise would.  Without a database backend, data is
-stored in standard file formats (json or csv) so it can be accessed easily
-when needed.  This is slow, and requires a lot of memory.  As such,
-B<alti+server> runs in a lean mode.  With a proper database backend, more
-information can be kept and accesed efficiently.
-
-Supported databases are SQLite and PostgreSQL.
-
-=cut
-
-{	package db;
-
-	my($Dbh)=undef;
-	my(@connect)=();
-	my($Type)=undef;
-
-	if($OPTIONS{'db_type'}=~m/Pg/i) {
-		@connect=(
-			"dbi:Pg:dbname=$OPTIONS{'db_name'}",
-			$OPTIONS{'db_user'},
-			utils::get_value($OPTIONS{'db_pass'}),
-			{'PrintError' => $OPTIONS{'debug'}}
-		);
-		ui::slog('Pg Not yet supported (sorry)');
-	} elsif($OPTIONS{'db_type'}=~m/SQLite/i) {
-		unless($OPTIONS{'db_name'}=~m|/|) {
-			$OPTIONS{'db_name'}="$INSTALL_ROOT/servers/$OPTIONS{'db_name'}";
-		}
-		@connect=(
-			"dbi:SQLite:dbname=$OPTIONS{'db_name'}",
-			'',
-			'',
-			{'PrintError' => $OPTIONS{'debug'}}
-		);
-		if($Dbh=eval('use DBI; DBI->connect(@connect)')) {
-			ui::slog('using DBD::SQLite (ok)');
-			$Type='sqlite';
-		} else {
-			ui::slog('No database libraries, falling back to stash-only mode');
-			$Type=undef;
-		}
-	}
-
-	sub init {
-		my(@stmts)=(
-			qq{
-				CREATE TABLE IF NOT EXISTS info (
-					key TEXT PRIMARY KEY,
-					value TEXT
-				);
-			},
-	
-			qq{
-				CREATE TABLE IF NOT EXISTS player (
-					vaporid CHAR(36) PRIMARY KEY,
-					id INTEGER,
-					name TEXT,
-					nickname TEXT,
-					seen INTEGER,
-					ip TEXT,
-					block INTEGER
-				);
-			},
-
-			qq{
-				CREATE TABLE IF NOT EXISTS rank (
-					id INTEGER,
-					type TEXT,
-					rating INTEGER,
-					differential REAL,
-					PRIMARY KEY (id, type),
-					FOREIGN KEY (id) REFERENCES player(id)
-				);
-			},
-
-			qq{
-				CREATE TABLE IF NOT EXISTS aliases (
-					vaporid CHAR(36),
-					nickname TEXT,
-					PRIMARY KEY (vaporid, nickname),
-					FOREIGN KEY (vaporid) REFERENCES player(vaporid)
-				);
-			},
-
-			qq{
-				CREATE TABLE IF NOT EXISTS records (
-					id INTEGER PRIMARY KEY,
-					map TEXT,
-					record REAL,
-					date INTEGER,
-					players TEXT
-				);
-			},
-
-			qq{
-				CREATE INDEX IF NOT EXISTS idx_map_records ON records (map);
-			},
-		);
-
-		foreach my $stmt (@stmts) {
-			$Dbh->do($stmt);
-		}
-	}
-
-	sub upgrade_v2 {
-		my(@stmts)=(
-			qq{
-				ALTER TABLE player RENAME TO player_orig;
-			},
-			qq{
-				CREATE TABLE player (
-					vaporid CHAR(36) PRIMARY KEY,
-					id INTEGER,
-					name TEXT,
-					nickname TEXT,
-					seen INTEGER,
-					ip TEXT,
-					block INTEGER
-				);
-			},
-			qq{
-				INSERT INTO player
-					(vaporid, name, nickname, seen, ip, block)
-				SELECT
-					vaporid, name, nickname, seen, ip, block
-				FROM player_orig;
-			},
-			qq{
-				DROP TABLE player_orig;
-			},
-			qq{
-				DROP TABLE rank;
-			},
-			qq{
-				CREATE TABLE rank (
-					id INTEGER,
-					type TEXT,
-					rating INTEGER,
-					differential REAL,
-					PRIMARY KEY (id, type),
-					FOREIGN KEY (id) REFERENCES player(id)
-				);
-			},
-		);
-		my($i)=100;
-		my($cols);
-
-		$Dbh->begin_work();
-		foreach my $stmt (@stmts) {
-			$Dbh->do($stmt);
-		}
-		$Dbh->commit();
-
-		$Dbh->begin_work();
-		$cols=$Dbh->selectcol_arrayref(qq{
-			SELECT DISTINCT name FROM player WHERE name IS NOT NULL;
-		});
-		foreach my $name (@$cols) {
-			$Dbh->do(qq{UPDATE player SET id=$i WHERE name="$name";});
-			$i++;
-		}
-
-		$cols=$Dbh->selectcol_arrayref(qq{
-			SELECT vaporid FROM player WHERE name IS NULL;
-		});
-		foreach my $vaporid (@$cols) {
-			$Dbh->do(qq{UPDATE player SET id=$i WHERE vaporid="$vaporid";});
-			$i++;
-		}
-
-		$Dbh->do(qq{INSERT INTO info VALUES ('nextid', $i);});
-		$Dbh->commit();
-	}
-
-	sub protect {
-		local($_)=@_;
-
-		s/"/""/g;
-
-		return($_);
-	}
-
-	sub enabled {
-		return(defined($Type));
-	}
-
-	sub shutdown {
-		if($Dbh) {
-			$Dbh->disconnect;
-			$Dbh=undef;
-		}
-	}
-
-	sub info {
-		my($key)=@_;
-
-		return(undef) unless($key);
-
-		return($Dbh->selectrow_array(
-			qq{ SELECT value FROM info WHERE key="$key"; }
-		));
-	}
-
-	sub upgrade {
-		my($version);
-
-		return unless(&enabled);
-
-		($version)=&info('version');
-
-		if(!$version) {
-			&init;
-			$Dbh->do(qq{INSERT INTO info VALUES ('version', 2);});
-		}
-
-		if($version<2) {
-			&upgrade_v2;
-			$Dbh->do(qq{UPDATE info SET value=2 WHERE key='version';});
-		}
-	}
-
-	sub type {
-		return($Type);
-	}
-
-	sub begin {
-		$Dbh->begin_work();
-	}
-
-	sub commit {
-		$Dbh->commit();
-	}
-
-	sub query {
-		return(undef) unless(&enabled);
-
-		return($Dbh->selectall_arrayref(join(' ', @_)));
-	}
-
-	sub count {
-		my($table, $where)=@_;
-		my($count)=undef;
-
-		return(undef) unless(&enabled);
-		return(undef) unless($table && $where);
-
-		($count)=$Dbh->selectrow_array(
-				qq{SELECT COUNT(1) FROM $table WHERE $where});
-
-		return($count);
-	}
-
-	sub select {
-		my($table, $where)=@_;
-		my(@rows)=();
-		my($sth, $row);
-
-		return(undef) unless(&enabled);
-		return(undef) unless($table && $where);
-
-		$sth=$Dbh->prepare("SELECT * FROM $table WHERE $where");
-		$sth->execute;
-
-		while($row=$sth->fetchrow_hashref) {
-			push(@rows, $row);
-		}
-
-		$sth->finish;
-
-		return(@rows);
-	}
-
-	sub insert {
-		my($table, $set)=@_;
-		my(@keys, @values);
-		my($keys, $values);
-
-		return(undef) unless(&enabled);
-		return(undef) unless($table && ref($set) eq 'HASH' && %$set);
-
-		while(my($k, $v)=each(%$set)) {
-			push(@keys, $k);
-			if($v=~m/^[\d.]+$/) {
-				push(@values, $v);
-			} else {
-				$v=&protect($v);
-				push(@values, '"'.$v.'"');
-			}
-		}
-		$keys=join(', ', @keys);
-		$values=join(', ', @values);
-
-		return($Dbh->do(qq{INSERT INTO $table ($keys) VALUES($values);}));
-	}
-
-	sub update {
-		my($table, $where, $set)=@_;
-		my(@pairs);
-		my($pairs);
-
-		return(undef) unless(&enabled);
-		return(undef) unless($table && $where && ref($set) eq 'HASH' && %$set);
-
-		while(my($k, $v)=each(%$set)) {
-			if($v=~m/^[\d.]+$/) {
-				push(@pairs, "$k=$v");
-			} else {
-				$v=&protect($v);
-				push(@pairs, sprintf('%s="%s"', $k, $v));
-			}
-		}
-		$pairs=join(', ', @pairs);
-
-		return($Dbh->do(qq{UPDATE $table SET $pairs WHERE $where;}));
-	}
-
-	sub upsert {
-		my($table, $where, $set)=@_;
-		my($count);
-
-		return(undef) unless(&enabled);
-		return(undef) unless($table && $where && $set);
-
-		$count=&count($table, $where);
-
-		if($count<1) {
-			&insert($table, $set);
-		} elsif($count==1) {
-			&update($table, $where, $set);
-		} else {
-			ui::slog('Use db::update if you want to update multiple rows');
-			return(undef);
-		}
-
-	}
-
-	sub delete {
-		my($table, $where)=@_;
-		my($rows);
-
-		return(undef) unless(&enabled);
-		return(undef) unless($table && $where);
-
-		return($Dbh->do(qq{DELETE FROM $table WHERE $where;}));
-	}
-
-	#Table interface:
-	sub nextid {
-		my($next)=&select('info', qq{key='nextid'});
-
-		&update('info', qq{key='nextid'}, { 'value' => $next->{'value'}+1 });
-
-		return($next->{'value'});
-	}
-
-	sub psearch {
-		my($search)=lc($_[0]);
-		my(@player)=();
-		my($sth, $row);
-
-		if($search=~m/^\d+$/) {
-			@player=db::select('player', qq{ id='$search' });
-		} else {
-			@player=db::select('player', qq{
-					lower(name)     = '$search' OR
-					lower(nickname) = '$search' OR
-					lower(vaporid)  = '$search' ;
-				});
-			unless(@player and length($search)>2) {
-				@player=db::select('player', qq{
-						lower(name)     LIKE '$search\%' OR
-						lower(nickname) LIKE '$search\%' OR
-						lower(vaporid)  LIKE '\%$search' ;
-					});
-			}
-		}
-
-		if(wantarray) {
-			return(@player);
-		} else {
-			return(shift(@player));
-		}
-	}
-
-	sub player {
-		my($p, $update)=@_;
-		my($row);
-
-		if($update) {
-			&upsert('player', qq{vaporid="$p->{'vaporId'}"}, $update);
-		} else {
-			($row)=&select('player', qq{vaporid="$p->{'vaporId'}"});
-			return($row);
-		}
-	}
-
-	sub aliases {
-		my($p, $alias)=@_;
-		my($cols);
-
-		if($alias) {
-			&insert('aliases', {
-					'vaporid'		=> $p->{'vaporId'},
-					'nickname'	=> $alias,
-				});
-		} else {
-			$cols=$Dbh->selectcol_arrayref(qq{
-				SELECT nickname FROM aliases WHERE vaporid="$p->{'vaporId'}";
-			});
-
-			if(ref($cols) eq 'ARRAY') {
-				return(@$cols);
-			} else {
-				return();
-			}
-		}
-	}
-
-	sub records {
-		my($map, $record)=@_;
-
-		if($record) {
-			&insert('records', {
-					'map'     => $map,
-					'record'  => $record->[0],
-					'date'    => $record->[1],
-					'players' => $record->[2],
-				});
-		} else {
-			return($Dbh->selectall_arrayref(qq{
-					SELECT record,date,players
-						FROM records
-						WHERE map="$map"
-						ORDER BY record;
-				}));
-		}
-	}
-
-	sub extra_records {
-		my($map)=@_;
-		my($cols);
-
-		$cols=$Dbh->selectcol_arrayref(qq{
-			SELECT id FROM records
-				WHERE map="$map"
-				ORDER BY record
-				LIMIT 16 OFFSET 100;
-		});
-
-		if(ref($cols) eq 'ARRAY') {
-			return(@$cols);
-		} else {
-			return();
-		}
-	}
-
-	sub rank {
-		my($p, $type, $value)=@_;
-		my($rating)=&select('rank', qq{id="$p->{'id'}" AND type="$type"});
-		my($init)=800;
-
-		unless(ref($rating) eq 'HASH') {
-			if($p->{'aceRank'}) {
-				$init=740+$p->{'level'};
-			} else {
-				$init=620+3*$p->{'level'};
-			}
-
-			$rating={
-				'id'           => $p->{'id'},
-				'type'         => $type,
-				'rating'       => $init,
-				'differential' => 0,
-			};
-			&insert('rank', $rating);
-		}
-
-		if($value) {
-			$rating->{'rating'}+=int($value);
-			$rating->{'differential'}=sprintf("%.1f",
-				$rating->{'differential'}+$p->{'stats'}{'differential'});
-
-			$rating->{'rating'}=1 if($rating->{'rating'}<1);
-
-			&update('rank', qq{id="$p->{'id'}" AND type="$type"}, $rating);
-		}
-
-		return($rating->{'rating'});
-	}
 }
 
 
@@ -2904,6 +2408,542 @@ has occured.  After too many infractions, the player is kicked by the server.
 	},
 );
 
+
+=head2 Backends
+
+Some data can be stored in a database.  B<alti+server> will automatically
+enable more liberal data collection and storage when a database backend
+is present than it otherwise would.  Without a database backend, data is
+stored in standard file formats (json or csv) so it can be accessed easily
+when needed.  This is slow, and requires a lot of memory.  As such,
+B<alti+server> runs in a lean mode.  With a proper database backend, more
+information can be kept and accesed efficiently.
+
+Supported databases are SQLite and PostgreSQL.
+
+=cut
+
+{	package db;
+
+	my($Dbh)=undef;
+	my(@connect)=();
+	my($Type)=undef;
+
+	sub init {
+		if(config::option('db_type')=~m/Pg/i) {
+			@connect=(
+				'dbi:Pg:dbname='.config::option('db_name'),
+				config::option('db_user'),
+				utils::get_value(config::option('db_pass')),
+				{'PrintError' => config::option('debug')}
+			);
+			if($Dbh=eval('use DBI; DBI->connect(@connect)')) {
+				ui::slog('using DBD::Pg (ok)');
+				$Type='pg';
+			} else {
+				ui::slog('No database libraries, falling back to stash-only mode');
+				$Type=undef;
+			}
+		} elsif(config::option('db_type')=~m/SQLite/i) {
+			if(config::option('db_name')=~m|/|) {
+				@connect=(
+					'dbi:SQLite:dbname='.config::option('db_name'),
+					'',
+					'',
+					{'PrintError' => config::option('debug')}
+				);
+			} else {
+				@connect=(
+					'dbi:SQLite:dbname='."$INSTALL_ROOT/servers/".config::option('db_name'),
+					'',
+					'',
+					{'PrintError' => config::option('debug')}
+				);
+			}
+
+			if($Dbh=eval('use DBI; DBI->connect(@connect)')) {
+				ui::slog('using DBD::SQLite (ok)');
+				$Type='sqlite';
+			} else {
+				ui::slog('No database libraries, falling back to stash-only mode');
+				$Type=undef;
+			}
+		}
+	}
+
+	sub reconnect {
+		my(%attrs)=@_;
+
+		foreach my $attr (keys(%attrs)) {
+			$Dbh->{$attr}=$attrs{$attr};
+		}
+
+		undef($Dbh);
+
+		&init;
+	}
+
+	sub create {
+		my(@stmts)=(
+			qq{
+				CREATE TABLE IF NOT EXISTS info (
+					key TEXT PRIMARY KEY,
+					value TEXT
+				);
+			},
+	
+			qq{
+				CREATE TABLE IF NOT EXISTS player (
+					vaporid CHAR(36) PRIMARY KEY,
+					id INTEGER,
+					name TEXT,
+					nickname TEXT,
+					seen INTEGER,
+					ip TEXT,
+					block INTEGER
+				);
+			},
+
+			qq{
+				CREATE TABLE IF NOT EXISTS rank (
+					id INTEGER,
+					type TEXT,
+					rating INTEGER,
+					differential REAL,
+					PRIMARY KEY (id, type)
+				);
+			},
+
+			qq{
+				CREATE TABLE IF NOT EXISTS aliases (
+					vaporid CHAR(36),
+					nickname TEXT,
+					PRIMARY KEY (vaporid, nickname),
+					FOREIGN KEY (vaporid) REFERENCES player(vaporid)
+				);
+			},
+
+			qq{
+				CREATE TABLE IF NOT EXISTS records (
+					id INTEGER PRIMARY KEY,
+					map TEXT,
+					record REAL,
+					date INTEGER,
+					players TEXT
+				);
+			},
+
+			qq{
+				CREATE INDEX IF NOT EXISTS idx_map_records ON records (map);
+			},
+		);
+
+		foreach my $stmt (@stmts) {
+			if($Type=~m/Pg/i) {
+				$stmt=~s/INTEGER PRIMARY KEY/SERIAL PRIMARY KEY/;
+			}
+			$Dbh->do($stmt);
+		}
+	}
+
+	sub upgrade_v2 {
+		my(@stmts)=(
+			qq{
+				ALTER TABLE player RENAME TO player_orig;
+			},
+			qq{
+				CREATE TABLE player (
+					vaporid CHAR(36) PRIMARY KEY,
+					id INTEGER,
+					name TEXT,
+					nickname TEXT,
+					seen INTEGER,
+					ip TEXT,
+					block INTEGER
+				);
+			},
+			qq{
+				INSERT INTO player
+					(vaporid, name, nickname, seen, ip, block)
+				SELECT
+					vaporid, name, nickname, seen, ip, block
+				FROM player_orig;
+			},
+			qq{
+				DROP TABLE player_orig;
+			},
+			qq{
+				DROP TABLE rank;
+			},
+			qq{
+				CREATE TABLE IF NOT EXISTS rank (
+					id INTEGER,
+					type TEXT,
+					rating INTEGER,
+					differential REAL,
+					PRIMARY KEY (id, type),
+					FOREIGN KEY (id) REFERENCES player(id)
+				);
+			},
+		);
+		my($i)=100;
+		my($cols);
+
+		if($Type=~m/Pg/i) {
+			$Dbh->do(qq{ ALTER TABLE aliases DROP CONSTRINT vaporid; });
+		}
+
+		$Dbh->begin_work();
+		foreach my $stmt (@stmts) {
+			$Dbh->do($stmt);
+		}
+		$Dbh->commit();
+
+		$Dbh->begin_work();
+		$cols=$Dbh->selectcol_arrayref(qq{
+			SELECT DISTINCT name FROM player WHERE name IS NOT NULL;
+		});
+		foreach my $name (@$cols) {
+			$Dbh->do(qq{UPDATE player SET id=$i WHERE name='$name';});
+			$i++;
+		}
+
+		$cols=$Dbh->selectcol_arrayref(qq{
+			SELECT vaporid FROM player WHERE name IS NULL;
+		});
+		foreach my $vaporid (@$cols) {
+			$Dbh->do(qq{UPDATE player SET id=$i WHERE vaporid='$vaporid';});
+			$i++;
+		}
+
+		$Dbh->do(qq{INSERT INTO info VALUES ('nextid', $i);});
+		$Dbh->commit();
+	}
+
+	sub protect {
+		local($_)=@_;
+
+		s/'/''/g;
+
+		return($_);
+	}
+
+	sub enabled {
+		return(defined($Type));
+	}
+
+	sub shutdown {
+		if($Dbh) {
+			$Dbh->disconnect;
+			$Dbh=undef;
+		}
+	}
+
+	sub info {
+		my($key)=@_;
+
+		return(undef) unless($key);
+
+		return($Dbh->selectrow_array(
+			qq{ SELECT value FROM info WHERE key='$key'; }
+		));
+	}
+
+	sub upgrade {
+		my($version);
+
+		return unless(&enabled);
+
+		($version)=&info('version');
+
+		if(!$version) {
+			&create;
+			$Dbh->do(qq{INSERT INTO info VALUES ('version', 2);});
+			$version=2;
+		}
+
+		if($version<2) {
+			&upgrade_v2;
+			$Dbh->do(qq{UPDATE info SET value=2 WHERE key='version';});
+		}
+	}
+
+	sub type {
+		return($Type);
+	}
+
+	sub begin {
+		$Dbh->begin_work();
+	}
+
+	sub commit {
+		$Dbh->commit();
+	}
+
+	sub query {
+		return(undef) unless(&enabled);
+
+		return($Dbh->selectall_arrayref(join(' ', @_)));
+	}
+
+	sub count {
+		my($table, $where)=@_;
+		my($count)=undef;
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where);
+
+		($count)=$Dbh->selectrow_array(
+				qq{SELECT COUNT(1) FROM $table WHERE $where;});
+
+		return($count);
+	}
+
+	sub select {
+		my($table, $where)=@_;
+		my(@rows)=();
+		my($sth, $row);
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where);
+
+		$sth=$Dbh->prepare(qq{ SELECT * FROM $table WHERE $where; });
+		$sth->execute;
+
+		while($row=$sth->fetchrow_hashref) {
+			push(@rows, $row);
+		}
+
+		$sth->finish;
+
+		return(@rows);
+	}
+
+	sub insert {
+		my($table, $set)=@_;
+		my(@keys, @values);
+		my($keys, $values);
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && ref($set) eq 'HASH' && %$set);
+
+		while(my($k, $v)=each(%$set)) {
+			push(@keys, $k);
+			if($v=~m/^[\d.]+$/) {
+				push(@values, $v);
+			} else {
+				$v=&protect($v);
+				push(@values, "'".$v."'");
+			}
+		}
+		$keys=join(', ', @keys);
+		$values=join(', ', @values);
+
+		return($Dbh->do(qq{INSERT INTO $table ($keys) VALUES($values);}));
+	}
+
+	sub update {
+		my($table, $where, $set)=@_;
+		my(@pairs);
+		my($pairs);
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where && ref($set) eq 'HASH' && %$set);
+
+		while(my($k, $v)=each(%$set)) {
+			if($v=~m/^[\d.]+$/) {
+				push(@pairs, "$k=$v");
+			} else {
+				$v=&protect($v);
+				push(@pairs, sprintf("%s='%s'", $k, $v));
+			}
+		}
+		$pairs=join(', ', @pairs);
+
+		return($Dbh->do(qq{UPDATE $table SET $pairs WHERE $where;}));
+	}
+
+	sub upsert {
+		my($table, $where, $set)=@_;
+		my($count);
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where && $set);
+
+		$count=&count($table, $where);
+
+		if($count<1) {
+			&insert($table, $set);
+		} elsif($count==1) {
+			&update($table, $where, $set);
+		} else {
+			ui::slog('Use db::update if you want to update multiple rows');
+			return(undef);
+		}
+
+	}
+
+	sub delete {
+		my($table, $where)=@_;
+		my($rows);
+
+		return(undef) unless(&enabled);
+		return(undef) unless($table && $where);
+
+		return($Dbh->do(qq{DELETE FROM $table WHERE $where;}));
+	}
+
+	#Table interface:
+	sub nextid {
+		my($next)=&select('info', qq{key='nextid'});
+
+		if($next) {
+			&update('info', qq{key='nextid'}, { 'value' => $next->{'value'}+1 });
+			return($next->{'value'});
+		} else {
+			&insert('info', { 'key' => 'nextid', 'value' => 2 });
+			return(1);
+		}
+
+	}
+
+	sub psearch {
+		my($search)=lc($_[0]);
+		my(@player)=();
+		my($sth, $row);
+
+		if($search=~m/^\d+$/) {
+			@player=&select('player', qq{ id='$search' });
+		} else {
+			@player=db::select('player', qq{
+					lower(name)     = '$search' OR
+					lower(nickname) = '$search' OR
+					lower(vaporid)  = '$search' ;
+				});
+			unless(@player and length($search)>2) {
+				@player=db::select('player', qq{
+						lower(name)     LIKE '$search\%' OR
+						lower(nickname) LIKE '$search\%' OR
+						lower(vaporid)  LIKE '\%$search' ;
+					});
+			}
+		}
+
+		if(wantarray) {
+			return(@player);
+		} else {
+			return(shift(@player));
+		}
+	}
+
+	sub player {
+		my($p, $update)=@_;
+		my($row);
+
+		if($update) {
+			&upsert('player', qq{vaporid='$p->{"vaporId"}'}, $update);
+		} else {
+			($row)=&select('player', qq{vaporid='$p->{"vaporId"}'});
+			return($row);
+		}
+	}
+
+	sub aliases {
+		my($p, $alias)=@_;
+		my($cols);
+
+		if($alias) {
+			&insert('aliases', {
+					'vaporid'		=> $p->{'vaporId'},
+					'nickname'	=> $alias,
+				});
+		} else {
+			$cols=$Dbh->selectcol_arrayref(qq{
+				SELECT nickname FROM aliases WHERE vaporid='$p->{"vaporId"}';
+			});
+
+			if(ref($cols) eq 'ARRAY') {
+				return(@$cols);
+			} else {
+				return();
+			}
+		}
+	}
+
+	sub records {
+		my($map, $record)=@_;
+
+		if($record) {
+			&insert('records', {
+					'map'     => $map,
+					'record'  => $record->[0],
+					'date'    => $record->[1],
+					'players' => $record->[2],
+				});
+		} else {
+			return($Dbh->selectall_arrayref(qq{
+					SELECT record,date,players
+						FROM records
+						WHERE map='$map'
+						ORDER BY record;
+				}));
+		}
+	}
+
+	sub extra_records {
+		my($map)=@_;
+		my($cols);
+
+		$cols=$Dbh->selectcol_arrayref(qq{
+			SELECT id FROM records
+				WHERE map='$map'
+				ORDER BY record
+				LIMIT 16 OFFSET 100;
+		});
+
+		if(ref($cols) eq 'ARRAY') {
+			return(@$cols);
+		} else {
+			return();
+		}
+	}
+
+	sub rank {
+		my($p, $type, $value)=@_;
+		my($rating)=&select('rank', qq{id='$p->{"id"}' AND type='$type'});
+		my($init)=800;
+
+		unless(ref($rating) eq 'HASH') {
+			if($p->{'aceRank'}) {
+				$init=740+$p->{'level'};
+			} else {
+				$init=620+3*$p->{'level'};
+			}
+
+			$rating={
+				'id'           => $p->{'id'},
+				'type'         => $type,
+				'rating'       => $init,
+				'differential' => 0,
+			};
+			&insert('rank', $rating);
+		}
+
+		if($value) {
+			$rating->{'rating'}+=int($value);
+			$rating->{'differential'}=sprintf("%.1f",
+				$rating->{'differential'}+$p->{'stats'}{'differential'});
+
+			$rating->{'rating'}=1 if($rating->{'rating'}<1);
+
+			&update('rank', qq{id='$p->{"id"}' AND type='$type'}, $rating);
+		}
+
+		return($rating->{'rating'});
+	}
+}
+
+
 =head2 AltBouncer
 
 Keep AltBouncer up-to-date.  If the C<altBouncer> configuration option is
@@ -3395,6 +3435,10 @@ in the background, but only one backgrounded process may run at a time.
 							$Child=1;
 							close($Pread);
 							ui::redirect($Pwrite);
+
+							if(db::enabled) {
+								db::reconnect('InactiveDestroy' => 1);
+							}
 
 							$Queue{$id}[2]->();
 
@@ -4007,7 +4051,7 @@ is updated with them as the games progress.
 		db::insert('aliases',
 			{ 'vaporid' => $p->{'vaporId'}, 'nickname' => $new });
 
-		db::update('player', qq{ vaporid="$p->{'vaporId'}" },
+		db::update('player', qq{ vaporid='$p->{"vaporId"}' },
 			{ 'nickname' => $new });
 	}
 
@@ -4199,8 +4243,8 @@ are pulled from ladder, and changes in ladder are reflected here.
 
 		$data->{'AKA'}=~s/^\@//;
 
-		($other)=db::select('player', qq{name="$data->{'AKA'}"});
-		($player)=db::select('player', qq{vaporid="$data->{'Vapor'}"});
+		($other)=db::select('player', qq{name='$data->{"AKA"}'});
+		($player)=db::select('player', qq{vaporid='$data->{"Vapor"}'});
 
 		if(ref($player) && $player->{'id'}) {
 			$id=$player->{'id'};
@@ -4220,7 +4264,7 @@ are pulled from ladder, and changes in ladder are reflected here.
 				'block'    => $player->{'block'}//0,
 			};
 
-			db::upsert('player', qq{vaporid="$data->{'Vapor'}"}, $update);
+			db::upsert('player', qq{vaporid='$data->{"Vapor"}'}, $update);
 
 			ui::slog("Updated $data->{'Vapor'} ($nickname) to $data->{'AKA'}");
 		}
@@ -4917,7 +4961,7 @@ These rankings can also be configured to select evenly matched teams.
 			next if(exists($seen{$player->{'id'}}));
 			$seen{$player->{'id'}}=1;
 
-			($r)=db::select('rank', qq{id="$player->{'id'}" AND type="$type"});
+			($r)=db::select('rank', qq{id='$player->{"id"}' AND type='$type'});
 
 			if($r) {
 				$better=db::count('rank', qq{
@@ -9744,7 +9788,7 @@ core protecting the flag.
 		my($reason)='';
 		my($name);
 
-		if($p->{'name'}) {
+		if($p->{'name'} && $p->{'name'} ne $p->{'nickname'}) {
 			$name="$p->{'nickname'}($p->{'name'})";
 		} else {
 			$name=$p->{'nickname'};
@@ -10813,7 +10857,7 @@ also only available from the console.
 		my($lookup)=player::lookup($player->{'vaporid'});
 
 		if($player) {
-			db::update('player', qq{vaporid="$player->{'vaporid'}"}, {
+			db::update('player', qq{vaporid='$player->{'vaporid'}'}, {
 					'name'	=> $name
 				});
 
@@ -10903,7 +10947,7 @@ also only available from the console.
 			SELECT DISTINCT
 				rank.id,rating,differential,name,nickname
 			FROM rank,player
-			WHERE player.id=rank.id AND rank.type="$type"
+			WHERE player.id=rank.id AND rank.type='$type'
 			ORDER BY rank.rating
 		});
 
@@ -10987,6 +11031,7 @@ my($REQ, $SOUT, $TRIGGER, @EVENT);
 
 ui::setup_screen;
 
+db::init;
 db::upgrade;
 
 stash::upgrade;
