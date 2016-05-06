@@ -39,7 +39,7 @@ Recommended:
   2. curl
   3. perl-HTML-Parser
   4. perl-DBI
-  5. perl-DBD-SQLite
+  5. perl-DBD-SQLite OR perl-DBD-Pg
   6. xz (or on some systems xz-lzma-compat), you want the lzma binary.
 
 Optional:
