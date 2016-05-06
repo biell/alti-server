@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.77';
+my($VERSION)='2.78';
 
 =head1 NAME
 
@@ -2581,17 +2581,12 @@ Supported databases are SQLite and PostgreSQL.
 					type TEXT,
 					rating INTEGER,
 					differential REAL,
-					PRIMARY KEY (id, type),
-					FOREIGN KEY (id) REFERENCES player(id)
+					PRIMARY KEY (id, type)
 				);
 			},
 		);
 		my($i)=100;
 		my($cols);
-
-		if($Type=~m/Pg/i) {
-			$Dbh->do(qq{ ALTER TABLE aliases DROP CONSTRINT vaporid; });
-		}
 
 		$Dbh->begin_work();
 		foreach my $stmt (@stmts) {
@@ -4747,7 +4742,7 @@ they make the top 5.
 
 		if(db::enabled) {
 			$found+=db::delete('records', qq{
-					map="$map" AND round(record,$precision)=$remove
+					map='$map' AND round(record,$precision)=$remove
 				});
 		} else {
 			$records=stash::get($map, 'records');
@@ -4965,7 +4960,7 @@ These rankings can also be configured to select evenly matched teams.
 
 			if($r) {
 				$better=db::count('rank', qq{
-					type="$type" AND (
+					type='$type' AND (
 						rating>$r->{'rating'} OR (
 							rating=$r->{'rating'} AND
 							differential>$r->{'differential'}
@@ -10857,7 +10852,7 @@ also only available from the console.
 		my($lookup)=player::lookup($player->{'vaporid'});
 
 		if($player) {
-			db::update('player', qq{vaporid='$player->{'vaporid'}'}, {
+			db::update('player', qq{vaporid='$player->{"vaporid"}'}, {
 					'name'	=> $name
 				});
 
