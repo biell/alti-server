@@ -136,7 +136,22 @@ manage Alti+ game maps.
     nickname is actually shorter than that.
 
     If `player` is a queston mark `?` or the word `help`, a brief help message
-    is displayed.
+    is displayed.  Otherwise, it must be one of the following:
+
+    * **initial name** - This name is mapped to ladder AKA names (for those
+      who have them.
+    * **partial nickname** - A piece of the current nickname (or last nickname
+      used when logging into the server) of a player.
+    * **server id** - Each player has a unique ID the server uses to track
+      their multiple accounts, this ID is a simple integer and can be used
+	 to lookup a player if you know it.
+    * **vaporID** - Either the entire, or the ending part of a vaporID can
+      be used to query a player.
+    * **place** - This method is used to lookup who occupies a particular
+      place in the rankings.  `place` must be  a number followed without
+	 spaces by either `st`, `nd`, `rd`, or `th`.  You don't actually have
+	 to use the correct suffix for the server to lookup the holder of that
+	 place.
 
   * **/vote prey [player]**<br>
     If there is an mdg (Most Dangerous Game assymetric game play) map in

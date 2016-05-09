@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.80';
+my($VERSION)='2.81';
 
 =head1 NAME
 
@@ -919,12 +919,12 @@ L<perl(1)> should be used to ensure basic operation.
 	sub nth {
 		my($n)=@_;
 
-		if($n==1) {
-			return('1st');
-		} elsif($n==2) {
-			return('2nd');
-		} elsif($n==3) {
-			return('3rd');
+		if($n=~m/1$/) {
+			return($n.'st');
+		} elsif($n=~m/2$/) {
+			return($n.'nd');
+		} elsif($n=~m/3$/) {
+			return($n.'rd');
 		} else {
 			return($n.'th');
 		}
@@ -1060,6 +1060,10 @@ L<perl(1)> should be used to ensure basic operation.
 	sub is_blue {
 		local($_)=&blue(@_);
 		return(m/(Turbocharger|Ultracapacitor|Reverse Thrust|Ace Instincts)/);
+	}
+
+	sub coin_toss {
+		return(int(rand(2)));
 	}
 
 }
@@ -2702,6 +2706,9 @@ Supported databases are SQLite and PostgreSQL.
 		return(undef) unless(&enabled);
 		return(undef) unless($table && $where);
 
+		ui::slog(qq{ SELECT * FROM $table WHERE $where; })
+					if(config::option('debug'));
+
 		$sth=$Dbh->prepare(qq{ SELECT * FROM $table WHERE $where; });
 		$sth->execute;
 
@@ -2823,6 +2830,12 @@ Supported databases are SQLite and PostgreSQL.
 						lower(nickname) LIKE '$search\%' OR
 						lower(vaporid)  LIKE '\%$search'
 					});
+
+				unless(@player) {
+					@player=db::select('player', qq{
+						lower(nickname) LIKE '\%$search\%'
+					});
+				}
 			}
 		}
 
@@ -4954,8 +4967,19 @@ These rankings can also be configured to select evenly matched teams.
 
 	sub show {
 		my($p, $type, $search)=@_;
-		my($name, $r, $better);
+		my($name, $r, $better, $i);
 		my(%seen)=();
+
+		if($search=~m/^(\d+)(st|nd|rd|th)$/) {
+			$i=$1-1;
+
+			($search)=db::select('rank', qq{
+					type='$type' ORDER BY rating DESC LIMIT 1 OFFSET $i
+				});
+			$search=$search->{'id'};
+		}
+
+		return unless($search);
 
 		foreach my $player (db::psearch($search)) {
 			$name=$player->{'name'} || $player->{'nickname'};
@@ -4970,7 +4994,7 @@ These rankings can also be configured to select evenly matched teams.
 					type='$type' AND (
 						rating>$r->{'rating'} OR (
 							rating=$r->{'rating'} AND
-							differential>$r->{'differential'}
+							differential>=$r->{'differential'}
 						)
 					)
 				});
@@ -4978,7 +5002,7 @@ These rankings can also be configured to select evenly matched teams.
 				chat::whisper($p, sprintf('%s: %s rating=%d, diff=%0.1f, rank=%s',
 					$name, $type,
 					@$r{'rating', 'differential'},
-					utils::nth($better+1),
+					utils::nth($better),
 				));
 			} else {
 				chat::whisper($p, "$name: no $type rank");
@@ -5031,7 +5055,7 @@ These rankings can also be configured to select evenly matched teams.
 		} elsif(@players && $left<$right) {
 			$left+=$players[0]{'rating'};
 			push(@left, @players);
-		} elsif(@players && int(rand(2))) {
+		} elsif(@players && utils::coin_toss) {
 			$right+=$players[0]{'rating'};
 			push(@right, @players);
 		} elsif(@players) {
@@ -5039,25 +5063,25 @@ These rankings can also be configured to select evenly matched teams.
 			push(@left, @players);
 		}
 
-		if($left && $right && $left>$right && $left[-1]>$right[-1]) {
-			$left-=$left[-1];
-			$right-=$right[-1];
+		if($left && $right && (
+			($left>$right && $left[-1]>$right[-1]) ||
+			($left<$right && $left[-1]<$right[-1])
+		)) {
+			$left-=$left[-1]{'rating'};
+			$right-=$right[-1]{'rating'};
 			($left[-1], $right[-1])=($right[-1], $left[-1]);
-			$left+=$left[-1];
-			$right+=$right[-1];
-
-		} elsif($left && $right && $left<$right && $left[-1]<$right[-1]) {
-			$left-=$left[-1];
-			$right-=$right[-1];
-			($left[-1], $right[-1])=($right[-1], $left[-1]);
-			$left+=$left[-1];
-			$right+=$right[-1];
+			$left+=$left[-1]{'rating'};
+			$right+=$right[-1]{'rating'};
 		}
 
 		ui::slog("left  team ($left):", join(',', map(player::name($_), @left)));
 		ui::slog("right team ($right):", join(',', map(player::name($_), @right)));
 
-		return(\@left, \@right);
+		if(utils::coin_toss) {
+			return(\@left, \@right);
+		} else {
+			return(\@right, \@left);
+		}
 	}
 
 }
@@ -7905,7 +7929,7 @@ core protecting the flag.
 
 		if($search=~m/help|\?/i) {
 			chat::whisper($p, 'Usage: /rank <player> [mode]');
-			chat::whisper($p, ' <player> can be an initial nickname, ending vaporID, or server ID number');
+			chat::whisper($p, ' <player> can be an initial name, partial nickname, ending vaporID, server ID number, or place');
 			return;
 		}
 
@@ -10300,7 +10324,7 @@ core protecting the flag.
 					$e->{'time'}-$v->{'spawn'} < 1750
 				) { #crash
 					$p->{'stats'}{'crash'}++;
-					if(rand(2)<1) {
+					if(utils::coin_toss) {
 						$e->{'victimVelocityX'}*=-10;
 					} else {
 						$e->{'victimVelocityY'}*=-10;
