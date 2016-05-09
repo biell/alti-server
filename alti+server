@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.82';
+my($VERSION)='2.83';
 
 =head1 NAME
 
@@ -919,7 +919,9 @@ L<perl(1)> should be used to ensure basic operation.
 	sub nth {
 		my($n)=@_;
 
-		if($n=~m/1$/) {
+		if($n=~m/1[123]$/) {
+			return($n.'th');
+		} elsif($n=~m/1$/) {
 			return($n.'st');
 		} elsif($n=~m/2$/) {
 			return($n.'nd');
@@ -4974,7 +4976,9 @@ These rankings can also be configured to select evenly matched teams.
 			$i=$1-1;
 
 			($search)=db::select('rank', qq{
-					type='$type' ORDER BY rating DESC LIMIT 1 OFFSET $i
+					type='$type'
+					ORDER BY rating,differential DESC
+					LIMIT 1 OFFSET $i
 				});
 			$search=$search->{'id'};
 		}
@@ -10974,7 +10978,7 @@ also only available from the console.
 				rank.id,rating,differential,name,nickname
 			FROM rank,player
 			WHERE player.id=rank.id AND rank.type='$type'
-			ORDER BY rank.rating
+			ORDER BY rank.rating,rank.differential
 		});
 
 		chat::whisper($s, sprintf('%5s %6s %6s  %s',qw(ID RATING DIFF NAME)));
