@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.81';
+my($VERSION)='2.82';
 
 =head1 NAME
 
@@ -936,9 +936,9 @@ L<perl(1)> should be used to ensure basic operation.
 		my(@cmd);
 
 		if($string=~s/^{B64}//) {
-			$string=decode_base64($string);
+			$string=MIME::Base64::decode_base64($string);
 		} elsif($string=~s/^{xor}//) {
-			$string=decode_base64($string);
+			$string=MIME::Base64::decode_base64($string);
 			$string=~s/(.)/$1^'_'/ge;
 		}
 
