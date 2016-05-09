@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.84';
+my($VERSION)='2.85';
 
 =head1 NAME
 
@@ -2489,6 +2489,10 @@ Supported databases are SQLite and PostgreSQL.
 		&init;
 	}
 
+	sub check {
+		&reconnect unless($Dbh->ping);
+	}
+
 	sub create {
 		my(@stmts)=(
 			qq{
@@ -2545,7 +2549,7 @@ Supported databases are SQLite and PostgreSQL.
 		);
 
 		foreach my $stmt (@stmts) {
-			if($Type=~m/Pg/i) {
+			if($Type eq 'pg') {
 				$stmt=~s/INTEGER PRIMARY KEY/SERIAL PRIMARY KEY/;
 			}
 			$Dbh->do($stmt);
@@ -2621,12 +2625,13 @@ Supported databases are SQLite and PostgreSQL.
 		$Dbh->commit();
 	}
 
-	sub protect {
+	sub quote {
 		local($_)=@_;
 
 		s/'/''/g;
 
 		return($_);
+		#return($Dbh->quote($_[0]));
 	}
 
 	sub enabled {
@@ -2644,6 +2649,8 @@ Supported databases are SQLite and PostgreSQL.
 		my($key)=@_;
 
 		return(undef) unless($key);
+
+		&check;
 
 		return($Dbh->selectrow_array(
 			qq{ SELECT value FROM info WHERE key='$key'; }
@@ -2684,6 +2691,8 @@ Supported databases are SQLite and PostgreSQL.
 	sub query {
 		return(undef) unless(&enabled);
 
+		&check;
+
 		return($Dbh->selectall_arrayref(join(' ', @_)));
 	}
 
@@ -2693,6 +2702,8 @@ Supported databases are SQLite and PostgreSQL.
 
 		return(undef) unless(&enabled);
 		return(undef) unless($table && $where);
+
+		&check;
 
 		($count)=$Dbh->selectrow_array(
 				qq{SELECT COUNT(1) FROM $table WHERE $where;});
@@ -2707,6 +2718,8 @@ Supported databases are SQLite and PostgreSQL.
 
 		return(undef) unless(&enabled);
 		return(undef) unless($table && $where);
+
+		&check;
 
 		ui::slog(qq{ SELECT * FROM $table WHERE $where; })
 					if(config::option('debug'));
@@ -2731,12 +2744,14 @@ Supported databases are SQLite and PostgreSQL.
 		return(undef) unless(&enabled);
 		return(undef) unless($table && ref($set) eq 'HASH' && %$set);
 
+		&check;
+
 		while(my($k, $v)=each(%$set)) {
 			push(@keys, $k);
 			if($v=~m/^[\d.]+$/) {
 				push(@values, $v);
 			} else {
-				$v=&protect($v);
+				$v=&quote($v);
 				push(@values, "'".$v."'");
 			}
 		}
@@ -2754,11 +2769,13 @@ Supported databases are SQLite and PostgreSQL.
 		return(undef) unless(&enabled);
 		return(undef) unless($table && $where && ref($set) eq 'HASH' && %$set);
 
+		&check;
+
 		while(my($k, $v)=each(%$set)) {
 			if($v=~m/^[\d.]+$/) {
 				push(@pairs, "$k=$v");
 			} else {
-				$v=&protect($v);
+				$v=&quote($v);
 				push(@pairs, sprintf("%s='%s'", $k, $v));
 			}
 		}
@@ -2773,6 +2790,8 @@ Supported databases are SQLite and PostgreSQL.
 
 		return(undef) unless(&enabled);
 		return(undef) unless($table && $where && $set);
+
+		&check;
 
 		$count=&count($table, $where);
 
@@ -2793,6 +2812,8 @@ Supported databases are SQLite and PostgreSQL.
 
 		return(undef) unless(&enabled);
 		return(undef) unless($table && $where);
+
+		&check;
 
 		return($Dbh->do(qq{DELETE FROM $table WHERE $where;}));
 	}
@@ -2819,9 +2840,9 @@ Supported databases are SQLite and PostgreSQL.
 		if($search=~m/^\d+$/) {
 			@player=&select('player', qq{ id='$search' });
 		} elsif($search=~m/^[\d.:]+$/) {
-			@player=db::select('player', qq{ ip LIKE '$search%' });
+			@player=&select('player', qq{ ip LIKE '$search%' });
 		} else {
-			@player=db::select('player', qq{
+			@player=&select('player', qq{
 					lower(name)     = '$search' OR
 					lower(nickname) = '$search' OR
 					lower(vaporid)  = '$search'
@@ -2905,6 +2926,8 @@ Supported databases are SQLite and PostgreSQL.
 	sub extra_records {
 		my($map)=@_;
 		my($cols);
+
+		&check;
 
 		$cols=$Dbh->selectcol_arrayref(qq{
 			SELECT id FROM records
