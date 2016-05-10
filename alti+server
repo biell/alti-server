@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.88';
+my($VERSION)='2.89';
 
 =head1 NAME
 
@@ -4947,7 +4947,7 @@ These rankings can also be configured to select evenly matched teams.
 
 	sub show {
 		my($p, $type, $search)=@_;
-		my($name, $r, $better, $i);
+		my($name, $r, $diff, $better, $i);
 		my(%seen)=();
 
 		return unless($search);
@@ -4971,12 +4971,14 @@ These rankings can also be configured to select evenly matched teams.
 
 			($r)=db::select('rank', qq{id='$player->{"id"}' AND type='$type'});
 
+			$diff=$r->{'differential'}-0.001; #Pg floating point sucks
+
 			if($r) {
 				$better=db::count('rank', qq{
 					type='$type' AND (
 						rating>$r->{'rating'} OR (
 							rating=$r->{'rating'} AND
-							differential>=$r->{'differential'}
+							differential>=$diff
 						)
 					)
 				});
