@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.86';
+my($VERSION)='2.87';
 
 =head1 NAME
 
@@ -2978,7 +2978,7 @@ Supported databases are SQLite and PostgreSQL.
 			&update('rank', qq{id='$p->{"id"}' AND type='$type'}, $rating);
 		}
 
-		return($rating->{'rating'});
+		return(@$rating{'rating', 'differential'});
 	}
 }
 
@@ -4444,6 +4444,14 @@ debugging or to make funny comments.
 		}
 	}
 
+	sub whisperf {
+		my($p)=shift;
+		my($fmt)=shift;
+		my($msg)=sprintf($fmt, @_);
+
+		&whisper($p, $msg);
+	}
+
 	sub debug {
 		my($debug)=stash::get('debug', 'server');
 		my($msg);
@@ -4973,11 +4981,11 @@ These rankings can also be configured to select evenly matched teams.
 					)
 				});
 
-				chat::whisper($p, sprintf('%s: %s rating=%d, diff=%0.1f, rank=%s',
+				chat::whisperf($p, '%s: %s rating=%d, diff=%+0.1f, rank=%s',
 					$name, $type,
 					@$r{'rating', 'differential'},
 					utils::nth($better),
-				));
+				);
 			} else {
 				chat::whisper($p, "$name: no $type rank");
 				return;
@@ -4991,7 +4999,7 @@ These rankings can also be configured to select evenly matched teams.
 		my($type)=map::type;
 		my($rate)=&rate($p);
 		my($scale)=&scale($p);
-		my($update);
+		my($update, $diff);
 
 		$type=map::mode if($type eq 'std');
 
@@ -5011,10 +5019,12 @@ These rankings can also be configured to select evenly matched teams.
 		));
 
 		if($update) {
-			$p->{'rating'}=db::rank($p, $type, $update);
+			($p->{'rating'}, $diff)=db::rank($p, $type, $update);
 
 			if(config::option('assignRank')) {
-				&show($p, $type, $p->{'id'});
+				chat::whisperf($p, '%+d : rating=%d, diff=%+0.1f',
+					$update, $p->{'rating'}, $diff
+				);
 			}
 		}
 	}
@@ -5022,10 +5032,11 @@ These rankings can also be configured to select evenly matched teams.
 	sub join {
 		my($p)=@_;
 		my($type)=map::type;
+		my($diff);
 
 		$type=map::mode if($type eq 'std');
 
-		$p->{'rating'}=db::rank($p, $type);
+		($p->{'rating'}, $diff)=db::rank($p, $type);
 	}
 
 	sub score {
@@ -9002,11 +9013,11 @@ core protecting the flag.
 		my($any)=0;
 
 		foreach my $portal (sort(keys(%$portals))) {
-			chat::whisper($p, sprintf('%s: %s -> %d,%d @%s',
+			chat::whisperf($p, '%s: %s -> %d,%d @%s',
 					$portals->{$portal}[0],
 					$portal,
 					@{$portals->{$portal}}[1,2,3]
-				));
+				);
 			$any=1;
 		}
 
@@ -9444,11 +9455,11 @@ core protecting the flag.
 						$status
 					);
 				} elsif($spawn_mode eq 'powerup') {
-					chat::whisper($p, sprintf("%s $sep %d,%d @%s (%s)",
+					chat::whisperf($p, "%s $sep %d,%d @%s (%s)",
 						$zone,
 						@{$zones->{$zone}},
 						join(', ', map::powerup_lookup(@{$zones->{$zone}}))
-					));
+					);
 				} else {
 					chat::whisper($p,
 						sprintf("%s $sep %d,%d @%s", $zone, @{$zones->{$zone}})
@@ -10968,7 +10979,7 @@ also only available from the console.
 
 		chat::whisper($s, map::name);
 
-		chat::whisper($s, sprintf('%-16s:', "left  ($left)"),
+		chat::wh)ckisper($s, sprintf('%-16s:', "left  ($left)"),
 			join(', ', map($_->{'nickname'}, player::list('left'))));
 
 		chat::whisper($s, sprintf('%-16s:', "right ($right)"),
@@ -10988,11 +10999,11 @@ also only available from the console.
 		}
 
 		foreach my $player (reverse(altbouncer::seen)) {
-			chat::whisper($s, sprintf('%-20s  %36s  %s',
+			chat::whisperf($s, '%-20s  %36s  %s',
 					$player->{'nickname'},
 					$player->{'vaporID'},
 					utils::date($player->{'lastPlayedWithTime'}/1000),
-				));
+				);
 			$found=1;
 		}
 
@@ -11010,13 +11021,13 @@ also only available from the console.
 			ORDER BY rank.rating,rank.differential
 		});
 
-		chat::whisper($s, sprintf('%5s %6s %6s  %s',qw(ID RATING DIFF NAME)));
+		chat::whisperf($s, '%5s %6s %6s  %s',qw(ID RATING DIFF NAME));
 
 		foreach my $row (@$ratings) {
-			chat::whisper($s, sprintf('%5d %6d %6.1f  %s',
+			chat::whisperf($s, '%5d %6d %+6.1f  %s',
 				@$row[0,1,2],
 				$row->[3] || $row->[4]
-			));
+			);
 		}
 	},
 
@@ -11223,6 +11234,8 @@ while(1) {
 					}
 				}
 			}
+
+			$SOUT=~s/Executing:.*?data=/Executing: /;
 
 			ui::slog($SOUT);
 		} elsif($fh==0xDEAD) {
