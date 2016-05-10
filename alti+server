@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.85';
+my($VERSION)='2.86';
 
 =head1 NAME
 
@@ -1740,6 +1740,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 			delete($config{$key}) unless(defined($config{$key}));
 		}
 
+		if(config::option('assignRank')) {
+			$config{'autoBalanceTeams'}='false';
+		}
+
 		return unless($update_maps || $update_admins || %config);
 
 		foreach(@xml) {
@@ -1834,7 +1838,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 		$Port=$config->{'port'};
 		$Ping=$config->{'maxPing'};
-		$Maxp=$config->{'maxPlayerCount'};
+		$Maxp=$config->{'maxPlayerCount'}+1;
 
 		&reconcile_option($config, 'secretCode');
 
@@ -4933,67 +4937,12 @@ These rankings can also be configured to select evenly matched teams.
 		return($rate);
 	}
 
-	sub enter {
-		my($p)=@_;
-		my($type)=map::type;
-		my($rate)=&rate($p);
-		my($scale)=&scale($p);
-		my($update);
-
-		$type=map::mode if($type eq 'std');
-
-		$update=$rate * $scale;
-
-		ui::slog(sprintf(join("\n  ", 
-				"enter: name=%s, id=%d, type=%s, played=%d,",
-				"rate=%.2f, scale=%.2f, update=%.1f, diff=%.2f,",
-				"json=%s"
-			), (
-				$p->{'name'} || $p->{'nickname'},
-				$p->{'id'}, $type, $p->{'stats'}{'played'},
-				$rate, $scale, $update, $p->{'stats'}{'differential'},
-				json::encode($p->{'stats'}),
-			)
-
-		));
-
-		if($update) {
-			$p->{'rating'}=db::rank($p, $type, $update);
-		}
-	}
-
-	sub join {
-		my($p)=@_;
-		my($type)=map::type;
-
-		$type=map::mode if($type eq 'std');
-
-		$p->{'rating'}=db::rank($p, $type);
-	}
-
-	sub score {
-		my($team, $score)=@_;
-		my($update)=$score*player::handicap($team);
-		my($minimum)=$config::Maxp*0.75;
-
-		#Uncomment when rating goes live:
-		#return unless(player::count>$minimum);
-
-		foreach my $player (player::list) {
-			next if(map::spec($player));
-
-			if($player->{'team'}==$team) {
-				$player->{'stats'}{'differential'}+=$update;
-			} else {
-				$player->{'stats'}{'differential'}-=$update;
-			}
-		}
-	}
-
 	sub show {
 		my($p, $type, $search)=@_;
 		my($name, $r, $better, $i);
 		my(%seen)=();
+
+		return unless($search);
 
 		if($search=~m/^(\d+)(st|nd|rd|th)$/) {
 			$i=$1-1;
@@ -5005,8 +4954,6 @@ These rankings can also be configured to select evenly matched teams.
 				});
 			$search=$search->{'id'};
 		}
-
-		return unless($search);
 
 		foreach my $player (db::psearch($search)) {
 			$name=$player->{'name'} || $player->{'nickname'};
@@ -5037,6 +4984,67 @@ These rankings can also be configured to select evenly matched teams.
 			}
 		}
 
+	}
+
+	sub enter {
+		my($p)=@_;
+		my($type)=map::type;
+		my($rate)=&rate($p);
+		my($scale)=&scale($p);
+		my($update);
+
+		$type=map::mode if($type eq 'std');
+
+		$update=$rate * $scale;
+
+		ui::slog(sprintf(join("\n  ", 
+				"enter: name=%s, id=%d, type=%s, played=%d,",
+				"rate=%.2f, scale=%.2f, update=%.1f, diff=%.2f,",
+				"json=%s"
+			), (
+				$p->{'name'} || $p->{'nickname'},
+				$p->{'id'}, $type, $p->{'stats'}{'played'},
+				$rate, $scale, $update, $p->{'stats'}{'differential'},
+				json::encode($p->{'stats'}),
+			)
+
+		));
+
+		if($update) {
+			$p->{'rating'}=db::rank($p, $type, $update);
+
+			if(config::option('assignRank')) {
+				&show($p, $type, $p->{'id'});
+			}
+		}
+	}
+
+	sub join {
+		my($p)=@_;
+		my($type)=map::type;
+
+		$type=map::mode if($type eq 'std');
+
+		$p->{'rating'}=db::rank($p, $type);
+	}
+
+	sub score {
+		my($team, $score)=@_;
+		my($update)=$score*player::handicap($team);
+		my($minimum)=$config::Maxp*0.75;
+
+		#Uncomment when rating goes live:
+		#return unless(player::count>$minimum);
+
+		foreach my $player (player::list) {
+			next if(map::spec($player));
+
+			if($player->{'team'}==$team) {
+				$player->{'stats'}{'differential'}+=$update;
+			} else {
+				$player->{'stats'}{'differential'}-=$update;
+			}
+		}
 	}
 
 	sub teams {
@@ -6495,12 +6503,10 @@ play though extended interfaces and server support.
 			queue::schedule {
 				my($left, $right)=rank::teams;
 
-				#foreach my $player (@$left) {
-				#	plus::assign($player, 'left');
-				#}	
-				#foreach my $player (@$right) {
-				#	plus::assign($player, 'right');
-				#}	
+				while(@$left || @$right) {
+					plus::assign(shift(@$left), 'left') if(@$left);
+					plus::assign(shift(@$right), 'right') if(@$right);
+				}
 			} $config::Launcher{'warmup'}{map::mode}/2;
 		}
 
