@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.87';
+my($VERSION)='2.88';
 
 =head1 NAME
 
@@ -10979,7 +10979,7 @@ also only available from the console.
 
 		chat::whisper($s, map::name);
 
-		chat::wh)ckisper($s, sprintf('%-16s:', "left  ($left)"),
+		chat::whisper($s, sprintf('%-16s:', "left  ($left)"),
 			join(', ', map($_->{'nickname'}, player::list('left'))));
 
 		chat::whisper($s, sprintf('%-16s:', "right ($right)"),
