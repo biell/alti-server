@@ -683,7 +683,13 @@ file to save space for more maps.
 
   * **/showSeen**<br>
     If user information is being kept per the "altBouncer" option, then
-    display the users currently queued for the next altbouncer update.
+    display the users recently having played on this server.
+
+  * **/showRecent**<br>
+    If user information is being kept in a database, then
+    display the users recently having played on any server sharing that
+    database.  For servers with a dedicated database, this is roughly
+    equivalent to `/showSeen`.
 
   * **/showRatings [mode|type]**<br>
     List in console the ratings for either `mode` or `type`.  The output

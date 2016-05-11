@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.89';
+my($VERSION)='2.90';
 
 =head1 NAME
 
@@ -1921,6 +1921,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Commands{'showPlayer'}=['player'];
 		$Commands{'showTeams'}=undef;
 		$Commands{'showSeen'}=undef;
+		$Commands{'showRecent'}=undef;
 		$Commands{'showRatings'}=[[@MODES, @TYPES]];
 		$Commands{'showPowerups'}=undef;
 		$Commands{'chatLeft'}=['string'];
@@ -2836,10 +2837,19 @@ Supported databases are SQLite and PostgreSQL.
 
 	}
 
+	sub recent {
+		my(@player)=();
+		my($recent)=time()-(5*86400);
+
+		@player=&select('player', qq{ seen>$recent
+								ORDER BY seen DESC LIMIT 100 });
+
+		return(@player);
+	}
+
 	sub psearch {
 		my($search)=lc($_[0]);
 		my(@player)=();
-		my($sth, $row);
 
 		if($search=~m/^\d+$/) {
 			@player=&select('player', qq{ id='$search' });
@@ -3012,12 +3022,10 @@ them to the AltBouncer system.
 		my($log)=IO::Handle->new;
 		my($time)=time()*1000;
 
-		unless(db::enabled) {
-			rename($Seenlog, $Seenlog_o) if(-s $Seenlog > 262144);
-			open($log, '>>', $Seenlog);
-			print $log join(',', $time, @$p{'vaporId','ip','nickname'}), "\n";
-			close($log);
-		}
+		rename($Seenlog, $Seenlog_o) if(-s $Seenlog > 262144);
+		open($log, '>>', $Seenlog);
+		print $log join(',', $time, @$p{'vaporId','ip','nickname'}), "\n";
+		close($log);
 
 		return unless(config::option('altBouncer'));
 		return unless($Curl);
@@ -3039,28 +3047,24 @@ them to the AltBouncer system.
 		my($log)=IO::Handle->new;
 		my($time, $vid, $ip, $nick);
 
-		if(db::enabled) {
-			@players=db::psearch($query);
-		} else {
-			open($log, '<', $Seenlog);
+		open($log, '<', $Seenlog);
 
-			while(<$log>) {
-				($time, $vid, $ip, $nick)=m/^(\d+),([\da-f-]+),([\d.:]+),(.+)$/;
+		while(<$log>) {
+			($time, $vid, $ip, $nick)=m/^(\d+),([\da-f-]+),([\d.:]+),(.+)$/;
 
-				next unless(	$vid=~m/\b$query\b/	||
-							$ip=~m/\b$query\b/	||
-							$nick=~m/\b$query/	);
+			next unless(	$vid=~m/\b$query\b/	||
+						$ip=~m/\b$query\b/	||
+						$nick=~m/\b$query/	);
 
-				unshift(@players, {
-					'lastPlayedWithTime'	=> $time,
-					'vaporID'				=> $vid,
-					'ip'					=> $ip,
-					'nickname'			=> $nick,
-				});
-			}
-
-			close($log);
+			unshift(@players, {
+				'lastPlayedWithTime'	=> $time,
+				'vaporID'				=> $vid,
+				'ip'					=> $ip,
+				'nickname'			=> $nick,
+			});
 		}
+
+		close($log);
 
 		return(@players);
 	}
@@ -11005,6 +11009,33 @@ also only available from the console.
 					$player->{'nickname'},
 					$player->{'vaporID'},
 					utils::date($player->{'lastPlayedWithTime'}/1000),
+				);
+			$found=1;
+		}
+
+		chat::whisper($s, 'seen list is empty') unless($found);
+	},
+
+	'showRecent'		=> sub {
+		my($s)=player::server;
+		my($found)=0;
+		my($name);
+
+		unless(db::enabled) {
+			chat::whisper($s, 'Requires server to have a database backend');
+			return;
+		}
+
+		foreach my $player (reverse(db::recent)) {
+			if($player->{'name'} && $player->{'name'} ne $player->{'nickname'}) {
+				$name="$player->{'name'} ($player->{'nickname'})";
+			} else {
+				$name=$player->{'nickname'};
+			}
+			chat::whisperf($s, '%-23s  %36s  %s',
+					$name,
+					$player->{'vaporid'},
+					utils::date($player->{'seen'}),
 				);
 			$found=1;
 		}
