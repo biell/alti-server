@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.90';
+my($VERSION)='2.91';
 
 =head1 NAME
 
@@ -711,6 +711,11 @@ L<perl(1)> should be used to ensure basic operation.
 
 	$Geoip=&which('geoiplookup', 'good', 'Country lookups not available');
 	$Ping=&which('ping', 'good', 'Cannot check server availability');
+
+	sub pluck(\@) {
+		my($ary)=shift;
+		return(splice(@$ary, int(rand(@$ary)), 1));
+	}
 
 	sub mid {
 		my(@list)=sort {$a<=>$b} @_;
@@ -4867,6 +4872,7 @@ These rankings can also be configured to select evenly matched teams.
 {	package rank;
 
 	my($Base)=600;
+	my(%Team); tie %Team, 'Tie::RefHash';
 
 	sub _quality_curve { # modified logistic curve)
 		my($seconds)=@_;
@@ -5064,76 +5070,143 @@ These rankings can also be configured to select evenly matched teams.
 		}
 	}
 
+	sub map_change {
+		%Team=();
+	}
+
+	sub place {
+		my($team)=shift;
+		
+		foreach my $p (@_) {
+			$Team{$p}=$team;
+		}
+	}
+
+	sub members {
+		my($team)=@_;
+
+		return(grep($Team{$_} eq $team, keys(%Team)));
+	}
+
+	sub rating {
+		my($team)=@_;
+
+		return(List::Util::sum(map($_->{'rating'}, &members($team))));
+	}
+
+	sub ratesort {
+		return(sort({ $a->{'rating'} <=> $b->{'rating'} } @_));
+	}
+
+	sub swap {
+		my($a, $b)=@_;
+
+		@Team{$a,$b}=@Team{$b,$a};
+	}
+
+	sub assign {
+		my($p)=@_;
+		my(@left)=&ratesort(&members('left'));
+		my(@right)=&ratesort(&members('right'));
+		my($left)=&rating('left');
+		my($right)=&rating('right');
+		my($thresh)=400;
+		my(@try);
+		my($needed, $delta);
+
+		if(@left<@right) {
+			&place('left', $p);
+			$left+=$p->{'rating'};
+		} elsif(@left>@right) {
+			&place('right', $p);
+			$right+=$p->{'rating'};
+		} elsif($left<$right) {
+			&place('left', $p);
+			$left+=$p->{'rating'};
+		} else {
+			&place('right', $p);
+			$right+=$p->{'rating'};
+		}
+
+		if(@left>4) {	#Don't move best player if teams are big enough:
+			pop(@left);
+			pop(@right);
+		}
+		if(@left>4) {	#Don't move worst player if teams are big enough
+			shift(@left);
+			shift(@right);
+		}
+
+		$thresh*=1+abs(@left-@right);
+
+		$needed=($left-$right)/2;
+
+		$delta=$needed-($left[0]{'rating'}-$right[0]{'rating'});
+		@try=($left[0], $right[0], $delta);
+
+		if($needed < -$thresh || $thresh < $needed) {
+			foreach my $l (@left) {
+				foreach my $r (@right) {
+					$delta=$needed-($l->{'rating'}-$r->{'rating'});
+					if(abs($delta)<abs($try[2])) {
+						@try=($l, $r, $$delta);
+					}
+				}
+			}
+
+			&swap(@try[0,1]);
+		}
+	}
+
 	sub teams {
-		my(@left, @right)=();
-		my($left, $right)=(0, 0);
-		my(@players)=sort({ $a->{'rating'} <=> $b->{'rating'} } player::list);
+		my(@players)=&ratesort(@_);
+		my(@teams)=qw(left right);
+		my(@rate)=(0, 0);
+		my(@left, @right);
 
-		push(@left, splice(@players, int(rand(@players)), 1));
-		push(@right, splice(@players, int(rand(@players)), 1)) if(@players>2);
-		push(@left, splice(@players, int(rand(@players)), 1))  if(@players>4);
-		push(@right, splice(@players, int(rand(@players)), 1)) if(@players>6);
+		if(!@players) {
+			return([], []);
+		} elsif(@players==1) {
+			return(\@players, []);
+		} elsif(@players==2) {
+			return([$players[0]], [$players[1]]);
+		} elsif(@players>2) {
+			&place('left', utils::pluck(@players));
+			&place('right', utils::pluck(@players));
+		}
+		if(@players>4) {
+			&place('right', utils::pluck(@players));
+			&place('left', utils::pluck(@players));
+		}
 
-		$left=List::Util::sum(map($_->{'rating'}, @left));
-		$right=List::Util::sum(map($_->{'rating'}, @right));
+		@rate=( &rating('left'), &rating('right') );
 
-		while(@players>1) {
-			if($left>$right) {
-				$left+=$players[0]{'rating'};
-				push(@left, shift(@players));
+		for(my $i=0; @players>1; $i=!$i) {
+			if($rate[$i]>$rate[!$i]) {
+				$rate[$i]+=$players[0]{'rating'};
+				&place($teams[$i], shift(@players));
 			} else {
-				$left+=$players[-1]{'rating'};
-				push(@left, pop(@players));
-			}
-
-			if($left<$right) {
-				$right+=$players[0]{'rating'};
-				push(@right, shift(@players));
-			} else {
-				$right+=$players[-1]{'rating'};
-				push(@right, pop(@players));
+				$rate[$i]+=$players[-1]{'rating'};
+				&place($teams[$i], pop(@players));
 			}
 		}
 
-		if(@players && @left>@right) {
-			$right+=$players[0]{'rating'};
-			push(@right, @players);
-		} elsif(@players && @left<@right) {
-			$left+=$players[0]{'rating'};
-			push(@left, @players);
-		} elsif(@players && $left>$right) {
-			$right+=$players[0]{'rating'};
-			push(@right, @players);
-		} elsif(@players && $left<$right) {
-			$left+=$players[0]{'rating'};
-			push(@left, @players);
-		} elsif(@players && utils::coin_toss) {
-			$right+=$players[0]{'rating'};
-			push(@right, @players);
-		} elsif(@players) {
-			$left+=$players[0]{'rating'};
-			push(@left, @players);
-		}
+		&assign(@players);
 
-		if($left && $right && (
-			($left>$right && $left[-1]>$right[-1]) ||
-			($left<$right && $left[-1]<$right[-1])
-		)) {
-			$left-=$left[-1]{'rating'};
-			$right-=$right[-1]{'rating'};
-			($left[-1], $right[-1])=($right[-1], $left[-1]);
-			$left+=$left[-1]{'rating'};
-			$right+=$right[-1]{'rating'};
-		}
-
-		ui::slog("left  team ($left):", join(',', map(player::name($_), @left)));
-		ui::slog("right team ($right):", join(',', map(player::name($_), @right)));
+		@left=&members('left');
+		@right=&members('right');
 
 		if(utils::coin_toss) {
 			return(\@left, \@right);
 		} else {
 			return(\@right, \@left);
 		}
+	}
+
+	sub team_check {
+		my($p)=@_;
+
+		return(1);
 	}
 
 }
@@ -6516,18 +6589,27 @@ play though extended interfaces and server support.
 					}	
 				} $config::Launcher{'warmup'}{map::mode}/4;
 			}
+		} elsif(map::type('coop')) {
+			if($assign) {
+				queue::schedule {
+					foreach my $player (player::list('both')) {
+						plus::assign($player, $assign);
+					}
+				} $config::Launcher{'warmup'}{map::mode}-3;
+			}
 		} elsif(!$assign && config::option('assignRank')) {
 			queue::schedule {
-				my($left, $right)=rank::teams;
+				my($left, $right)=rank::teams(player::list('both'));
+	
+				ui::slog("left  team:", join(',', map(player::name($_), @$left)));
+				ui::slog("right team:", join(',', map(player::name($_), @$right)));
 
 				while(@$left || @$right) {
 					plus::assign(shift(@$left), 'left') if(@$left);
 					plus::assign(shift(@$right), 'right') if(@$right);
 				}
-			} $config::Launcher{'warmup'}{map::mode}/2;
+			} $config::Launcher{'warmup'}{map::mode}-3;
 		}
-
-
 
 		if(!stash::get(map::name, 'map') || stash::get('INIT', map::name, 'map')) {
 			foreach my $command (&import_defaults) {
@@ -8121,6 +8203,7 @@ core protecting the flag.
 
 		map::new($e);
 		plus::new;
+		rank::map_change;
 
 		foreach my $player (player::list) {
 			if($p->{'stats'}{'spawns'}) {
@@ -9878,7 +9961,11 @@ core protecting the flag.
 
 		return if($p->{'isBot'});
 
-		$p->{'stats'}{'played'}+=$e->{'time'} - $p->{'spawn'};
+		if($p->{'spawn'}) {
+			$p->{'stats'}{'played'}+=$e->{'time'} - $p->{'spawn'};
+		} else {
+			$p->{'stats'}{'played'}+=0;
+		}
 
 		rank::enter($p);
 
@@ -9969,8 +10056,10 @@ core protecting the flag.
 				return;
 			}
 		} elsif(plus::enter($p)) {
-			#Non needed/causes problems?#plus::spawn_reset($p);
-			$p->{'team'}=$e->{'team'};
+			if($p->{'team'} != $e->{'team'}) {
+				$p->{'team'}=$e->{'team'};
+				plus::spawn_reset($p);
+			}
 		} else {
 			plus::assign($p, 'spec');
 			$p->{'team'}=-1;
@@ -9998,6 +10087,12 @@ core protecting the flag.
 			plus::assign($p, 'right');
 			return;
 		} elsif(map::left($map_team) && map::right($p->{'team'})) {
+			plus::assign($p, 'left');
+			return;
+		} elsif(!rank::team_check($p) && map::left($p->{'team'})) {
+			plus::assign($p, 'right');
+			return;
+		} elsif(!rank::team_check($p) && map::right($p->{'team'})) {
 			plus::assign($p, 'left');
 			return;
 		} else {
@@ -10999,11 +11094,6 @@ also only available from the console.
 		my($s)=player::server;
 		my($found)=0;
 
-		unless(config::option('altBouncer')) {
-			chat::whisper($s, 'altBouncer is set to disabled, no records');
-			return;
-		}
-
 		foreach my $player (reverse(altbouncer::seen)) {
 			chat::whisperf($s, '%-20s  %36s  %s',
 					$player->{'nickname'},
@@ -11230,6 +11320,8 @@ while(1) {
 
 				server::start;
 				server::reopen_log;
+				ui::setup_screen;
+
 				player::init;
 				race::init;
 				ball::new;
