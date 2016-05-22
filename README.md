@@ -948,6 +948,16 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     it seperate, organized by event, or export to other people via a file
     transfer protocol such as HTTP.
 
+  * **javaHome [directory]**<br>
+    Altitude comes with an old 32-bit JVM.  If you with to use a newer or
+    64-bit JVM, then you can set the environment variable
+    `INSTALL4J_JAVA_HOME_OVERRIDE` to specify a different JDK directory.
+    If you have this environment variable set, this parameter (`javaHome`)
+    will be overridden to the same value.  Otherwise, the value of this
+    option will be placed into `INSTALL4J_JAVA_HOME_OVERRIDE` before starting
+    the Altitude server.  This parameber can be changed before running
+    `/restartServer` to change the JVM used for subsequent server starts.
+
   * **secretCode [password]**<br>
     Altitude servers can be configured using the `server_configurator` program
     to require a passcode to join the server.  This setting allows you to

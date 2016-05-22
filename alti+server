@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.91';
+my($VERSION)='2.92';
 
 =head1 NAME
 
@@ -50,6 +50,7 @@ my(%OPTIONS)=(
 	infractions	=> 10,			#10 infractions gets players kicked
 	debug		=> 0,			#Debug is on(1) or off(0)
 	awards		=> 1,			#Give out awards at the end of a round
+	javaHome		=> '',			#Change JAVA_HOME to point to your JDK
 	recordsTypes	=> 'coop,race,ruin',#Which map types to keep records on
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
@@ -135,6 +136,10 @@ if(exists($ENV{'INSTALL4J_ADD_VM_PARAMS'})) {
 	}
 } else {
 	$ENV{'INSTALL4J_ADD_VM_PARAMS'}='-verbose:gc';
+}
+
+if(exists($ENV{'INSTALL4J_JAVA_HOME_OVERRIDE'})) {
+	$OPTIONS{'javaHome'}=$ENV{'INSTALL4J_JAVA_HOME_OVERRIDE'};
 }
 
 =head2 Interface
@@ -1809,7 +1814,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	sub reconcile_option {
 		my($config, $key)=@_;
-		my($value)=config::option($key);
+		my($value)=&option($key);
 
 		if($config->{$key} && !defined($value)) {
 			config::option_set($key, $config->{$key});
@@ -1822,10 +1827,17 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	sub launcher {
 		my($server)=xml::decode($Conffile)->{'servers'};
+		my($jdk)=&option('javaHome');
 		my($fh)=IO::Handle->new;
 		my(@filter)=();
 		my($config);
 		local($_);
+
+		if($jdk && -d $jdk) {
+			$ENV{'INSTALL4J_JAVA_HOME_OVERRIDE'}=$jdk;
+		} else {
+			delete($ENV{'INSTALL4J_JAVA_HOME_OVERRIDE'});
+		}
 
 		if(ref($server) eq 'ARRAY') {
 			$config=$server->[0]{'AltitudeServerConfig'};
