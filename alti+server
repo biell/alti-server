@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.93';
+my($VERSION)='2.94';
 
 =head1 NAME
 
@@ -6613,7 +6613,6 @@ play though extended interfaces and server support.
 			queue::schedule {
 				my($left, $right)=rank::teams(player::list('both'));
 
-				ui::slog("all       :", join(',', map(player::name($_), rank::teams(player::list()))));
 				ui::slog("player    :", join(',', map(player::name($_), rank::teams(player::list('both')))));
 				ui::slog("left  team:", join(',', map(player::name($_), @$left)));
 				ui::slog("right team:", join(',', map(player::name($_), @$right)));
