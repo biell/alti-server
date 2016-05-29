@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.96';
+my($VERSION)='2.97';
 
 =head1 NAME
 
@@ -3168,7 +3168,7 @@ directly with it to manage the instance.
 	my($Server)=IO::Handle->new;
 
 	my($Streams)=IO::Select->new(\*STDIN);
-	my($Server_pid, $Tail_pid);
+	my($Launcher_pid, $Server_pid, $Tail_pid);
 
 	my($Cu, $Cs)=(0, 0);
 
@@ -3199,7 +3199,7 @@ directly with it to manage the instance.
 			sleep(60);
 		}
 
-		open($Server, '-|:unix', './server_launcher', '-noui');
+		$Launcher_pid=open($Server, '-|:unix', './server_launcher', '-noui');
 		$Server->autoflush(1);
 		$Streams->add($Server);
 
@@ -3253,7 +3253,7 @@ directly with it to manage the instance.
 		my(@streams);
 		my($hang)=time()+300;
 
-		if($Server_pid && waitpid($Server_pid, POSIX::WNOHANG)!=0) {
+		if($Launcher_pid && waitpid($Launcher_pid, POSIX::WNOHANG)!=0) {
 			waitpid($Tail_pid, POSIX::WNOHANG);
 			ui::slog('Java server failure: CRASHED');
 			return(0xDEAD);
