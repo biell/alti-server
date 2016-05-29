@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.95';
+my($VERSION)='2.96';
 
 =head1 NAME
 
@@ -3253,11 +3253,18 @@ directly with it to manage the instance.
 		my(@streams);
 		my($hang)=time()+300;
 
+		if($Server_pid && waitpid($Server_pid, POSIX::WNOHANG)!=0) {
+			waitpid($Tail_pid, POSIX::WNOHANG);
+			ui::slog('Java server failure: CRASHED');
+			return(0xDEAD);
+		}
+
 		@streams=$Streams->can_read($wait);
 
 		if(@streams || time()<$hang) {
 			return(@streams);
 		} else {
+			ui::slog('Java server failure: HUNG');
 			return(0xDEAD);
 		}
 	}
@@ -6607,7 +6614,7 @@ play though extended interfaces and server support.
 					foreach my $player (player::list('both')) {
 						plus::assign($player, $assign);
 					}
-				} $config::Launcher{'warmup'}{map::mode}-3;
+				} $config::Launcher{'warmup'}{map::mode}-4;
 			}
 		} elsif(!$assign && config::option('assignRank')) {
 			queue::schedule {
@@ -11379,7 +11386,7 @@ while(1) {
 			ui::slog($SOUT);
 		} elsif($fh==0xDEAD) {
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-			ui::slog('!!   Server is hung, restarting   !!');
+			ui::slog('!!   Server is dead, restarting   !!');
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
 
 			server::interrupt;
