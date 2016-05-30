@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.97';
+my($VERSION)='2.98';
 
 =head1 NAME
 
@@ -6108,9 +6108,10 @@ play though extended interfaces and server support.
 
 		$obj=join(',', @$e{'positionX','positionY'}) unless($obj);
 
-		$rv=0 if($time<$p->{'timer'}{$obj});
+		$rv=0 if(exists($p->{'timer'}{$obj}) && $time<$p->{'timer'}{$obj});
 			
 		$p->{'timer'}{$obj}=$time+800;
+
 		return($rv);
 	}
 
@@ -6245,6 +6246,7 @@ play though extended interfaces and server support.
 		my($p, $door)=@_;
 		my($team)=$p->{'team'};
 
+		ui::slog('door_open', $Stats{$p}{$team}{'door'}{$door}, $Stats{$team}{'door'}{$door});
 		return(
 			$Stats{$p}{$team}{'door'}{$door}
 			||  $Stats{$team}{'door'}{$door}
@@ -6302,49 +6304,53 @@ play though extended interfaces and server support.
 		my($zone)=stash::get($p->{'team'}, 'zones', map::name, 'map');
 		my($personal)=stash::get('keys', map::name, 'map') & 1;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
-		my($keys, $color);
+		my($name, $keys, $color);
 
-		if($door && $door->{'doors'}{$pickup} && &no_repeats($e, $p)) {
-			unless(&door_open($p, $door->{'doors'}{$pickup})) {
-				&bench($p);
-				chat::whisper($p, $door->{'doors'}{$pickup}, 'is locked');
-			}
-
-			return(1);
-		} elsif($door->{'keys'}{$pickup} && &no_repeats($e, $p)) {
-			if(&door_open($p, $door->{'keys'}{$pickup})) {
-				return(0);
-			}
-
-			if(&key_found($p, $pickup)) {
-				return(0);
-			} else {
-				chat::team($p, $p->{'nickname'}, 'found a key to door:', $door->{'keys'}{$pickup});
-				if($personal) {
-					$Stats{$p}{$p->{'team'}}{'key'}{$pickup}=1;
-				} else {
-					$Stats{$p->{'team'}}{'key'}{$pickup}=1;
-					$p->{'stats'}{'keys'}++;
+		if($door) {
+			if(($name=$door->{'doors'}{$pickup}) && &no_repeats($e, $p, $name)) {
+				unless(&door_open($p, $door->{'doors'}{$pickup})) {
+					&bench($p);
+					chat::whisper($p, $door->{'doors'}{$pickup}, 'is locked');
 				}
-			}
 
-			$keys=utils::invert(stash::get('keys', $p->{'team'}, 'door', map::name, 'map'));
-
-			foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
-				unless(&key_found($p, $key)) {
+				return(1);
+			} elsif(($name=$door->{'keys'}{$pickup}) && &no_repeats($e, $p, $name)) {
+				if(&door_open($p, $door->{'keys'}{$pickup})) {
 					return(0);
 				}
-			}
 
-			if($personal) {
-				$Stats{$p}{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
-				chat::whisper($p, 'Door unlocked:', $door->{'keys'}{$pickup});
-			} else {
-				$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
-				chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
-			}
+				if(&key_found($p, $pickup)) {
+					return(0);
+				} else {
+					chat::team($p, $p->{'nickname'}, 'found a key to:', $door->{'keys'}{$pickup});
+					if($personal) {
+						$Stats{$p}{$p->{'team'}}{'key'}{$pickup}=1;
+					} else {
+						$Stats{$p->{'team'}}{'key'}{$pickup}=1;
+						$p->{'stats'}{'keys'}++;
+					}
+				}
 
-		} elsif($zone && $zone->{'keys'}{$pickup} && &no_repeats($e, $p)) {
+				$keys=utils::invert(stash::get('keys', $p->{'team'}, 'door', map::name, 'map'));
+
+				foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
+					unless(&key_found($p, $key)) {
+						return(0);
+					}
+				}
+
+				if($personal) {
+					$Stats{$p}{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+					chat::whisper($p, 'Door unlocked:', $door->{'keys'}{$pickup});
+				} else {
+					$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+					chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
+				}
+
+			}
+		}
+
+		if($zone && ($name=$zone->{'keys'}{$pickup}) && &no_repeats($e, $p, $name)) {
 			if(&zone_open($p, $zone->{'keys'}{$pickup})) {
 				return(0);
 			}
@@ -6412,7 +6418,7 @@ play though extended interfaces and server support.
 
 		return(0) unless($portal);
 
-		return(0) unless(plus::no_repeats($e, $p, $portal->[0]));
+		return(0) unless(&no_repeats($e, $p, $portal->[0]));
 
 		&bench($p);
 		&spawn_here($p, @$portal[1,2,3]);
@@ -9360,11 +9366,13 @@ core protecting the flag.
 
 	'add key'		=> sub {
 		my($e, $p, $name, $team, $kx, $ky)=@_;
+		my($doors);
 
 		$team='*' unless($team);
 
 		if(map::left($team)) {
-			if(stash::get("$kx,$ky", 'doors', map::left, 'door', map::name, 'map')) {
+			$doors=utils::invert(stash::get('doors', map::left, 'door', map::name, 'map'));
+			if(exists($doors->{$name})) {
 				stash::set("$kx,$ky", 'keys', map::left, 'door', map::name, 'map', $name);
 				chat::all('Added left key for door:', $name, "($kx,$ky)");
 			} elsif(stash::get($name, 'zones', map::left, 'zones', map::name, 'map')) {
@@ -9376,7 +9384,8 @@ core protecting the flag.
 		}
 
 		if(map::right($team)) {
-			if(stash::get("$kx,$ky", 'doors', map::right, 'door', map::name, 'map')) {
+			$doors=utils::invert(stash::get('doors', map::right, 'door', map::name, 'map'));
+			if(exists($doors->{$name})) {
 				stash::set("$kx,$ky", 'keys', map::right, 'door', map::name, 'map', $name);
 				chat::all('Added right key for door:', $name, "($kx,$ky)");
 			} elsif(stash::get($name, 'zones', map::right, 'zones', map::name, 'map')) {
