@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.98';
+my($VERSION)='2.99';
 
 =head1 NAME
 
@@ -585,10 +585,17 @@ list.
 
 	sub remove_key {
 		my($length)=@_;
+		my($max)=length($Input);
 
 		if($Input) {
-			substr($Input, $Cursor+$length, 1, '');
-			$Cursor+=$length
+			if($Cursor<0) {
+				$Cursor=0;
+			} elsif($Cursor>$max) {
+				$Cursor=$max;
+			} else {
+				substr($Input, $Cursor+$length, 1, '');
+				$Cursor+=$length
+			}
 		}
 	}
 
@@ -9215,7 +9222,8 @@ core protecting the flag.
 						$status='(locked)';
 					}
 					chat::whisper($p, $door, $sep, @{$doors->{$door}}, '<=',
-						@{$keys->{$door}}, $status);
+						map(plus::key_found($p, $_)?"($_)":$_, @{$keys->{$door}}),
+						$status);
 					delete($keys->{$door});
 					$any=1;
 				}
@@ -10019,7 +10027,8 @@ core protecting the flag.
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
 		my($minlvl)=0;
 		my(@badge)=();
-		my($zones, $planes, $intro);
+		my(@found)=();
+		my($zones, $doors, $keys, $planes, $intro);
 		
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
@@ -10089,6 +10098,25 @@ core protecting the flag.
 			if($p->{'team'} != $e->{'team'}) {
 				$p->{'team'}=$e->{'team'};
 				plus::spawn_reset($p);
+
+				#Print door informationt to the player
+				$doors=utils::invert(stash::get('doors', $p->{'team'}, 'door', map::name, 'map'));
+				$keys=utils::invert(stash::get('keys', $p->{'team'}, 'door', map::name, 'map'));
+				foreach my $door (sort(keys(%$doors))) {
+					if(plus::door_open($p, $door)) {
+						chat::whisper($p, "$door open");
+					} else {
+						@found=();
+						foreach my $key (sort(@{$keys->{$door}})) {
+							if(plus::key_found($p, $key)) {
+								push(@found, $key);
+							}
+						}
+						if(@found) {
+							chat::whisper($p, "$door keys found:", @found);
+						}
+					}
+				}
 			}
 		} else {
 			plus::assign($p, 'spec');
