@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='2.99';
+my($VERSION)='3.00';
 
 =head1 NAME
 
@@ -5175,7 +5175,7 @@ These rankings can also be configured to select evenly matched teams.
 				foreach my $r (@right) {
 					$delta=$needed-($l->{'rating'}-$r->{'rating'});
 					if(abs($delta)<abs($try[2])) {
-						@try=($l, $r, $$delta);
+						@try=($l, $r, $delta);
 					}
 				}
 			}
