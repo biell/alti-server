@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.01';
+my($VERSION)='3.02';
 
 =head1 NAME
 
@@ -9222,7 +9222,7 @@ core protecting the flag.
 					}
 					if(exists($keys->{$door})) {
 						foreach my $key (@{$keys->{$door}}) {
-							if(plus::key_found($p, $_)) {
+							if(plus::key_found($p, $key)) {
 								push(@keys, '('.$names->{$key}.':'.$key.')');
 							} else {
 								push(@keys, $names->{$key}.':'.$key);
@@ -9643,7 +9643,7 @@ core protecting the flag.
 					}
 					if(exists($keys->{$zone})) {
 						foreach my $key (@{$keys->{$zone}}) {
-							if(plus::key_found($p, $_)) {
+							if(plus::key_found($p, $key)) {
 								push(@keys, '('.$names->{$key}.':'.$key.')');
 							} else {
 								push(@keys, $names->{$key}.':'.$key);
@@ -10184,7 +10184,7 @@ core protecting the flag.
 							}
 						}
 						if(@found) {
-							chat::whisper($p, "$door keys found:", @found);
+							chat::whisper($p, "$door keys found:", join(', ', @found));
 						}
 					}
 				}

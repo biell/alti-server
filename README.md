@@ -396,11 +396,13 @@ manage Alti+ game maps.
   * **/unset keys**<br>
     Unset all keys flags and return to default behavior.
 
-  * **/add key [name] [x],[y]**<br>
-    Create a key for the door named `name` at coordinates `x`,`y`.
+  * **/add key [name] [door|zone] [team] [x],[y]**<br>
+    Create a key named `name` which opens the door `door` or zone
+    `zone`, for `team`.  The powerup which serves as this key will be
+    located at coordinates `x`,`y`.
 
-  * **/del key [name]**<br>
-    Delete all keys for the door named `name`.
+  * **/del key [name|zone|door]**<br>
+    Delete all keys named `name`, or for the door or zone listed.
 
   * **/add diverter [name] [x1],[y1] [x2],[y2]**<br>
     Create a diverter pair called `name` with one powerup diverter
