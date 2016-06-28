@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='3.02';
+my($VERSION)='3.04';
 
 =head1 NAME
 
@@ -1939,6 +1939,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Commands{'stashClearRecords'}=['map'];
 		$Commands{'setPlayerName'}=['player', 'string'];
 		$Commands{'updateNames'}=undef;
+		$Commands{'showAdmins'}=undef;
 		$Commands{'showPlayer'}=['player'];
 		$Commands{'showTeams'}=undef;
 		$Commands{'showSeen'}=undef;
@@ -3231,6 +3232,7 @@ directly with it to manage the instance.
 			$Cs+=$times[1];
 
 			close($Log);
+			waitpid($Tail_pid, POSIX::WNOHANG);
 			$Tail_pid=undef;
 		}
 
@@ -11166,6 +11168,24 @@ also only available from the console.
 			ui::slog("Updated $player->{'vaporid'} ($player->{'nickname'}) to $name");
 		} else {
 			ui::slog("No updates performed, '$search' not found.");
+		}
+	},
+
+	'showAdmins'		=> sub {
+		my($admins)=config::option('admins');
+		my($s)=player::server;
+		my($player);
+
+		if(db::enabled) {
+			foreach my $admin (split(m/;/, $admins)) {
+				$player=db::psearch($admin);
+				chat::whisper($s, $admin, 
+					$player->{'name'} || $player->{'nickname'});
+			}
+		} else {
+			foreach my $admin (split(m/;/, $admins)) {
+				chat::whisper($s, $admin);
+			}
 		}
 	},
 

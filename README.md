@@ -677,6 +677,9 @@ file to save space for more maps.
     changes) into the server's `name` field for each player.  This process
     will also link accounts which have been linked in ladder.
 
+  * **/showAdmins**<br>
+    Print the names and vapor ID's of the server admins.
+
   * **/showPlayer [player]**<br>
     Print information on `player`
 
