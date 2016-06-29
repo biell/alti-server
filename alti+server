@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.06';
+my($VERSION)='3.07';
 
 =head1 NAME
 
@@ -6609,7 +6609,20 @@ play though extended interfaces and server support.
 				}
 			}
 		}
+
+		if(!stash::get(map::name, 'map') || stash::get('INIT', map::name, 'map')) {
+			foreach my $command (&import_defaults) {
+				server::send(server::parse_cmd($command));
+			}
+			stash::delete('INIT', map::name, 'map');
+		}
+
+		&zone_init() unless(stash::get('keys', map::name, 'map') & 1);
+	}
 		
+	sub assign_teams {
+		my($assign)=stash::get('assignTeam', map::name, 'map');
+
 		if(map::mode('ffa')) {
 			1; #team assignments not allowed
 		} elsif(map::type('race')) {
@@ -6643,15 +6656,6 @@ play though extended interfaces and server support.
 				}
 			} $config::Launcher{'warmup'}{map::mode}-3;
 		}
-
-		if(!stash::get(map::name, 'map') || stash::get('INIT', map::name, 'map')) {
-			foreach my $command (&import_defaults) {
-				server::send(server::parse_cmd($command));
-			}
-			stash::delete('INIT', map::name, 'map');
-		}
-
-		&zone_init() unless(stash::get('keys', map::name, 'map') & 1);
 	}
 
 }
@@ -8236,6 +8240,7 @@ core protecting the flag.
 
 		map::new($e);
 		plus::new;
+		plus::assign_teams;
 		rank::map_change;
 
 		foreach my $player (player::list) {
