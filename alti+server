@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.04';
+my($VERSION)='3.05';
 
 =head1 NAME
 
@@ -3169,8 +3169,8 @@ directly with it to manage the instance.
 
 	my(%Trigger)=();
 
-	my($Log)=IO::Handle->new;
 	my($Server)=IO::Handle->new;
+	my($Log)=IO::Handle->new;
 
 	my($Streams)=IO::Select->new(\*STDIN);
 	my($Launcher_pid, $Server_pid, $Tail_pid);
@@ -4712,7 +4712,7 @@ they make the top 5.
 
 		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
 
-		$save=0 if(map::mode('tbd') && map::type('coop')
+		$save=0 if(map::mode('tbd', '1de') && map::type('coop')
 				&& ($e->{'time'}-$Destroy) > 3000);
 
 		$time=sprintf("%0.2f", ($e->{'time'} - $Start)/$config::Clock);
@@ -10756,7 +10756,14 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		map::teams($e->{'leftTeam'}, $e->{'rightTeam'});
-		plus::round;
+		plus::new;
+	},
+
+	'objectiveGameEnd' {
+		my($e, $p)=@_;
+
+		queue::clear;
+		queue::schedule { records::enter($e) } 2;
 	},
 
 	'roundEnd'	=> sub {
@@ -10838,7 +10845,9 @@ core protecting the flag.
 			rank::enter($p);
 		}
 
-		queue::schedule { records::enter($e) } 2;
+		if(map::mode('ball', 'tbd', 'tdm', 'ffa')) {
+			queue::schedule { records::enter($e) } 2;
+		}
 
 		map::end;
 
