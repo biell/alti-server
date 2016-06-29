@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.05';
+my($VERSION)='3.06';
 
 =head1 NAME
 
@@ -10759,7 +10759,7 @@ core protecting the flag.
 		plus::new;
 	},
 
-	'objectiveGameEnd' {
+	'objectiveGameEnd' 		=> sub {
 		my($e, $p)=@_;
 
 		queue::clear;
