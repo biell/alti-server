@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.07';
+my($VERSION)='3.08';
 
 =head1 NAME
 
@@ -10768,7 +10768,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		queue::clear;
-		queue::schedule { records::enter($e) } 2;
+		records::enter($e);
 	},
 
 	'roundEnd'	=> sub {
