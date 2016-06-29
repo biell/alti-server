@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.08';
+my($VERSION)='3.09';
 
 =head1 NAME
 
@@ -10784,8 +10784,6 @@ core protecting the flag.
 
 		queue::clear;
 
-		ui::slog(json::encode([map(player::id($_), player::list)]));
-
 		if(config::option('awards') && player::count>2) {
 			if($stats{'Crashes'} && List::Util::max(@{$stats{'Crashes'}})>8) {
 				plus::most('Training Wheels Award: ', $stats{'Crashes'}, $pls);
@@ -10865,30 +10863,25 @@ core protecting the flag.
 
 	'restartMap'	=> sub {
 		my($e, $p)=@_;
-
-		server::trigger('logPlanePositions', 'restartMap', $e, $p);
-	},
-
-	'logPlanePositions:restartMap'	=> sub {
-		my($e1, $p1, $e2, $p2)=@_;
+		my($assign)=stash::get('assignTeam', map::name, 'map');
 		my(@alive)=();
-		my($p3);
 
-		foreach my $player (keys(%{$e1->{'positionByPlayer'}})) {
-			$p3=player::lookup($player);
-
-			next if($p3->{'isBot'});
-			next if($e1->{'positionByPlayer'}{$player} eq '-1,-1');
-
-			push(@alive, $p3);
-		}
-
-		if(@alive==1 && $p2==$alive[0]) {
-			server::send('balanceTeams');
-		} elsif(@alive<=2 && map::type('coop')) {
-			if(grep($p2==$_, @alive)) {
-				server::send('balanceTeams');
+		if(map::type('coop')) {
+			foreach my $player (player::list($assign)) {
+				if($player->{'alive'} && !$player->{'isBot'}) {
+					push(@alive, $player);
+				}
 			}
+
+			if($p->{'admin'}) {
+				server::send('balanceTeams');
+			} elsif(@alive<=2 && grep($p==$_, @alive)) {
+				server::send('balanceTeams');
+			} else {
+				server::send('vote', 'balanceTeams');
+			}
+		} else {
+			chat::whisper($p, 'This command is only available for coop');
 		}
 	},
 
@@ -11211,6 +11204,7 @@ also only available from the console.
 			id
 			player
 			team
+			alive
 			infractions
 			ping
 			ip
@@ -11240,16 +11234,31 @@ also only available from the console.
 	'showTeams'		=> sub {
 		my($s)=player::server;
 		my($left, $right)=(map::team_color('left'), map::team_color('right'));
+		my(@list);
 
 		chat::whisper($s, map::name);
 
-		chat::whisper($s, sprintf('%-16s:', "left  ($left)"),
-			join(', ', map($_->{'nickname'}, player::list('left'))));
+		@list=();
+		foreach my $player (player::list('left')) {
+			if($player->{'alive'}) {
+				push(@list, $player->{'nickname'});
+			} else {
+				push(@list, '('.$player->{'nickname'}.')');
+			}
+		}
+		chat::whisperf($s, '%-16s: %s', "left  ($left)", join(', ', @list));
 
-		chat::whisper($s, sprintf('%-16s:', "right ($right)"),
-			join(', ', map($_->{'nickname'}, player::list('right'))));
+		@list=();
+		foreach my $player (player::list('right')) {
+			if($player->{'alive'}) {
+				push(@list, $player->{'nickname'});
+			} else {
+				push(@list, '('.$player->{'nickname'}.')');
+			}
+		}
+		chat::whisperf($s, '%-16s: %s', "right ($right)", join(', ', @list));
 
-		chat::whisper($s, sprintf('%-16s:', 'spec'),
+		chat::whisperf($s, '%-16s: %s', 'spec',
 			join(', ', map($_->{'nickname'}, player::list('spec'))));
 	},
 

@@ -188,11 +188,13 @@ manage Alti+ game maps.
     This is an alias for `/changePlane`
 
   * **/restartMap**<br>
-    This command is a front-end to `/balanceTeams`. If you are the only
-    person on a map, it will balanceTeams without the need for a vote. If
-    you are on a 1de, 1dm, etc. map and are one of the last two players
-    still alive, you can run `/restartMap` and his will `/balanceTeams`
-    without a vote.
+    This command is a front-end to `/balanceTeams` on coop maps.
+    If you are a server admin or one of the two remaining alive players on the
+    map, the server will immediately execute `/balanceTeams`.  Otherwise,
+    the server will call a `/vote balanceTeams` for you.  Executing this
+    command does not count as a victory or defeat, and so does not count
+    towards the overall number of games played on the current map (i.e. it
+    is a restart, not a next).
 
   * **/vote randomMap**<br>
     Change to a random map from the mapRotation.  This command requires
