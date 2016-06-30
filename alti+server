@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.09';
+my($VERSION)='3.10';
 
 =head1 NAME
 
@@ -1316,7 +1316,6 @@ stash are automatically saved to disk.
 	}
 	
 	sub archive {
-		my($stash)=IO::Handle->new;
 		my($attic)=&_read($Stashattic);
 		my($value, $archive, $next);
 
@@ -7750,7 +7749,7 @@ core protecting the flag.
 					chat::whisper($p,
 						"Map added to config, you must /restartServer");
 
-					if($mapconfig=stash::retrieve($mapname)) {
+					if($mapconfig=stash::retrieve($mapname, 'map')) {
 						stash::set($mapname, 'map', $mapconfig);
 					}
 				}
@@ -7815,7 +7814,7 @@ core protecting the flag.
 				chat::whisper($p,
 					"Map added to config, you must /restartServer");
 
-				if($mapconfig=stash::retrieve($mapname)) {
+				if($mapconfig=stash::retrieve($mapname, 'map')) {
 					stash::set($mapname, 'map', $mapconfig);
 				}
 			}
@@ -7871,7 +7870,7 @@ core protecting the flag.
 				chat::whisper($p,
 					"Map added to config, you must /restartServer");
 
-				if($mapconfig=stash::retrieve($mapname)) {
+				if($mapconfig=stash::retrieve($mapname, 'map')) {
 					stash::set($mapname, 'map', $mapconfig);
 				}
 			}
@@ -7927,7 +7926,7 @@ core protecting the flag.
 				chat::whisper($p,
 					"Map added to config, you must /restartServer");
 
-				if($mapconfig=stash::retrieve($mapname)) {
+				if($mapconfig=stash::retrieve($mapname, 'map')) {
 					stash::set($mapname, 'map', $mapconfig);
 				}
 			}
@@ -7984,7 +7983,7 @@ core protecting the flag.
 					chat::whisper($p,
 						"Map added to config, you must /restartServer");
 
-					if($mapconfig=stash::retrieve($mapname)) {
+					if($mapconfig=stash::retrieve($mapname, 'map')) {
 						stash::set($mapname, 'map', $mapconfig);
 					}
 				}
@@ -8037,7 +8036,7 @@ core protecting the flag.
 				chat::whisper($p,
 					"Map added to config, you must /restartServer");
 
-				if($mapconfig=stash::retrieve($mapname)) {
+				if($mapconfig=stash::retrieve($mapname, 'map')) {
 					stash::set($mapname, 'map', $mapconfig);
 				}
 			}
@@ -8076,7 +8075,7 @@ core protecting the flag.
 				server::send('changeMap', config::random_map)
 			}
 
-			stash::archive($mapname);
+			stash::archive($mapname, 'map');
 
 			unlink($file);
 
@@ -10113,7 +10112,7 @@ core protecting the flag.
 			return;
 		}
 
-		$p->{'alive'}=1;
+		$p->{'alive'}=0;
 
 		#Make sure players are the correct level for their aceRank:
 		if($p->{'aceRank'}==0) {
