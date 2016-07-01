@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.10';
+my($VERSION)='3.11';
 
 =head1 NAME
 
@@ -6649,10 +6649,10 @@ play though extended interfaces and server support.
 				ui::slog("left  team:", join(',', map(player::name($_), @$left)));
 				ui::slog("right team:", join(',', map(player::name($_), @$right)));
 
-				while(@$left || @$right) {
-					plus::assign(shift(@$left), 'left') if(@$left);
-					plus::assign(shift(@$right), 'right') if(@$right);
-				}
+				#while(@$left || @$right) {
+				#	plus::assign(shift(@$left), 'left') if(@$left);
+				#	plus::assign(shift(@$right), 'right') if(@$right);
+				#}
 			} $config::Launcher{'warmup'}{map::mode}-3;
 		}
 	}
