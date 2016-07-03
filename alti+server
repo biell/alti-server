@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.11';
+my($VERSION)='3.12';
 
 =head1 NAME
 
@@ -65,6 +65,9 @@ my(%OPTIONS)=(
 			'00000000-0000-0000-0000-000000000000',
 		),
 	superAdmins	=> join(';',
+			'00000000-0000-0000-0000-000000000000',
+		),
+	moderators	=> join(';',
 			'00000000-0000-0000-0000-000000000000',
 		),
 	motd			=> join(';', 
@@ -1939,6 +1942,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Commands{'setPlayerName'}=['player', 'string'];
 		$Commands{'updateNames'}=undef;
 		$Commands{'showAdmins'}=undef;
+		$Commands{'showModerators'}=undef;
 		$Commands{'showPlayer'}=['player'];
 		$Commands{'showTeams'}=undef;
 		$Commands{'showSeen'}=undef;
@@ -2270,7 +2274,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	'abuse'	=> {
 		'name'			=> 'abuse',
 		'arguments'		=> ['player', ['chat', 'ban', 'nick', 'rude']],
-		'voteThreshold'	=> 100,
+		'voteThreshold'	=> 0,
 		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
 	},
@@ -4029,11 +4033,13 @@ is updated with them as the games progress.
 
 	my(@Players)=();
 	my(@Admins)=();
+	my(@Moderators)=();
 	my(%Pdb)=();
 
 	sub init {
 		@Players=();
 		@Admins=();
+		@Moderators=();
 		%Pdb=();
 	}
 
@@ -4045,12 +4051,14 @@ is updated with them as the games progress.
 			'team'		=> -1,
 			'isBot'		=> 1,
 			'superAdmin'	=> 1,
+			'moderator'	=> 1,
 		});
 	}
 
 	sub add {
 		my($p)=@_;
 		my($sas)=config::option('superAdmins');
+		my($mods)=config::option('moderators');
 		my($db);
 
 		$p->{'joined'}=1;
@@ -4074,6 +4082,12 @@ is updated with them as the games progress.
 			$p->{'superAdmin'}=1;
 		} else {
 			$p->{'superAdmin'}=0;
+		}
+
+		if($mods=~m/(^|;)$p->{'vaporId'}(;|$)/) {
+			$p->{'moderator'}=1;
+		} else {
+			$p->{'moderator'}=0;
 		}
 
 		$Pdb{$p->{'nickname'}}	=
@@ -4275,6 +4289,10 @@ is updated with them as the games progress.
 
 	sub admins {
 		return(@Admins);
+	}
+
+	sub moderators {
+		return(@Moderators);
 	}
 
 	sub reset {
@@ -5291,7 +5309,7 @@ server switches the map and the race begins.
 	sub block {
 		my($p)=@_;
 
-		unless(exists($Racers{$p}) || $p->{'admin'}) {
+		unless(exists($Racers{$p}) || $p->{'admin'} || $p->{'moderator'}) {
 			server::send('addChatBlock', $p->{'vaporId'},
 					'AllChat', 5, 'minute', 'All chat blocked during race');
 		}
@@ -5300,7 +5318,7 @@ server switches the map and the race begins.
 	sub unblock {
 		my($p)=@_;
 
-		unless(exists($Racers{$p}) || $p->{'admin'}) {
+		unless(exists($Racers{$p}) || $p->{'admin'} || $p->{'moderator'}) {
 			server::send('removeChatBlock', $p->{'vaporId'}, 'AllChat');
 		}
 	}
@@ -7457,7 +7475,10 @@ core protecting the flag.
 		my($ip)=$a->{'ip'};
 		my(@duration);
 
-		return unless($e->{'admin'});
+		unless($p->{'admin'} || $p->{'moderator'}) {
+			chat::whisper($p, 'Only Admins and Moderators may use abuse');
+			return;
+		}
 
 		$ip=~s/:.*$//;
 
@@ -10872,7 +10893,7 @@ core protecting the flag.
 				}
 			}
 
-			if($p->{'admin'}) {
+			if($p->{'admin'} || $p->{'moderator'}) {
 				server::send('balanceTeams');
 			} elsif(@alive<=2 && grep($p==$_, @alive)) {
 				server::send('balanceTeams');
@@ -11020,7 +11041,7 @@ also only available from the console.
 
 			$current=config::option($name);
 
-			if($name=~m/(superA|a)dmins/ && $value!~m/^[0-9a-f-]{36}$/) {
+			if($name=~m/(superA|a)dmins|moderators/ && $value!~m/^[0-9a-f-]{36}$/) {
 				if($lookup=player::lookup($value)) {
 					$value=$lookup->{'vaporId'};
 				} elsif($lookup=db::psearch($value)) {
@@ -11191,6 +11212,24 @@ also only available from the console.
 		} else {
 			foreach my $admin (split(m/;/, $admins)) {
 				chat::whisper($s, $admin);
+			}
+		}
+	},
+
+	'showModerators'	=> sub {
+		my($mods)=config::option('moderators');
+		my($s)=player::server;
+		my($player);
+
+		if(db::enabled) {
+			foreach my $mod (split(m/;/, $mods)) {
+				$player=db::psearch($mod);
+				chat::whisper($s, $mod, 
+					$player->{'name'} || $player->{'nickname'});
+			}
+		} else {
+			foreach my $mod (split(m/;/, $mods)) {
+				chat::whisper($s, $mod);
 			}
 		}
 	},
