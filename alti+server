@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.12';
+my($VERSION)='3.13';
 
 =head1 NAME
 
@@ -4466,6 +4466,11 @@ debugging or to make funny comments.
 		server::send('serverMessage', $msg);
 	}
 
+	sub allf {
+		my($fmt)=shift;
+		server::send('serverMessage', sprintf($fmt, @_));
+	}
+
 	sub team {
 		my($team)=shift;
 		my($msg)=join(' ', @_);
@@ -5804,6 +5809,7 @@ play though extended interfaces and server support.
 
 	my(%Stats)=();
 	my(%Reset)=();
+	my(%Restart)=();
 	my($Hunted)=undef;
 	my($Active)=0;
 	my($Captured)=0;
@@ -5936,6 +5942,36 @@ play though extended interfaces and server support.
 		}
 
 		return(1);
+	}
+
+	sub restart_print {
+		my(@restarters)=keys(%Restart);
+		my(@players)=player::list('both');
+
+		if(%Restart) {
+			chat::allf('/restartMap %d/%d',
+				int(@restarters), int((@players+1)/2));
+		}
+	}
+
+	sub restart_request {
+		my($p)=@_;
+		my(@restarters)=keys(%Restart);
+		my(@players)=player::list('both');
+
+		if(exists($Restart{$p})) {
+			chat::whisperf('/restartMap %d/%d',
+				int(@restarters), int((@players+1)/2));
+		} else {
+			$Restart{$p}=1;
+
+			if(&restart_achieved) {
+				server::send('balanceTeams');
+			} else {
+				chat::allf('/restartMap %d/%d',
+					int(@restarters)+1, int((@players+1)/2));
+			}
+		}
 	}
 
 	sub spawns {
@@ -6486,6 +6522,9 @@ play though extended interfaces and server support.
 		my($p)=@_;
 
 		if($Stats{'players'}{'playing'}{$p}) {
+			delete($Restart{$p});
+			queue::schedule { &restart_print; } 0;
+
 			delete($Stats{'players'}{'playing'}{$p});
 			if($Stats{'players'}{'count'}>0) {
 				$Stats{'players'}{'count'}--;
@@ -6558,10 +6597,12 @@ play though extended interfaces and server support.
 
 		if(!race::allowed($p)) {
 			return(0);
-		} elsif($Stats{'players'}{'playing'}{$p}) {
+		} elsif($Stats{'players'}{'playing'}{$p}) {  #Already entered
 			return(1);
 		} elsif($Stats{'players'}{'count'}<$max) {
+			queue::schedule { &restart_print; } 0;
 			&zone_init($p) if(stash::get('keys', map::name, 'map') & 1);
+
 			$Stats{'players'}{'playing'}{$p}=1;
 			$Stats{'players'}{'count'}++;
 			return(1);
@@ -6600,6 +6641,7 @@ play though extended interfaces and server support.
 
 		%Stats=();
 		%Reset=();
+		%Restart=();
 		$Hunted=undef;
 		$Active=0;
 		$Captured=0;
@@ -9900,6 +9942,8 @@ core protecting the flag.
 				}
 			}
 			plus::spawn_reset($p);
+		} elsif($p->{'admin'} && $zone=~m/^here$/i) {
+			server::trigger('logPlanePositions', 'spawnHere', $e, $p);
 		} elsif($spawn_mode ne 'zone') {
 			chat::whisper($p, "Zone spawning not allowed in mode: $spawn_mode");
 		} elsif(ref($coords) eq 'ARRAY') {
@@ -9922,6 +9966,25 @@ core protecting the flag.
 
 	'sz'			=> sub {
 		$HOOKS{'spawnZone'}->(@_);
+	},
+
+	'logPlanePositions:spawnHere'	=> sub {
+		my($e1, $p1, $e2, $p2)=@_;
+
+		queue::schedule {
+			server::trigger(	'logPlanePositions',
+							'logPlanePositions:spawnHere',
+							$e1, $p1, $e2, $p2)
+		} 1;
+	},
+
+	'logPlanePositions:logPlanePositions:spawnHere'	=> sub {
+		my($e1, $p1, $e2, $p2, $e3, $p3)=@_;
+		my(@pos1)=split(m/,/, $e2->{'positionByPlayer'}{$p3->{'player'}});
+		my(@pos2)=split(m/,/, $e1->{'positionByPlayer'}{$p3->{'player'}});
+
+		plus::spawn_here($p3, @pos1, $pos2[0]-$pos1[0], $pos2[1]-$pos1[1]);
+		chat::whisper($p3, '/spawnZone here registered');
 	},
 
 	'changePlane'	=> sub {
@@ -10883,11 +10946,10 @@ core protecting the flag.
 
 	'restartMap'	=> sub {
 		my($e, $p)=@_;
-		my($assign)=stash::get('assignTeam', map::name, 'map');
 		my(@alive)=();
 
 		if(map::type('coop')) {
-			foreach my $player (player::list($assign)) {
+			foreach my $player (player::list('both')) {
 				if($player->{'alive'} && !$player->{'isBot'}) {
 					push(@alive, $player);
 				}
@@ -10898,7 +10960,7 @@ core protecting the flag.
 			} elsif(@alive<=2 && grep($p==$_, @alive)) {
 				server::send('balanceTeams');
 			} else {
-				server::send('vote', 'balanceTeams');
+				plus::restart_request($p);
 			}
 		} else {
 			chat::whisper($p, 'This command is only available for coop');

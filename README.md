@@ -190,11 +190,12 @@ manage Alti+ game maps.
   * **/restartMap**<br>
     This command is a front-end to `/balanceTeams` on coop maps.
     If you are a server admin or one of the two remaining alive players on the
-    map, the server will immediately execute `/balanceTeams`.  Otherwise,
-    the server will call a `/vote balanceTeams` for you.  Executing this
-    command does not count as a victory or defeat, and so does not count
-    towards the overall number of games played on the current map (i.e. it
-    is a restart, not a next).
+    map, the server will immediately execute `/balanceTeams`.   If you are
+    a server moderator, you may also run `/restartMap` at any time.
+
+    Otherwise, your request will be stored and the other players will
+    be notified.  After more than half the active players run
+    `/restartMap`, the server will initiate a `/balanceTeams`.
 
   * **/vote randomMap**<br>
     Change to a random map from the mapRotation.  This command requires
@@ -554,6 +555,8 @@ file to save space for more maps.
     server message telling them to clean up their act;  if the player is
     within 5 infractions of being kicked, they will be kicked by the
     server.
+
+    The `/abuse` command is also available to moderators.
 
   * **/restartServer**<br>
     Restart the server. This will shut the currently running server down,
