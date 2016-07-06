@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.13';
+my($VERSION)='3.14';
 
 =head1 NAME
 
@@ -5965,7 +5965,7 @@ play though extended interfaces and server support.
 		} else {
 			$Restart{$p}=1;
 
-			if(&restart_achieved) {
+			if(int(@restarters)+1 > int((@players+1)/2)) {
 				server::send('balanceTeams');
 			} else {
 				chat::allf('/restartMap %d/%d',
