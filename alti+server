@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.14';
+my($VERSION)='3.15';
 
 =head1 NAME
 
@@ -5956,8 +5956,8 @@ play though extended interfaces and server support.
 
 	sub restart_request {
 		my($p)=@_;
-		my(@restarters)=keys(%Restart);
-		my(@players)=player::list('both');
+		my($threshold)=int(player::list('both')+1/2);
+		my($count);
 
 		if(exists($Restart{$p})) {
 			chat::whisperf('/restartMap %d/%d',
@@ -5965,11 +5965,12 @@ play though extended interfaces and server support.
 		} else {
 			$Restart{$p}=1;
 
-			if(int(@restarters)+1 > int((@players+1)/2)) {
+			$count=keys(%Restart);
+
+			if($count >= $threshold) {
 				server::send('balanceTeams');
 			} else {
-				chat::allf('/restartMap %d/%d',
-					int(@restarters)+1, int((@players+1)/2));
+				chat::allf('/restartMap %d/%d', $count, $threshold);
 			}
 		}
 	}
