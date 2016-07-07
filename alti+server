@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.17';
+my($VERSION)='3.18';
 
 =head1 NAME
 
@@ -10856,9 +10856,15 @@ core protecting the flag.
 	'objectiveGameEnd' 		=> sub {
 		my($e, $p)=@_;
 
-		plus::restart_clear;
-		queue::clear;
-		records::enter($e);
+		if($e->{'timeSeconds'}<=5) {
+			if(map::idle > config::option('timeIdleChange')/4) {
+				server::send('changeMap', config::lobby) if(config::lobby);
+			}
+		} else {
+			plus::restart_clear;
+			queue::clear;
+			records::enter($e);
+		}
 	},
 
 	'roundEnd'	=> sub {
