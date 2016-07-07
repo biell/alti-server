@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.15';
+my($VERSION)='3.16';
 
 =head1 NAME
 
@@ -2439,7 +2439,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'name'			=> 'restartMap',
 		'arguments'		=> [],
 		'voteThreshold'	=> 0,
-		'enabled'			=> config::option('allowUploads'),
+		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
 	},
 );
@@ -4754,7 +4754,7 @@ they make the top 5.
 
 			ui::slog(json::encode([map(player::id($_), @nicks)]));
 
-			if($time>90 && $Helpers{$nicks[0]}>50) {
+			if($time>90 && $Helpers{$nicks[0]}>50 && !map::type('1de')) {
 				@nicks=grep($Helpers{$_}>25, @nicks);
 			} else {
 				@nicks=grep($Helpers{$_}>10, @nicks);
@@ -5944,13 +5944,17 @@ play though extended interfaces and server support.
 		return(1);
 	}
 
+	sub restart_clear {
+		%Restart=();
+	}
+
 	sub restart_print {
-		my(@restarters)=keys(%Restart);
-		my(@players)=player::list('both');
+		my($threshold)=int(player::list('both')+1/2);
+		my($count);
 
 		if(%Restart) {
-			chat::allf('/restartMap %d/%d',
-				int(@restarters), int((@players+1)/2));
+			$count=keys(%Restart);
+			chat::allf('/restartMap %d/%d', $count, $threshold);
 		}
 	}
 
@@ -5960,8 +5964,8 @@ play though extended interfaces and server support.
 		my($count);
 
 		if(exists($Restart{$p})) {
-			chat::whisperf('/restartMap %d/%d',
-				int(@restarters), int((@players+1)/2));
+			$count=keys(%Restart);
+			chat::whisperf('/restartMap %d/%d', $count, $threshold);
 		} else {
 			$Restart{$p}=1;
 
@@ -6642,7 +6646,6 @@ play though extended interfaces and server support.
 
 		%Stats=();
 		%Reset=();
-		%Restart=();
 		$Hunted=undef;
 		$Active=0;
 		$Captured=0;
@@ -6652,6 +6655,7 @@ play though extended interfaces and server support.
 		records::init;
 		race::init;
 
+		&restart_clear;
 		&round;
 
 		if(map::type('ruin')) {
@@ -10759,7 +10763,7 @@ core protecting the flag.
 
 		$p->{'stats'}{$e->{'target'}}++;
 
-		if($e->{'target'} eq 'base') {
+		if($e->{'target'} eq 'base' && !map::type('1de')) {
 			records::help($p, 10);
 		} else {
 			records::help($p, 2);
@@ -10851,6 +10855,7 @@ core protecting the flag.
 	'objectiveGameEnd' 		=> sub {
 		my($e, $p)=@_;
 
+		plus::restart_clear;
 		queue::clear;
 		records::enter($e);
 	},
