@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.18';
+my($VERSION)='3.19';
 
 =head1 NAME
 
@@ -5954,7 +5954,7 @@ play though extended interfaces and server support.
 
 		if(%Restart) {
 			$count=keys(%Restart);
-			chat::allf('/restartMap %d/%d', $count, $threshold);
+			chat::allf('/restartMap: %d/%d', $count, $threshold);
 		}
 	}
 
@@ -5965,7 +5965,7 @@ play though extended interfaces and server support.
 
 		if(exists($Restart{$p})) {
 			$count=keys(%Restart);
-			chat::whisperf('/restartMap %d/%d', $count, $threshold);
+			chat::whisperf('/restartMap: %d/%d', $count, $threshold);
 		} else {
 			$Restart{$p}=1;
 
@@ -5975,7 +5975,7 @@ play though extended interfaces and server support.
 				server::send('balanceTeams');
 				&restart_clear;
 			} else {
-				chat::allf('/restartMap %d/%d', $count, $threshold);
+				chat::allf('/restartMap: %d/%d', $count, $threshold);
 			}
 		}
 	}
@@ -10496,6 +10496,7 @@ core protecting the flag.
 			}
 		} elsif($powerup eq 'Demolition Charge') {
 			$p->{'carrier'}=0;
+			records::help($p, 2);
 		} elsif($powerup eq 'Homing Missile') {
 			if($p->{'Homing Missile'}{'count'} > 12) {
 				chat::snark($p, 'Hwacha');
@@ -10533,6 +10534,7 @@ core protecting the flag.
 
 		if(map::powerup($e, 'Ball', 'Bomb', 'Demolition Charge')) {
 			$p->{'carrier'}=1;
+			records::help($p, 2) if(map::type('coop'));
 		}
 
 		return if($p->{'isBot'});
@@ -10778,6 +10780,33 @@ core protecting the flag.
 		}
 	},
 
+	'demolitionChargePlanted'	=> sub {
+		my($e, $p)=@_;
+
+		if(map::type('coop')) {
+			server::trigger('logPlanePositions', 'demolitionChargePlanted', $e, $p);
+		}
+
+	},
+
+	'logPlanePositions:demolitionChargePlanted'	=> sub {
+		my($e1, $p1, $e2, $p2)=@_;
+		my($pos)=$e1->{'positionByPlayer'};
+		my(@ref)=split(m/,/, $pos->{$p2->{'player'}});
+		my(@cur);
+
+		return if($ref[0] == -1);
+
+		foreach my $playerid (keys(%$pos)) {
+			next if($pos->{$playerid} eq '-1,-1');
+
+			@cur=split(m/,/, $pos->{$playerid});
+
+			records::help(player::lookup($playerid),
+				List::Util::max(0, 10-utils::distance(@ref, @cur)/100)
+			);
+		}
+	},
 
 	'pingSummary'	=> sub {
 		my($e, $p)=@_;
