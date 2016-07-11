@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.20';
+my($VERSION)='3.21';
 
 =head1 NAME
 
@@ -10808,7 +10808,7 @@ core protecting the flag.
 		foreach my $playerid (keys(%$pos)) {
 			@cur=split(m/,/, $pos->{$playerid});
 
-			next if($pos[0] == -1);
+			next if($cur[0] == -1);
 
 			records::help(player::lookup($playerid),
 				List::Util::max(1, 10-utils::distance(@ref, @cur)/100)
