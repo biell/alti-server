@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.19';
+my($VERSION)='3.20';
 
 =head1 NAME
 
@@ -4734,7 +4734,7 @@ they make the top 5.
 
 		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
 
-		$save=0 if(map::mode('tbd', '1de') && map::type('coop')
+		$save=0 if(map::mode('tbd', '1de', '1bd') && map::type('coop')
 				&& ($e->{'time'}-$Destroy) > 3000);
 
 		$time=sprintf("%0.2f", ($e->{'time'} - $Start)/$config::Clock);
@@ -4752,9 +4752,9 @@ they make the top 5.
 		} elsif(%Helpers && map::type('coop', 'ruin')) {
 			@nicks=sort({ $Helpers{$b} <=> $Helpers{$a} } keys(%Helpers));
 
-			ui::slog(json::encode([map(player::id($_), @nicks)]));
+			ui::slog(json::encode({map(($_->{'nickname'} => $Helpers{$_}), @nicks)}));
 
-			if($time>90 && $Helpers{$nicks[0]}>50 && !map::type('1de')) {
+			if($time>90 && $Helpers{$nicks[0]}>50 && !map::mode('1de', '1bd')) {
 				@nicks=grep($Helpers{$_}>25, @nicks);
 			} else {
 				@nicks=grep($Helpers{$_}>10, @nicks);
@@ -10753,9 +10753,16 @@ core protecting the flag.
 		if($e->{'target'} eq 'base') {
 
 			records::help($p, $e->{'xp'}-5);
-			$p->{'stats'}{'base'}+=$e->{'xp'}/30;
 
-			rank::score($p->{'team'}, $e->{'xp'}/30);
+			if(map::mode('1de', '1bd')) {
+				$p->{'stats'}{'base'}+=4;
+
+				rank::score($p->{'team'}, 4);
+			} else {
+				$p->{'stats'}{'base'}+=$e->{'xp'}/30;
+
+				rank::score($p->{'team'}, $e->{'xp'}/30);
+			}
 		} else {
 			records::help($p, 1);
 		}
@@ -10766,7 +10773,7 @@ core protecting the flag.
 
 		$p->{'stats'}{$e->{'target'}}++;
 
-		if($e->{'target'} eq 'base' && !map::type('1de')) {
+		if($e->{'target'} eq 'base') {
 			records::help($p, 10);
 		} else {
 			records::help($p, 2);
@@ -10784,6 +10791,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		if(map::type('coop')) {
+			records::help($p, 10);
 			server::trigger('logPlanePositions', 'demolitionChargePlanted', $e, $p);
 		}
 
@@ -10798,12 +10806,12 @@ core protecting the flag.
 		return if($ref[0] == -1);
 
 		foreach my $playerid (keys(%$pos)) {
-			next if($pos->{$playerid} eq '-1,-1');
-
 			@cur=split(m/,/, $pos->{$playerid});
 
+			next if($pos[0] == -1);
+
 			records::help(player::lookup($playerid),
-				List::Util::max(0, 10-utils::distance(@ref, @cur)/100)
+				List::Util::max(1, 10-utils::distance(@ref, @cur)/100)
 			);
 		}
 	},
