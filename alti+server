@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.23';
+my($VERSION)='3.24';
 
 =head1 NAME
 
@@ -4661,7 +4661,7 @@ they make the top 5.
 
 	sub mark {
 		my($e)=@_;
-		my($i)=1;
+		my($i, $i2)=(1, 1);
 		my($records);
 		
 		if(db::enabled) {
@@ -4678,7 +4678,7 @@ they make the top 5.
 		foreach my $record (@$records) {
 			if(map::mode('1de') && map::type('coop')) {
 				queue::schedule {
-					chat::all(&fmt_record($i, $record->[0]), '(plant)')
+					chat::all(&fmt_record($i2++, $record->[0]), '(plant)')
 				} $record->[0]-23;
 			}
 			queue::schedule {
