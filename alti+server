@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.21';
+my($VERSION)='3.22';
 
 =head1 NAME
 
@@ -4676,6 +4676,11 @@ they make the top 5.
 		return unless(ref($records) eq 'ARRAY');
 
 		foreach my $record (@$records) {
+			if(map::mode('1de') && map::type('coop')) {
+				queue::schedule {
+					chat::all(&fmt_record($i++, $record->[0]), '(plant)')
+				} $record->[0]-23;
+			}
 			queue::schedule {
 				chat::all(&fmt_record($i++, $record->[0]));
 			} $record->[0]-3;
@@ -8315,7 +8320,9 @@ core protecting the flag.
 			if($p->{'stats'}{'spawns'}) {
 				server::send('overrideSpawnPoint', $player->{'nickname'}, 0, 0, 0);
 			}
-			$player->{'stats'}={'carrier' => 0};
+			$player->{'stats'}={};
+			$player->{'carrier'}=0;
+			$player->{'has'}=undef;
 			player::forgive($player);
 		}
 
@@ -10503,6 +10510,8 @@ core protecting the flag.
 				$p->{'Homing Missile'}{'count'}=0;
 			}
 		}
+
+		$p->{'has'}=undef;
 	},
 
 	'powerupPickup'	=> sub {
@@ -10536,6 +10545,8 @@ core protecting the flag.
 			$p->{'carrier'}=1;
 			records::help($p, 2) if(map::type('coop'));
 		}
+
+		$p->{'has'}=$e->{'powerup'};
 
 		return if($p->{'isBot'});
 
