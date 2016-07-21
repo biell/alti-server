@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.25';
+my($VERSION)='3.26';
 
 =head1 NAME
 
@@ -3868,7 +3868,7 @@ types which alter the normal behavior.
 	sub has_powerup {
 		my($type)=@_;
 
-		return(%Powerups{$type});
+		return($Powerups{$type});
 	}
 
 	sub spawn_points {
