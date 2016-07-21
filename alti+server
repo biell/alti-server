@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.24';
+my($VERSION)='3.25';
 
 =head1 NAME
 
@@ -3568,6 +3568,7 @@ types which alter the normal behavior.
 	my($Cpu)=0;
 	my($Ds)=undef;
 	my(%Pickups)=();
+	my(%Powerups)=();
 	my(%Turrets)=();
 	my(%Bases)=();
 	my(%Goals)=();
@@ -3864,6 +3865,12 @@ types which alter the normal behavior.
 		return(@powerups);
 	}
 
+	sub has_powerup {
+		my($type)=@_;
+
+		return(%Powerups{$type});
+	}
+
 	sub spawn_points {
 		my($spawns)=$Ds->{'views'}{'Game'}{'spawnPoints'}[0]{'spawnPoints'};
 
@@ -3975,6 +3982,7 @@ types which alter the normal behavior.
 		$Cpu=List::Util::sum(server::cpu_secs);
 		$Ds=&definition($Map->{'map'});
 		%Pickups=();
+		%Powerups=();
 		%Turrets=();
 		%Bases=();
 		%Goals=();
@@ -3993,6 +4001,10 @@ types which alter the normal behavior.
 		if(ref($obj) eq 'ARRAY') {
 			foreach my $pu (@$obj) {
 				$Pickups{"$pu->{'x'},$pu->{'y'}"}=$pu->{'selectedPowerups'};
+
+				foreach my $kind (@{$pu->{'selectedPowerups'}}) {
+					push(@{$Powerups{$kind}}, "$pu->{'x'},$pu->{'y'}");
+				}
 			}
 		}
 
@@ -4677,13 +4689,19 @@ they make the top 5.
 
 		foreach my $record (@$records) {
 			if(map::mode('1de') && map::type('coop')) {
+				if(map::has_powerup('Bomb')) {
+					queue::schedule {
+						chat::all(&fmt_record($i++, $record->[0]));
+					} $record->[0]-3
+				}
 				queue::schedule {
 					chat::all(&fmt_record($i2++, $record->[0]), '(plant)')
 				} $record->[0]-23;
+			} else {
+				queue::schedule {
+					chat::all(&fmt_record($i++, $record->[0]));
+				} $record->[0]-3;
 			}
-			queue::schedule {
-				chat::all(&fmt_record($i++, $record->[0]));
-			} $record->[0]-3;
 		}
 	}
 
@@ -9181,6 +9199,8 @@ core protecting the flag.
 		chat::whisper($p, 'Manage map records');
 		chat::whisper($p, '/list records');
 		chat::whisper($p, '/del record <time>');
+		chat::whisper($p, '/set record <none|round|plant>');
+		chat::whisper($p, '/unset record');
 	},
 
 	'list records'	=> sub {
