@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.26';
+my($VERSION)='3.27';
 
 =head1 NAME
 
@@ -5017,9 +5017,9 @@ These rankings can also be configured to select evenly matched teams.
 
 		#Team:
 		if($stats->{'differential'}>0) {
-			$rate+=19;
+			$rate+=20;
 		} elsif($stats->{'differential'}<0) {
-			$rate-=21;
+			$rate-=19;
 		}
 
 		return($rate);
@@ -7771,6 +7771,8 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($nick)=shift(@{$e->{'arguments'}});
 		our($kicker, $kickee);
+
+		records::help($p, -100);
 
 		if($nick eq $kickee && ref($kicker) eq 'HASH') {
 			player::forgive($kicker);
