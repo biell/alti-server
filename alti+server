@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.27';
+my($VERSION)='3.28';
 
 =head1 NAME
 
@@ -10857,6 +10857,10 @@ core protecting the flag.
 		foreach my $player_id (keys(%pings)) {
 			$player=player::lookup($player_id);
 			$player->{'ping'}=$pings{$player_id};
+
+			if($player->{'alive'} && map::type('coop')) {
+				records::help($player, 1);
+			}
 		}
 
 		return unless(chat::snarky);
