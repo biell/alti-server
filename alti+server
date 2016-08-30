@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.31';
+my($VERSION)='3.32';
 
 =head1 NAME
 
@@ -4716,7 +4716,7 @@ they make the top 5.
 				}
 				queue::schedule {
 					chat::all(&fmt_record($i2++, $record->[0]), '(plant)')
-				} $record->[0]-24;
+				} $record->[0]-24 if($record->[0]>30);
 			} else {
 				queue::schedule {
 					chat::all(&fmt_record($i++, $record->[0]));
@@ -4794,8 +4794,6 @@ they make the top 5.
 			}
 		} elsif(%Helpers && map::type('coop', 'ruin')) {
 			@nicks=sort({ $Helpers{$b} <=> $Helpers{$a} } keys(%Helpers));
-
-			ui::slog(json::encode({map(($_->{'nickname'} => $Helpers{$_}), @nicks)}));
 
 			if($time>90 && $Helpers{$nicks[0]}>50 && !map::mode('1de', '1bd')) {
 				@nicks=grep($Helpers{$_}>25, @nicks);
@@ -10461,6 +10459,12 @@ core protecting the flag.
 		return if($p->{'isBot'});
 		return if($e->{'leaving'});
 
+		return if($e->{'level'}==1	&&
+				$e->{'aceRank'}==0	&&
+				$e->{'perkGreen'}=~m/No Green Perk/	&&
+				$e->{'perkBlue'}=~m/No Blue Perk/
+			);
+
 		@$p{'plane','perkGreen','perkRed','perkBlue'}=
 			@$e{'plane','perkGreen','perkRed','perkBlue'};
 
@@ -11121,9 +11125,17 @@ core protecting the flag.
 			}
 
 			if($p->{'admin'} || $p->{'moderator'}) {
-				server::send('balanceTeams');
+				if(map::mode('1de', '1dm', '1bd')) {
+					server::send('balanceTeams');
+				} else {
+					server::send('changeMap', map::name);
+				}
 			} elsif(@alive<=2 && grep($p==$_, @alive)) {
-				server::send('balanceTeams');
+				if(map::mode('1de', '1dm', '1bd')) {
+					server::send('balanceTeams');
+				} else {
+					server::send('changeMap', map::name);
+				}
 			} else {
 				plus::restart_request($p);
 			}
