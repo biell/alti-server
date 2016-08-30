@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.29';
+my($VERSION)='3.30';
 
 =head1 NAME
 
@@ -824,6 +824,19 @@ L<perl(1)> should be used to ensure basic operation.
 			close(STDERR);
 			exec($Ping, '-c', 2, $host);
 		}
+	}
+
+	sub fake_logpp {
+		my($e, @pos)=@_;
+
+		return({
+			'type'			=> 'logPlanePositions',
+			'port'			=> $e->{'port'},
+			'time'			=> $e->{'time'}+1,
+			'positionByPlayer'	=> {
+					$e->{'player'}	=> join(',', @pos)
+				},
+		});
 	}
 
 	sub distance {
@@ -3154,6 +3167,142 @@ them to the AltBouncer system.
 	}
 }
 
+=head2 Queue
+
+The B<alti+server> allows tasks to be queued for a future time (in seconds).
+The time is a minimum, and not garunteed to be very accurate.  Each time
+the main loop is executed, the queue is checked and executed after the
+main loop input is completed.  When players are on-line, the pingByPlayer
+log entry occurs every 5 seconds; so, your action whould (at least) be executed
+within this threshold.  The Queue system also supports running functions
+in the background, but only one backgrounded process may run at a time.
+
+=cut
+
+{	package queue;
+
+	use Time::HiRes;
+
+	my(%Queue)=();
+	my($Id)=0;
+	my($Pread, $Pwrite)=(IO::Handle->new, IO::Handle->new);
+	my($Pid, $Bid)=(undef, undef);
+
+	our($Child)=0;
+
+	sub clear {
+		%Queue=();
+	}
+
+	sub schedule(& $) {
+		my($code, $delay)=@_;
+		my($time)=Time::HiRes::time+$delay;
+
+		$Id++;
+
+		$Queue{$Id}=[$time, 1, $code];
+
+		return($Id);
+	}
+
+	sub background(& $) {
+		my($code, $delay)=@_;
+		my($time)=Time::HiRes::time+$delay;
+
+		$Id++;
+
+		$Queue{$Id}=[$time, 0, $code];
+
+		return($Id);
+	}
+
+	sub delete {
+		my($id)=@_;
+
+		delete($Queue{$id});
+	}
+
+	sub peek {
+		my($now)=Time::HiRes::time;
+		my(@tasks)=();
+
+		foreach my $task (values(%Queue)) {
+			push(@tasks, $task) if($task->[0]<$now);
+		}
+
+		return(@tasks);
+	}
+
+	sub execute {
+		my($now)=Time::HiRes::time;
+		my(@tasks)=();
+
+		if($Pid && waitpid($Pid, POSIX::WNOHANG)) {
+			$Pread->blocking(0);
+			while(<$Pread>) {
+				ui::slog($_);
+			}
+			close($Pread);
+			ui::slog("Task $Bid completed (pid $Pid)");
+			$Pid=undef;
+			$Bid=undef;
+		}
+
+		foreach my $id (sort(keys(%Queue))) {
+			if($Queue{$id}[0]<$now) {
+				if($Queue{$id}[1]) {
+					$Queue{$id}[2]->();
+
+					push(@tasks, $id);
+					delete($Queue{$id});
+				} else {
+					unless($Pid) {
+						pipe($Pread, $Pwrite);
+		
+						if($Pid=fork()) {
+							close($Pwrite);
+							$Bid=$id;
+							ui::slog("Task $Bid started (pid $Pid)");
+						} else {
+							$Child=1;
+							close($Pread);
+							ui::redirect($Pwrite);
+
+							if(db::enabled) {
+								db::reconnect('InactiveDestroy' => 1);
+							}
+
+							$Queue{$id}[2]->();
+
+							close($Pwrite);
+							exit(0);
+						}
+
+						push(@tasks, $id);
+						delete($Queue{$id});
+					}
+				}
+			}
+		}
+
+		return(@tasks);
+	}
+
+	sub next {
+		my($now)=Time::HiRes::time;
+		my($left)=300;
+
+		if(%Queue) {
+			$left=List::Util::min($left, map($_->[0]-$now, values(%Queue)));
+
+			$left=0.2 if($left<0.2);
+		}
+
+		return($left);
+	}
+}
+
+
 =head2 Altitude Game Engine
 
 The core of B<alti+server> is the altitude game engine itself.  B<alti+server>
@@ -3398,6 +3547,11 @@ directly with it to manage the instance.
 		push(@{$Trigger{$command}}, ["$command:$key", @data]);
 	}
 
+	sub fake_trigger {
+		my($command, $key, $fake_event, @data)=@_;
+		queue::schedule { $HOOKS{"$command:$key"}->($fake_event, @data) } 0;
+	}
+
 	sub override {
 		my($command, $key, @data)=@_;
 
@@ -3416,140 +3570,6 @@ directly with it to manage the instance.
 
 }
 
-=head2 Queue
-
-The B<alti+server> allows tasks to be queued for a future time (in seconds).
-The time is a minimum, and not garunteed to be very accurate.  Each time
-the main loop is executed, the queue is checked and executed after the
-main loop input is completed.  When players are on-line, the pingByPlayer
-log entry occurs every 5 seconds; so, your action whould (at least) be executed
-within this threshold.  The Queue system also supports running functions
-in the background, but only one backgrounded process may run at a time.
-
-=cut
-
-{	package queue;
-
-	use Time::HiRes;
-
-	my(%Queue)=();
-	my($Id)=0;
-	my($Pread, $Pwrite)=(IO::Handle->new, IO::Handle->new);
-	my($Pid, $Bid)=(undef, undef);
-
-	our($Child)=0;
-
-	sub clear {
-		%Queue=();
-	}
-
-	sub schedule(& $) {
-		my($code, $delay)=@_;
-		my($time)=Time::HiRes::time+$delay;
-
-		$Id++;
-
-		$Queue{$Id}=[$time, 1, $code];
-
-		return($Id);
-	}
-
-	sub background(& $) {
-		my($code, $delay)=@_;
-		my($time)=Time::HiRes::time+$delay;
-
-		$Id++;
-
-		$Queue{$Id}=[$time, 0, $code];
-
-		return($Id);
-	}
-
-	sub delete {
-		my($id)=@_;
-
-		delete($Queue{$id});
-	}
-
-	sub peek {
-		my($now)=Time::HiRes::time;
-		my(@tasks)=();
-
-		foreach my $task (values(%Queue)) {
-			push(@tasks, $task) if($task->[0]<$now);
-		}
-
-		return(@tasks);
-	}
-
-	sub execute {
-		my($now)=Time::HiRes::time;
-		my(@tasks)=();
-
-		if($Pid && waitpid($Pid, POSIX::WNOHANG)) {
-			$Pread->blocking(0);
-			while(<$Pread>) {
-				ui::slog($_);
-			}
-			close($Pread);
-			ui::slog("Task $Bid completed (pid $Pid)");
-			$Pid=undef;
-			$Bid=undef;
-		}
-
-		foreach my $id (sort(keys(%Queue))) {
-			if($Queue{$id}[0]<$now) {
-				if($Queue{$id}[1]) {
-					$Queue{$id}[2]->();
-
-					push(@tasks, $id);
-					delete($Queue{$id});
-				} else {
-					unless($Pid) {
-						pipe($Pread, $Pwrite);
-		
-						if($Pid=fork()) {
-							close($Pwrite);
-							$Bid=$id;
-							ui::slog("Task $Bid started (pid $Pid)");
-						} else {
-							$Child=1;
-							close($Pread);
-							ui::redirect($Pwrite);
-
-							if(db::enabled) {
-								db::reconnect('InactiveDestroy' => 1);
-							}
-
-							$Queue{$id}[2]->();
-
-							close($Pwrite);
-							exit(0);
-						}
-
-						push(@tasks, $id);
-						delete($Queue{$id});
-					}
-				}
-			}
-		}
-
-		return(@tasks);
-	}
-
-	sub next {
-		my($now)=Time::HiRes::time;
-		my($left)=300;
-
-		if(%Queue) {
-			$left=List::Util::min($left, map($_->[0]-$now, values(%Queue)));
-
-			$left=0.2 if($left<0.2);
-		}
-
-		return($left);
-	}
-}
 
 =head2 Maps
 
@@ -10435,6 +10455,37 @@ core protecting the flag.
 		}
 	},
 
+	'playerInfoEv'	=> sub {	#LewisH server patch add-on
+		my($e, $p)=@_;
+		my($minlvl)=config::option('aceLevel');
+
+		return if($p->{'isBot'});
+		return if($e->{'leaving'});
+
+		@$p{'plane','perkGreen','perkRed','perkBlue'}=
+			@$e{'plane','perkGreen','perkRed','perkBlue'};
+
+		if($e->{'level'}==60 && $p->{'level'}==59) {
+			chat::whisper($p, 'Congratulations, you made it to level 60!');
+			if($minlvl>1) {
+				chat::whisper($p, "Don't ACE up, or you will be kicked.");
+				chat::whisper($p, "Server minimum level is: $minlvl.");
+			}
+
+			@$p{'aceRank','level'}=@$e{'aceRank','level'};
+		} elsif($e->{'level'} != $p->{'level'}) {
+			if($e->{'aceRank'}>$p->{'aceRank'} && $p->{'level'}<$minlvl) {
+				chat::whisper($p, "Congratulations on Acing up, but now you don't meet the minimum level requirement.");
+				queue::schedule {
+					server::send('kick', $p->{'nickname'})
+				} 4;
+			}
+			@$p{'aceRank','level'}=@$e{'aceRank','level'};
+		}
+
+		plus::plane_check($p); #Notify only, don't enforce until spawn
+	},
+
 	'goal'	=> sub {
 		my($e, $p)=@_;
 		my($a)=player::lookup($e->{'assister'});
@@ -10542,6 +10593,7 @@ core protecting the flag.
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
 		my($spawn)=$p->{'stats'}{'spawns'}[-1];
 		my($pickup)=join(',', @$e{'positionX','positionY'});
+		my(@fake_event)=();
 
 		#Don't repeat this specific powerup for 0.8 seconds
 		return unless(plus::no_repeats($e, $p));
@@ -10597,12 +10649,33 @@ core protecting the flag.
 			return;
 		}
 
+		if($e->{'playerVelX'} && $e->{'playerVelY'}) { #LewisH velocity patch
+			@fake_event=(
+				{
+					'type'			=> 'logPlanePositions',
+					'port'			=> $e->{'port'},
+					'time'			=> $e->{'time'}+1,
+					'positionByPlayer'	=> {
+						$e->{'player'}	=> join(',',
+							$e->{'positionX'}+$e->{'playerVelX'},
+							$e->{'positionY'}+$e->{'playerVelY'},
+						),
+					},
+				}, player::server
+			);
+		}
+
 		if(stash::get($pickup, 'oneways', map::name, 'map')) {
 			#Don't repeat any oneway for 0.8 seconds
 			if(plus::no_repeats($e, $p, 'oneway')) {
-				queue::schedule {
-					server::trigger('logPlanePositions', 'oneway', $e, $p)
-				} 1;
+				if(@fake_event) {
+					server::fake_trigger('logPlanePositions', 'oneway',
+							@fake_event, $e, $p);
+				} else {
+					queue::schedule {
+						server::trigger('logPlanePositions', 'oneway', $e, $p)
+					} 1;
+				}
 			}
 		} elsif($spawn_mode eq 'health') {
 			chat::debug($spawn, $e->{'positionX'}, $e->{'positionY'});
@@ -10612,7 +10685,12 @@ core protecting the flag.
 					$e->{'positionY'}!=$spawn->[1]
 				)
 			) {
-				server::trigger('logPlanePositions', 'powerup', $e, $p)
+				if(@fake_event) {
+					server::fake_trigger('logPlanePositions', 'powerup',
+							@fake_event, $e, $p);
+				} else {
+					server::trigger('logPlanePositions', 'powerup', $e, $p);
+				}
 			}
 		} elsif($spawn_mode eq 'powerup') {
 			chat::debug($spawn, $e->{'positionX'}, $e->{'positionY'});
@@ -10631,6 +10709,9 @@ core protecting the flag.
 							chat::whisper($p, $zone);
 						}
 					}
+				} elsif(@fake_event) {
+					server::fake_trigger('logPlanePositions', 'powerup',
+							@fake_event, $e, $p);
 				} else {
 					server::trigger('logPlanePositions', 'powerup', $e, $p);
 				}
