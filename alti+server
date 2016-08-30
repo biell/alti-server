@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.30';
+my($VERSION)='3.31';
 
 =head1 NAME
 
@@ -6354,7 +6354,6 @@ play though extended interfaces and server support.
 		my($p, $door)=@_;
 		my($team)=$p->{'team'};
 
-		ui::slog('door_open', $Stats{$p}{$team}{'door'}{$door}, $Stats{$team}{'door'}{$door});
 		return(
 			$Stats{$p}{$team}{'door'}{$door}
 			||  $Stats{$team}{'door'}{$door}
@@ -6430,7 +6429,7 @@ play though extended interfaces and server support.
 				if(&key_found($p, $pickup)) {
 					return(0);
 				} else {
-					chat::team($p, $p->{'nickname'}, 'found key',  $door->{'name'}{$pickup},'for', $door->{'keys'}{$pickup});
+					chat::team($p, $p->{'nickname'}, "found key '$door->{'name'}{$pickup}' for '$door->{'keys'}{$pickup}'");
 					if($personal) {
 						$Stats{$p}{$p->{'team'}}{'key'}{$pickup}=1;
 					} else {
@@ -10468,7 +10467,7 @@ core protecting the flag.
 		if($e->{'level'}==60 && $p->{'level'}==59) {
 			chat::whisper($p, 'Congratulations, you made it to level 60!');
 			if($minlvl>1) {
-				chat::whisper($p, "Don't ACE up, or you will be kicked.");
+				chat::whisper($p, "Don't ACE up, or you can't play.");
 				chat::whisper($p, "Server minimum level is: $minlvl.");
 			}
 
@@ -10476,9 +10475,7 @@ core protecting the flag.
 		} elsif($e->{'level'} != $p->{'level'}) {
 			if($e->{'aceRank'}>$p->{'aceRank'} && $p->{'level'}<$minlvl) {
 				chat::whisper($p, "Congratulations on Acing up, but now you don't meet the minimum level requirement.");
-				queue::schedule {
-					server::send('kick', $p->{'nickname'})
-				} 4;
+				plus::assign($p, 'spec');
 			}
 			@$p{'aceRank','level'}=@$e{'aceRank','level'};
 		}
