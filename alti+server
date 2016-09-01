@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.32';
+my($VERSION)='3.33';
 
 =head1 NAME
 
@@ -824,19 +824,6 @@ L<perl(1)> should be used to ensure basic operation.
 			close(STDERR);
 			exec($Ping, '-c', 2, $host);
 		}
-	}
-
-	sub fake_logpp {
-		my($e, @pos)=@_;
-
-		return({
-			'type'			=> 'logPlanePositions',
-			'port'			=> $e->{'port'},
-			'time'			=> $e->{'time'}+1,
-			'positionByPlayer'	=> {
-					$e->{'player'}	=> join(',', @pos)
-				},
-		});
 	}
 
 	sub distance {
@@ -4064,12 +4051,14 @@ is updated with them as the games progress.
 {	package player;
 
 	my(@Players)=();
+	my(@Bots)=();
 	my(@Admins)=();
 	my(@Moderators)=();
 	my(%Pdb)=();
 
 	sub init {
 		@Players=();
+		@Bots=();
 		@Admins=();
 		@Moderators=();
 		%Pdb=();
@@ -4098,6 +4087,7 @@ is updated with them as the games progress.
 
 		if($p->{'nickname'}=~m/^Bot ([1-9]|[1-2][0-9])$/) {
 			$p->{'isBot'}=1;
+			push(@Bots, $p);
 		} else {
 			$p->{'isBot'}=0;
 			push(@Players, $p);
@@ -4279,6 +4269,20 @@ is updated with them as the games progress.
 			return(grep(map::spec($_->{'team'}), @Players));
 		} else {
 			return(@Players);
+		}
+	}
+
+	sub bots {
+		my($filter)=@_;
+
+		if(map::left($filter)) {
+			return(grep(map::left($_->{'team'}), @Bots));
+		} elsif(map::right($filter)) {
+			return(grep(map::right($_->{'team'}), @Bots));
+		} elsif(map::spec($filter)) {
+			return(grep(map::spec($_->{'team'}), @Bots));
+		} else {
+			return(@Bots);
 		}
 	}
 
@@ -5855,6 +5859,9 @@ play though extended interfaces and server support.
 	my($Active)=0;
 	my($Captured)=0;
 
+	our($Retimer)=0;
+	our($Botctl)=0;
+
 	sub round {
 		ball::new;		#Can ball have multiple rounds?
 		#$Hunted=undef;	#Should hunted change per round?
@@ -6225,6 +6232,7 @@ play though extended interfaces and server support.
 		my($e, $p)=@_;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($flags)=stash::get($p->{'team'}, 'powerups', map::name, 'map');
+		my(@players)=();
 
 		return unless($flags);
 		return if( ($e->{'time'}-$Captured) < 4000 );
@@ -6234,7 +6242,9 @@ play though extended interfaces and server support.
 		if($flags->{$pickup}) {
 			rank::score($p->{'team'}, 1);
 
-			foreach my $player (player::list) {
+			push(@players, player::list);
+			push(@players, player::bots) if($Botctl);
+			foreach my $player (@players) {
 				$player->{'stats'}{'played'}+=$e->{'time'}-$player->{'spawn'};
 				&bench($player);
 			}
@@ -10118,6 +10128,23 @@ core protecting the flag.
 		$server::Start=POSIX::mktime(@time[5,4,3,2,1,0])+$time[6]/1000;
 	},
 
+	'serverPatches'	=> sub {	#LewisH server patch add-on
+		my($e)=@_;
+		my($mod, $ver, $a, $b, $c);
+		local($_);
+
+		foreach(@{$e->{'mods'}}) {
+			($mod, $a, $b, $c)=m/(\w+)\s+(\d+)\.(\d+)\.(\d+)/;
+			$ver=$a*1000+$b+$c/1000;
+
+			if($mod eq 'set_time_cmd') {
+				$plus::Retimer=1;
+			} elsif($mod eq 'bot_control') {
+				$plus::Botctl=1;
+			}
+		}
+	},
+
 	'clientAdd'		=> sub {
 		my($e, $p)=@_;
 		my($anick)=stash::get('nick', $e->{'vaporId'}, 'abuse');
@@ -10686,12 +10713,7 @@ core protecting the flag.
 					$e->{'positionY'}!=$spawn->[1]
 				)
 			) {
-				if(@fake_event) {
-					server::fake_trigger('logPlanePositions', 'powerup',
-							@fake_event, $e, $p);
-				} else {
-					server::trigger('logPlanePositions', 'powerup', $e, $p);
-				}
+				server::trigger('logPlanePositions', 'powerup', $e, $p);
 			}
 		} elsif($spawn_mode eq 'powerup') {
 			chat::debug($spawn, $e->{'positionX'}, $e->{'positionY'});
@@ -10710,10 +10732,6 @@ core protecting the flag.
 							chat::whisper($p, $zone);
 						}
 					}
-				} elsif(@fake_event) {
-					server::fake_trigger('logPlanePositions', 'powerup',
-							@fake_event, $e, $p);
-				} else {
 					server::trigger('logPlanePositions', 'powerup', $e, $p);
 				}
 			}
