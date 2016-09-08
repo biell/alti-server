@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.33';
+my($VERSION)='3.34';
 
 =head1 NAME
 
@@ -43,14 +43,15 @@ my(%OPTIONS)=(
 	db_name		=> 'sqlite.db',	#Or 'hostname' for postgres
 	db_user		=> '',			#Actual username for postgres
 	db_pass		=> '',			#Run through "utils::get_value"
-	noviceLevel	=> 8,               #Require level 8 for Ace 0 to play
-	aceLevel		=> 3,               #Require level 3 for Ace 1-10 to play
+	noviceLevel	=> undef,           #Level for Ace 0 to play
+	aceLevel		=> undef,           #Level for Ace 1-10 to play
 	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
 	bullyKick		=> 1,               #Kick repeated aggressive language
 	infractions	=> 10,			#10 infractions gets players kicked
 	debug		=> 0,			#Debug is on(1) or off(0)
 	awards		=> 1,			#Give out awards at the end of a round
 	javaHome		=> '',			#Change JAVA_HOME to point to your JDK
+	xxEnabled		=> 1,			#Enable xx server patch if available
 	recordsTypes	=> 'coop,race,ruin',#Which map types to keep records on
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
@@ -1113,6 +1114,8 @@ pure-perl C<JSON::PP>, and this will be used if C<JSON::XS> is not found.
 		die('Could not find a JSON library, please install JSON::XS');
 	}
 
+	use Types::Serialiser;
+
 	sub decode {
 		local($SIG{'__DIE__'})=sub {
 			ui::slog(@_);
@@ -1144,6 +1147,51 @@ pure-perl C<JSON::PP>, and this will be used if C<JSON::XS> is not found.
 		$Json->pretty(0);
 
 		return($string);
+	}
+
+	sub true {
+		return(Types::Serialiser::true);
+	}
+
+	sub false {
+		return(Types::Serialiser::false);
+	}
+
+	sub read_file {
+		my($file)=@_;
+		my($fh)=IO::Handle->new;
+		my($data);
+
+		if(-r $file) {
+			open($fh, '<', $file);
+			$data=join('', <$fh>);
+			close($fh);
+			return(&decode($data));
+		} else {
+			return({});
+		}
+	}
+
+	sub write_file {
+		my($ds, $file)=@_;
+		my($fh)=IO::Handle->new;
+
+		foreach my $key (keys(%$ds)) {
+			if(ref($ds->{$key}) eq 'HASH') {
+				delete($ds->{$key}) unless(keys(%{$ds->{$key}}));
+			} elsif(ref($ds->{$key}) eq 'ARRAY') {
+				delete($ds->{$key}) unless(@{$ds->{$key}});
+			} elsif(ref($ds->{$key})) {
+				delete($ds->{$key}) unless(defined(${$ds->{$key}}));
+			} elsif(!defined($ds->{$key})) {
+				delete($ds->{$key});
+			}
+		}
+
+		rename($file, "$file.bak") if(-e $file);
+		open($fh, '>', $file);
+		print $fh json::pretty($ds);
+		close($fh);
 	}
 
 }
@@ -1211,51 +1259,16 @@ stash are automatically saved to disk.
 
 {	package stash;
 
+	use Storable;
+
 	my($Stashfile)="$INSTALL_ROOT/servers/json_stash.txt";
 	my($Stashattic)="$INSTALL_ROOT/servers/json_attic.txt";
 	my($Stash)=undef;
 
-	sub _read {
-		my($file)=@_;
-		my($stash)=IO::Handle->new;
-		my($data);
-
-		if(-r $file) {
-			open($stash, '<', $file);
-			$data=join('', <$stash>);
-			close($stash);
-			return(json::decode($data));
-		} else {
-			return({});
-		}
-	}
-
-	sub _write {
-		my($ds, $file)=@_;
-		my($stash)=IO::Handle->new;
-
-		foreach my $key (keys(%$ds)) {
-			if(ref($ds->{$key}) eq 'HASH') {
-				delete($ds->{$key}) unless(keys(%{$ds->{$key}}));
-			} elsif(ref($ds->{$key}) eq 'ARRAY') {
-				delete($ds->{$key}) unless(@{$ds->{$key}});
-			} elsif(ref($ds->{$key})) {
-				delete($ds->{$key}) unless(defined(${$ds->{$key}}));
-			} elsif(!defined($ds->{$key})) {
-				delete($ds->{$key});
-			}
-		}
-
-		rename($file, "$file.bak");
-		open($stash, '>', $file);
-		print $stash json::pretty($ds);
-		close($stash);
-	}
-
 	sub get {
 		my($value);
 
-		$Stash=&_read($Stashfile) unless($Stash);
+		$Stash=json::read_file($Stashfile) unless($Stash);
 
 		$value=$Stash;
 		while(@_) {
@@ -1265,11 +1278,15 @@ stash are automatically saved to disk.
 		return($value);
 	}
 
+	sub save {
+		json::write_file($Stash, $Stashfile);
+	}
+
 	sub set {
 		my($data)=pop(@_);
 		my($next, $value);
 
-		$Stash=&_read($Stashfile) unless($Stash);
+		$Stash=json::read_file($Stashfile) unless($Stash);
 
 		$value=$Stash;
 		while(@_>1) {
@@ -1279,9 +1296,13 @@ stash are automatically saved to disk.
 		}
 		$next=pop(@_);
 
-		$value->{$next}=$data;
+		if($data=~m/^(\d+|\d+\.\d+)$/) {
+			$value->{$next}=$data*1;
+		} else {
+			$value->{$next}=$data;
+		}
 
-		&_write($Stash, $Stashfile);
+		&save;
 
 		return($data);
 	}
@@ -1290,7 +1311,7 @@ stash are automatically saved to disk.
 		my(@hist)=();
 		my($next, $value);
 
-		$Stash=&_read($Stashfile) unless($Stash);
+		$Stash=json::read_file($Stashfile) unless($Stash);
 
 		$value=$Stash;
 		while(@_>1) {
@@ -1311,18 +1332,53 @@ stash are automatically saved to disk.
 				}
 			}
 
-			&_write($Stash, $Stashfile);
+			&save;
 			return(1);
 		} else {
 			return(0);
 		}
 	}
+
+	sub marry {
+		my($sor, $def)=@_;
+
+		if(ref($sor) ne 'HASH') {
+			return;
+		} elsif(ref($def) ne 'HASH') {
+			$sor=$def;
+			return;
+		}
+
+		foreach my $key (keys(%$sor)) {
+			if(!defined($def->{$key})) {
+				delete($sor->{$key});
+			}
+		}
+
+		foreach my $key (keys(%$def)) {
+			if(!defined($sor->{$key})) {
+				if(ref($def->{$key})) {
+					$sor->{$key}=Storable::dclone($def->{$key});
+				} else {
+					$sor->{$key}=$def->{$key};
+				}
+			} elsif(ref($sor->{$key}) ne ref($def->{$key})) {
+				if(ref($def->{$key})) {
+					$sor->{$key}=Storable::dclone($def->{$key});
+				} else {
+					$sor->{$key}=$def->{$key};
+				}
+			} else {
+				&marry($sor->{$key}, $def->{$key});
+			}
+		}
+	}
 	
 	sub archive {
-		my($attic)=&_read($Stashattic);
+		my($attic)=json::read_file($Stashattic);
 		my($value, $archive, $next);
 
-		$Stash=&_read($Stashfile) unless($Stash);
+		$Stash=json::read_file($Stashfile) unless($Stash);
 
 		$value=$Stash;
 		$archive=$attic;
@@ -1339,12 +1395,12 @@ stash are automatically saved to disk.
 		$archive->{$next}=$value->{$next};
 		delete($value->{$next});
 
-		&_write($Stash, $Stashfile);
-		&_write($attic, $Stashattic);
+		&save;
+		json::write_file($attic, $Stashattic);
 	}
 
 	sub retrieve {
-		my($attic)=&_read($Stashattic);
+		my($attic)=json::read_file($Stashattic);
 		my($value);
 
 		$value=$attic;
@@ -1359,7 +1415,7 @@ stash are automatically saved to disk.
 		my($changes)=0;
 		my($tmp);
 
-		$Stash=&_read($Stashfile) unless($Stash);
+		$Stash=json::read_file($Stashfile) unless($Stash);
 
 		if($OPTIONS{'mapDir'} && !$Stash->{'server'}{'mapDir'}) {
 			$Stash->{'server'}{'mapDir'}=$OPTIONS{'mapDir'};
@@ -1409,7 +1465,7 @@ stash are automatically saved to disk.
 		}
 		
 		if($changes) {
-			&_write($Stash, $Stashfile);
+			&save;
 			ui::slog('Stash upgraded');
 		}
 	}
@@ -1436,7 +1492,7 @@ stash are automatically saved to disk.
 		}
 
 		if($changes) {
-			&_write($Stash, $Stashfile);
+			&save;
 			ui::slog('Stash upgraded');
 		}
 	}
@@ -1565,7 +1621,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 {	package config;
 
-	use Storable;
 	use FindBin qw($Bin $RealBin);
 
 	my($Conffile)	="$INSTALL_ROOT/servers/launcher_config.xml";
@@ -1751,6 +1806,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 		close($lconfig);
 
 		$config{'secretCode'}//=config::option('secretCode');
+
+		$config{'minLevel'}//=List::Util::min(
+						config::option('noviceLevel'),
+						config::option('aceLevel'));
 
 		foreach my $key (keys(%config)) {
 			delete($config{$key}) unless(defined($config{$key}));
@@ -1940,6 +1999,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Commands{'stashClearSettings'}=['map'];
 		$Commands{'stashClearRecords'}=['map'];
 		$Commands{'setPlayerName'}=['player', 'string'];
+		$Commands{'linkAccounts'}=['player', 'player'];
 		$Commands{'updateNames'}=undef;
 		$Commands{'showAdmins'}=undef;
 		$Commands{'showModerators'}=undef;
@@ -1970,6 +2030,14 @@ has occured.  After too many infractions, the player is kicked by the server.
 				join('|', @filter),
 				'a|er|ing?|ed'
 			);
+	}
+
+	sub add_commands {
+		my(%commands)=@_;
+
+		foreach my $cmd (keys(%commands)) {
+			$Commands{$cmd}=$commands{$cmd};
+		}
 	}
 
 	sub read_maps {
@@ -2160,6 +2228,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 							"$_->{'nickname'}:$_->{'vaporId'}",
 							player::list()))
 						);
+				} elsif($arg eq 'int') {
+					$msg.=" <#>";
 				} else {
 					$msg.=" <...>";
 				}
@@ -2443,6 +2513,251 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'restrict'		=> 'tiny',
 	},
 );
+
+
+=head2 Patched Server
+
+When B<alti+server> is run on a patched code base, it can take advantage
+of the new features.  Features which augment the logging interface may
+be detected and affect behavior on-demand.  Other, which are more
+in-depth, will be detected during initialization and affect B<alti+server>
+at a more systematic level.
+
+Please note that while the F<mods.hjson> file can be in the HJSON format
+for the server patches, B<alti+server> only understands pure JSON.  The
+file will be maintained in pure JSON, and any manual changes must continue
+to adhere to the JSON standard.  It is recommended to use the B<alti+server>
+console interface to make changes to these settings, then the server code is
+garunteed to keep the format correct.
+
+=cut
+
+{	package xx;
+
+	use version;
+
+	my($Modsfile)="$INSTALL_ROOT/servers/mods.hjson";
+
+	my(%Mods)=();
+	my(@Global)=('global');
+	my(@Server)=('servers');
+	my($Default);
+	my(%Path);
+
+	sub _datastructures {
+		$Server[1]=$config::Port;
+
+		$Default={
+			$Global[0]			=> {
+				'permissions'		=> {
+					'enabled'		=> json::false,
+					'file_name'	=> 'permissions.hjson',
+				},
+				'client_commands'	=> [
+				],
+			},
+			$Server[0]				=> {
+				$Server[1]			=> {
+					'custom_join'		=> {
+						'ignore_default'	=> json::false,
+					},
+					'restrict_level'	=> {
+						'enabled'		=> json::false,
+						'min'		=> {
+							'ace'	=> 0,
+							'level'	=> 0,
+						},
+						'max'		=> {
+							'ace'	=> 10,
+							'level'	=> 60,
+						},
+					},
+					'whitelist'		=> {
+						'enabled'		=> json::false,
+						'allow'		=> [
+							'00000000-0000-0000-0000-000000000000',
+						],
+			
+					},
+				},
+			},
+		};
+
+		%Path=(
+			'extendPermissions'	=> [@Global, 'permissions', 'enabled'],
+			'clientCommand'	=> [@Global, 'client_commands'],
+			'joinIgnoreDefault'	=> [@Server, 'custom_join', 'ignore_default'],
+			'minAce'			=> [@Server, 'restrict_level', 'min', 'ace'],
+			'minLevel'		=> [@Server, 'restrict_level', 'min', 'level'],
+			'maxAce'			=> [@Server, 'restrict_level', 'min', 'ace'],
+			'maxLevel'		=> [@Server, 'restrict_level', 'min', 'level'],
+			'levelRestrictions'	=> [@Server, 'restrict_level', 'enabled'],
+			'whitelist'		=> [@Server, 'whitelist', 'enabled'],
+			'allow'			=> [@Server, 'whitelist', 'allow'],
+		);
+	}
+
+	sub path {
+		my($setting)=@_;
+
+		return(reverse(@{$Path{$setting}}));
+	}
+
+	sub config_reload {
+		json::write_file(stash::get('xx'), $Modsfile);
+		server::send('reloadModConfig');
+	}
+
+	sub initialize_mods {
+		my($mods)=@_;
+		my($config)=stash::get('xx');
+		my($mod, $ver);
+
+		unless(config::option('xxEnabled')) {
+			return;
+		}
+
+		&_datastructures;
+
+		foreach(@$mods) {
+			($mod, $ver)=m/(\w+)\s+(\d+\.\d+\.\d+)/;
+			$ver=version->parse($ver);
+
+			$Mods{$mod}=$ver;
+		}
+
+		if($Mods{'base'}) {
+			if($config) {
+				stash::marry($config, $Default);
+			} else {
+				$config={};
+				if(-r $Modsfile) {
+					stash::marry($config, json::read_file($Modsfile));
+				} else {
+					stash::marry($config, $Default);
+				}
+			}
+			stash::set('xx', $config);
+			&config_reload;
+		}
+
+		config::add_commands('xx' => [
+				['list', 'set', 'unset', 'add', 'del'],
+				[sort(keys(%Path))],
+				'string',
+			]
+		) if($Mods{'base'});
+
+		config::add_commands(
+			'xx' => [
+				['list', 'set', 'unset', 'add', 'del'],
+				[sort(keys(%Path))],
+				'string',
+			],
+			'reloadModConfig'	=> [],
+		) if($Mods{'base'});
+
+		config::add_commands(
+			'reloadPermissions'	=> [],
+		) if($Mods{'permissions'});
+
+		config::add_commands(
+			'setTime'	=> [
+				'int'
+			],
+		) if($Mods{'set_time_cmd'});
+	}
+
+	sub mod {
+		my($mod)=@_;
+
+		if(exists($Mods{$mod})) {
+			return($Mods{$mod});
+		} else {
+			return(undef);
+		}
+	}
+
+	sub config {
+		my($name)=@_;
+		my($value)=stash::get(&path($name), 'xx');
+
+		if(ref($value)=~m/Boolean/) {
+			if($value) {
+				return('true');
+			} else {
+				return('false');
+			}
+		} else {
+			return($value);
+		}
+	}
+
+	sub config_set {
+		my($name, $value)=@_;
+		my($current)=stash::get(&path($name), 'xx');
+
+		if(ref($current)=~m/Boolean/) {
+			if($value=~m/^false|no/i || !$value) {
+				return(stash::set(&path($name), 'xx', json::false));
+			} else {
+				return(stash::set(&path($name), 'xx', json::true));
+			}
+		} elsif(ref($current)) {
+			return(undef);
+		} else {
+			return(stash::set(&path($name), 'xx', $value));
+		}
+	}
+
+	sub config_unset {
+		my($name)=@_;
+		my($default)=$Default;
+		my(@path)=&path($name);
+
+		while(defined($default) && @path) {
+			if(ref($default)) {
+				$default=$default->{pop(@path)};
+			} else {
+				$default=undef;
+			}
+		}
+
+		stash::set(&path($name), 'xx', $default);
+	}
+
+	sub config_add {
+		my($name, $value)=@_;
+		my($array)=stash::get(&path($name), 'xx');
+
+		if(ref($array) eq 'ARRAY') {
+			foreach my $existing (@$array) {
+				return(scalar @$array) if($existing eq $value);
+			}
+			push(@$array, $value);
+			stash::save;
+		} else {
+			return(undef);
+		}
+	}
+
+	sub config_del {
+		my($name, $value)=@_;
+		my($array)=stash::get(&path($name), 'xx');
+
+		if(ref($array) eq 'ARRAY') {
+			for(my $i=0; $i<@$array; $i++) {
+				while($array->[$i] eq $value) {
+					splice(@$array, $i, 1);
+				}
+			}
+			stash::save;
+		} else {
+			return(undef);
+		}
+	}
+
+}
 
 
 =head2 Backends
@@ -4908,7 +5223,7 @@ they make the top 5.
 			return(0) unless(ref($records) eq 'ARRAY');
 
 			for(my $i=0; $i<@$records; $i++) {
-				if($remove == $records->[$i][0]) {
+				while($remove == $records->[$i][0]) {
 					splice(@$records, $i, 1);
 					$found=1;
 				}
@@ -5859,9 +6174,6 @@ play though extended interfaces and server support.
 	my($Active)=0;
 	my($Captured)=0;
 
-	our($Retimer)=0;
-	our($Botctl)=0;
-
 	sub round {
 		ball::new;		#Can ball have multiple rounds?
 		#$Hunted=undef;	#Should hunted change per round?
@@ -6243,7 +6555,7 @@ play though extended interfaces and server support.
 			rank::score($p->{'team'}, 1);
 
 			push(@players, player::list);
-			push(@players, player::bots) if($Botctl);
+			push(@players, player::bots) if(xx::mod('bot_control'));
 			foreach my $player (@players) {
 				$player->{'stats'}{'played'}+=$e->{'time'}-$player->{'spawn'};
 				&bench($player);
@@ -10133,16 +10445,7 @@ core protecting the flag.
 		my($mod, $ver, $a, $b, $c);
 		local($_);
 
-		foreach(@{$e->{'mods'}}) {
-			($mod, $a, $b, $c)=m/(\w+)\s+(\d+)\.(\d+)\.(\d+)/;
-			$ver=$a*1000+$b+$c/1000;
-
-			if($mod eq 'set_time_cmd') {
-				$plus::Retimer=1;
-			} elsif($mod eq 'bot_control') {
-				$plus::Botctl=1;
-			}
-		}
+		xx::initialize_mods($e->{'mods'});
 	},
 
 	'clientAdd'		=> sub {
@@ -11278,8 +11581,14 @@ also only available from the console.
 
 			ui::setup_screen if($name=~m/^ui|Color$/i);
 			if($name=~m/secretCode/) {
-				config::write_launcher_config;
 				chat::whisper($s, 'run /restartServer to complete change');
+			} elsif($name=~m/aceLevel/ && xx::mod('custom_join')) {
+				if(config::option('aceLevel')<config::option('noviceLevel')) {
+					xx::config_set('minAce', 0);
+					xx::config_set('minLevel', config::option('noviceLevel'));
+					xx::config_set('levelRestrictions', 'true');
+					xx::config_reload;
+				}
 			}
 		} elsif($action eq 'unset') {
 			config::option_del($name);
@@ -11289,6 +11598,11 @@ also only available from the console.
 
 			if($name=~m/secretCode/) {
 				config::write_launcher_config($name => '');
+			} elsif($name=~m/aceLevel/ && xx::mod('custom_join')) {
+				xx::config_unset('minAce');
+				xx::config_unset('minLevel');
+				xx::config_unset('levelRestrictions');
+				xx::config_reload;
 			}
 		} elsif($action eq 'add') {
 			unless(config::option_exists($name)) {
@@ -11326,6 +11640,69 @@ also only available from the console.
 		$current=config::option($name);
 		foreach my $entry (split(m/;/, $current)) {
 			chat::whisper($s, "$name:", $entry);
+		}
+	},
+
+	'xx'		=> sub {
+		my($action, $name, @args)=@_;
+		my($value)=join(' ', @args);
+		my($s)=player::server;
+		my($current);
+		my($lookup);
+
+		if($name=~m/allow/i && $value!~m/^[0-9a-f-]{36}$/) {
+			if($lookup=player::lookup($value)) {
+				$value=$lookup->{'vaporId'};
+			} elsif($lookup=db::psearch($value)) {
+				$value=$lookup->{'vaporid'};
+			} elsif(($lookup)=altbouncer::lookup($value)) {
+				$value=$lookup->{'vaporID'};
+			} else {
+				chat::whisper($s, 'Could not find a vaporID for', $name);
+				return;
+			}
+		}
+
+		if($action eq 'list') {
+			'defer';
+		} elsif($action eq 'set') {
+			if(defined(xx::config_set($name, $value))) {
+				xx::config_reload;
+			} else {
+				chat::whisper($s, 'Invalid object or action:', $name);
+				return;
+			}
+		} elsif($action eq 'unset') {
+			if(defined(xx::config_unset($name))) {
+				xx::config_reload;
+			} else {
+				chat::whisper($s, 'Invalid object or action:', $name);
+				return;
+			}
+		} elsif($action eq 'add') {
+			if(defined(xx::config_add($name, $value))) {
+				xx::config_reload;
+			} else {
+				chat::whisper($s, 'Invalid object or action:', $name);
+				return;
+			}
+		} elsif($action eq 'del') {
+			if(defined(xx::config_del($name, $value))) {
+				xx::config_reload;
+			} else {
+				chat::whisper($s, 'Invalid object or action:', $name);
+				return;
+			}
+		} else {
+			chat::whisper($s, 'Syntax: /xx [list|set|unset|add|del] [...]');
+			return;
+		}
+
+		$current=xx::config($name);
+		if(ref($current) eq 'ARRAY') {
+			chat::whisper($s, "$name:", @$current);
+		} else {
+			chat::whisper($s, "$name:", $current);
 		}
 	},
 
@@ -11453,6 +11830,51 @@ also only available from the console.
 		} else {
 			ui::slog("No updates performed, '$search' not found.");
 		}
+	},
+
+	'linkAccounts'		=> sub {
+		my($p1)=db::psearch($_[0]);
+		my($p2)=db::psearch($_[1]);
+		my($s)=player::server;
+		my(@g1, @g2)=();
+		my(@linked)=();
+
+		if($p1->{'id'}==$p2->{'id'} && $p1->{'name'} eq $p2->{'name'}) {
+			chat::whisper($s, 'The accounts are already linked');
+			return;
+		}
+
+		if($p1->{'name'} && !$p2->{'name'}) {
+			db::update('player', qq{vaporid='$p2->{"vaporid"}'}, {
+				'id'       => $p1->{'id'},
+				'name'     => $p1->{'name'},
+			});
+			@linked=map($_->{'nickname'}, $p1, $p2);
+		} elsif(!$p1->{'name'} && $p2->{'name'}) {
+			db::update('player', qq{vaporid='$p1->{"vaporid"}'}, {
+				'id'       => $p2->{'id'},
+				'name'     => $p2->{'name'},
+			});
+			@linked=map($_->{'nickname'}, $p1, $p2);
+		} else {
+			@g1=db::select('player', qq{ id=$p1->{'id'} });
+			@g2=db::select('player', qq{ id=$p2->{'id'} });
+
+			if(@g1<@g2) {
+				db::update('player', qq{ id=$p1->{'id'} }, {
+					'id'       => $p2->{'id'},
+					'name'     => $p2->{'name'},
+				});
+			} else {
+				db::update('player', qq{ id=$p2->{'id'} }, {
+					'id'       => $p1->{'id'},
+					'name'     => $p1->{'name'},
+				});
+			}
+			@linked=map($_->{'nickname'}, @g1, @g2);
+		}
+
+		ui::slog('Linked:', join(', ', @linked));
 	},
 
 	'showAdmins'		=> sub {

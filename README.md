@@ -853,7 +853,9 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     message outlining the policy.  Continued attempts to join
     will result in a kick.  This value differes from the server
     enforced level requirements, as it only affects players of
-    Ace Rank 0.
+    Ace Rank 0.  The smaller number between `noviceLevel` and
+    `aceLevel` will be used to set the server's `minLevel`
+    configuration.
 
   * **aceLevel [#]**<br>
     Require users who have recently Aced (anywhere from 1 to 10)
@@ -863,6 +865,9 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     attempts to join will result in a kick.  This value differs
     from the server enforced level requirements, as it only
     affects players of Ace Ranks `1` through `10`.
+    The smaller number between `noviceLevel` and
+    `aceLevel` will be used to set the server's `minLevel`
+    configuration.
 
   * **snarkChance [#]**<br>
     Specify the likelihood that a snarky comment will be made
@@ -1010,6 +1015,96 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     join the server.  It is an array (each element is a new
     line) so use the "add" and "del" sub functions of
     `/server` when entering from the console.
+
+## Server Extensions
+`alti+server` also has support for patched altitude servers for extending
+the game capabilities.  These are non-official changes to game.jar which
+alter the behavior of the server.
+
+### xx
+x.x (aka xal, xalri, LewisH) has added a number of functions to altitude
+which are supported by `alti+server`.  When using these patches, you should
+manage the server patch configuration files through `alti+server`.  Whenever
+possible, support for these features is directly integrated and used
+automatically.  Manually overriding this behaviour is also possible.
+
+If you do not wish to have `alti+server` manage the server extensions, and
+you would prefer to manage them by hand, you can set the global config
+option `xxEnabled` to a false value.
+
+Use the console-only `/xx list`, `/xx set`, `/xx unset`,
+`/xx add`, and `/xx del` commands to modify the below values.
+
+  * **extendPermisisons [true|false]**<br>
+    Tell the patched server code to enable it's extensions to the
+    Altitude permissions engine.  This add-on provides roles based
+    access support to enable serve access levels beyond just admin
+    and player.  It supports a moderator role just like `alti+server`,
+    and can be configured to expand the commands a moderator can run.
+    This parameter may be automatically enabled by the `/command`
+    console command interface.
+
+  * **clientCommand [command]**<br>
+    Use `/xx add` or `/xx del` to add or delete commands which will
+    be included in the client packet.  Doing so will allow players to
+    run the command at the expense of using up space in the already
+    tight configuration packet.
+
+  * **joinIgnoreDefault [true|false]**<br>
+    The server patches can override the built-in join control engine
+    or work as an extra layer of join control.  If set to `true`,
+    then only the patches join control will be enabled.  If set to
+    `false` (the default), then both engines will be enabled.  N.B.
+    setting this to `true` and failing to select a join policy from
+    the extension will leave access to the server fairly open.
+
+  * **minAce [#]**<br>
+    Set the minimum Ace (badge) level a player must be to join the server.
+    It defaults to 0.
+
+  * **minLevel [#]**<br>
+    Set the minimum level a player must be to join the server.  This
+    minimum level applies only players in or above `minAce`.  If your
+    Ace level is below `minAce`, then you can't join.  Conversely, if
+    your Ace level is above `minAce`, then your level can be below
+    `minLevel`.
+    In `alti+server`, this value will be automatically set to the
+    value of `noviceLevel` if `noviceLevel` is set lower than
+    `aceLevel`.  In this case, the `alti+server` sets the `minLevel`
+    launcher_config.xml value to that of `aceLevel`.  This ensures
+    that only valid players may join.  Of course, that only applies
+    if `joinIgnoreDefault` is set to false.
+
+  * **maxAce [#]**<br>
+    Set the maximum Ace (badge) level a player must be to still be able
+    to join the server.  This defaults to 10.
+
+  * **maxLevel [#]**<br>
+    Set the maximum level a player can be to join the server.  This works
+    the exact opposite way of `minLevel`.  In this case, if your Ace level
+    is below that of `maxAce`, then your level may be higher than `maxLevel`.
+    If your Ace level is above `maxAce`, then you can't join, even if the
+    level is below `maxLevel`.
+
+  * **levelRestrictions [true|false]**<br>
+    Enable (if set to true) the above restriction engine.  The default is
+    disabled (false).
+
+  * **whitelist [true|false]**<br>
+    Enable (if set to true) the whitelist join engine.  If this is enabled
+    (which it is not by default), then only players in the special `allow`
+    list may join.
+
+  * **allow [player]**<br>
+    Use `/xx add allow [player]` to add players to this list and
+    `/xx del allow [player]` to remove players from this list.  You can
+    specify players via their VaporID, or if they are already a part of
+    the `alti+server` player database (you must have database support
+    enabled for this), then it will search for them by their player name
+    or most recent in-game nickname.  This feature is very useful when
+    used after running `/updateNames` to pull in the ladder user database.
+    In this case, anyone on ladder can be added (or removed) by using their
+    most recent nickname or their ladder @AKA names.
 
 ## Angles
 Various interfaces in `alti+server` allow you to specify angles for
