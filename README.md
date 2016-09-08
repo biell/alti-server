@@ -201,6 +201,11 @@ manage Alti+ game maps.
     Change to a random map from the mapRotation.  This command requires
     a vote threshold of 66% or greater.
 
+  * **/who [player]**<br>
+    Print information about `player` including their permanent name
+    (if they have one), their IP address, and other nicknames they have
+    used in the past.
+
   * **/mesg [status]**<br>
     The server has a private messaging feature designed to aid players in
     meeting goals or to talk privately with the map designer. Howerver, to

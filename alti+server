@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.34';
+my($VERSION)='3.35';
 
 =head1 NAME
 
@@ -111,6 +111,7 @@ use List::Util;
 use Tie::RefHash;
 use Data::Dumper;
 use MIME::Base64;
+use Types::Serialiser;
 
 my($FATAL_SERVER_ERRORS)=join('|',
 	'Server config size \(\d+ bytes\) exceeds max allowed size',
@@ -774,6 +775,58 @@ L<perl(1)> should be used to ensure basic operation.
 		return($_);
 	}
 
+	sub levdist {
+		my(@a1)=split(m//, $_[0]);
+		my(@a2)=split(m//, $_[1]);
+		my($l1, $l2)=(scalar(@a1), scalar(@a2));
+		my(@matrix)=([]);
+		my($i, $j);
+
+		#Init
+		for($i=0; $i<=$l1; $i++) {
+			for($j=1; $j<=$l2; $j++) {
+				$matrix[$i][$j]=0;
+				$matrix[0][$j]=$j;
+			}
+
+			$matrix[$i][0]=$i;
+		}
+
+		#Compare
+		for($i=1; $i<=$l1; $i++) {
+			for($j=1; $j<=$l2; $j++) {
+				$matrix[$i][$j]=List::Util::min(
+					$matrix[$i-1][$j]+1,
+					$matrix[$i][$j-1]+1,
+					$matrix[$i-1][$j-1]+($a1[$i-1] ne $a2[$j-1])
+				);
+			}
+		}
+
+		return($matrix[$l1][$l2]);
+	}
+
+	sub like {
+		my($a, $b)=@_;
+		my($scale);
+		local($_);
+
+		return(undef) unless($a && $b);
+
+		foreach($a, $b) {
+			s/\(\)/o/g;
+			s/\>\</x/g;
+			s/\|_/l/g;
+			s/\s+//g;
+			tr/A-Z/a-z/;
+			tr/01345689!\$\+\|/oieasgbgistl/;
+		}
+
+		$scale=List::Util::max(length($a), length($b));
+
+		return($a=~m/\Q$b/ || $b=~m/\Q$a/ || &levdist($a, $b)/$scale<0.4);
+	}
+
 	sub invert {
 		my($hash)=@_;
 		my($inverted)={};
@@ -1114,8 +1167,6 @@ pure-perl C<JSON::PP>, and this will be used if C<JSON::XS> is not found.
 		die('Could not find a JSON library, please install JSON::XS');
 	}
 
-	use Types::Serialiser;
-
 	sub decode {
 		local($SIG{'__DIE__'})=sub {
 			ui::slog(@_);
@@ -1296,7 +1347,10 @@ stash are automatically saved to disk.
 		}
 		$next=pop(@_);
 
-		if($data=~m/^(\d+|\d+\.\d+)$/) {
+
+		if(ref($data)) {
+			$value->{$next}=$data;
+		} elsif($data=~m/^(\d+|\d+\.\d+)$/) {
 			$value->{$next}=$data*1;
 		} else {
 			$value->{$next}=$data;
@@ -2338,6 +2392,14 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
+	},
+
+	'who'	=> {
+		'name'			=> 'who',
+		'arguments'		=> ['player'],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
 	},
 
@@ -4427,34 +4489,38 @@ is updated with them as the games progress.
 			$p->{'moderator'}=0;
 		}
 
+		unless($p->{'isBot'}) {
+			if(db::enabled) {
+				$db=db::player($p);
+
+				foreach my $key ('id', 'name', 'block') {
+					$p->{$key}=$db->{$key};
+				}
+				$p->{'lastSeen'}=$db->{'seen'};
+				$p->{'id'}||=db::nextid;
+
+				db::player($p, {
+						'vaporid'		=> $p->{'vaporId'},
+						'id'			=> $p->{'id'},
+						'nickname'	=> $p->{'nickname'},
+						'seen'		=> time(),
+						'ip'			=> $p->{'ip'},
+						'block'		=> $p->{'block'}//0,
+					});
+		
+				db::aliases($p, $p->{'nickname'});
+
+				unless(utils::like($p->{'name'}, $p->{'nickname'})) {
+					chat::moderator("$p->{'nickname'} is $p->{'name'}");
+				}
+			} else {
+				$p->{'block'}=stash::get('block', $p->{'vaporId'}, 'player');
+			}
+		}
+
 		$Pdb{$p->{'nickname'}}	=
 		$Pdb{$p->{'player'}}	=
 		$Pdb{$p->{'vaporId'}}	= $p;
-
-		return if($p->{'isBot'});
-
-		if(db::enabled) {
-			$db=db::player($p);
-
-			foreach my $key ('id', 'name', 'block') {
-				$p->{$key}=$db->{$key};
-			}
-			$p->{'lastSeen'}=$db->{'seen'};
-			$p->{'id'}||=db::nextid;
-
-			db::player($p, {
-					'vaporid'		=> $p->{'vaporId'},
-					'id'			=> $p->{'id'},
-					'nickname'	=> $p->{'nickname'},
-					'seen'		=> time(),
-					'ip'			=> $p->{'ip'},
-					'block'		=> $p->{'block'}//0,
-				});
-	
-			db::aliases($p, $p->{'nickname'});
-		} else {
-			$p->{'block'}=stash::get('block', $p->{'vaporId'}, 'player');
-		}
 	}
 
 	sub name {
@@ -4839,6 +4905,22 @@ debugging or to make funny comments.
 		ui::chat_log(map::team_symbol($team), 'server', $msg) if($any);
 	}
 
+	sub admin {
+		my($msg)=join(' ', @_);
+
+		foreach my $admin (player::admins) {
+			server::send('serverWhisper', $admin->{'nickname'}, $msg);
+		}
+	}
+
+	sub moderator {
+		my($msg)=join(' ', @_);
+
+		foreach my $admin (player::admins, player::moderators) {
+			server::send('serverWhisper', $admin->{'nickname'}, $msg);
+		}
+	}
+
 	sub whisper {
 		my($p)=shift;
 		my($msg)=join(' ', @_);
@@ -4877,9 +4959,7 @@ debugging or to make funny comments.
 				$msg.=' ';
 			}
 
-			foreach my $admin (player::admins) {
-				server::send('serverWhisper', $admin->{'nickname'}, $msg);
-			}
+			chat::admin($msg);
 
 			ui::chat_log('debug', 'server', $msg);
 
@@ -7871,6 +7951,27 @@ core protecting the flag.
 			$HOOKS{"del $type"}->($e, $p, @args);
 		} else {
 			config::command_help($p, 'del');
+		}
+	},
+
+	'who'		=> sub {
+		my($e, $p)=@_;
+		my($who)=player::lookup($e->{'arguments'}[0]);
+		my($name)=$who->{'nickname'};
+		my(@aliases)=();
+
+		if($who->{'name'}) {
+			$name.=" ($who->{'name'})";
+		}
+		if(db::enabled) {
+			@aliases=db::select('aliases', qq{vaporid='$who->{"vaporid"}'});
+		}
+		
+		if(@aliases) {
+			chat::whisperf($p, '%s, IP: %s, AKA: %s', $name, $who->{'ip'},
+				join(', ', map($_->{'nickname'}, @aliases)));
+		} else {
+			chat::whisperf($p, '%s, IP: %s', $name, $who->{'ip'});
 		}
 	},
 
