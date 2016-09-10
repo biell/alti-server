@@ -1049,6 +1049,13 @@ Use the console-only `/xx list`, `/xx set`, `/xx unset`,
     This parameter may be automatically enabled by the `/command`
     console command interface.
 
+  * **aclFallback [true|false]**<br>
+    When `extendPermissions` is set to true, tell the server if
+    a command does not exist in `permissions.hjson` to fall back
+    on the default Altitude behaviour as described in the
+    `launcher_config.xml` file.  The default is false, don't
+    fall back.
+
   * **clientCommand [command]**<br>
     Use `/xx add` or `/xx del` to add or delete commands which will
     be included in the client packet.  Doing so will allow players to
