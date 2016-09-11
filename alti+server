@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.36';
+my($VERSION)='3.37';
 
 =head1 NAME
 
@@ -4512,7 +4512,7 @@ is updated with them as the games progress.
 		
 				db::aliases($p, $p->{'nickname'});
 
-				unless(utils::like($p->{'name'}, $p->{'nickname'})) {
+				unless($p->{'name'} && utils::like($p->{'name'}, $p->{'nickname'})) {
 					chat::moderator("$p->{'nickname'} is $p->{'name'}");
 				}
 			} else {
