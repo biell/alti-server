@@ -1138,11 +1138,11 @@ Use the console-only `/xx list`, `/xx set`, `/xx unset`,
     is already listed, it does not add or subtract; so specify all groups
     an acl should have.  The following groups may be specified:
 
-    * *disabled* Nobody may run this command, it is disabled
-    * *all* Everybody may run this command, it is open
-    * *vote* Anyone can propose a vote for this command
-    * *admins* Server admins may run this command
-    * *moderators* Server moderators may run this command
+    * *disabled*<br>   Nobody may run this command, it is disabled
+    * *all*<br>        Everybody may run this command, it is open
+    * *vote*<br>       Anyone can propose a vote for this command
+    * *admins*<br>     Server admins may run this command
+    * *moderators*<br> Server moderators may run this command
 
     If you `unset` a command, it goes back to it's default.  Which is to
     fallback to default Altitude behaviour in most, but not all, cases.
