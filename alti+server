@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='3.38';
+my($VERSION)='3.40';
 
 =head1 NAME
 
@@ -2714,6 +2714,8 @@ garunteed to keep the format correct.
 
 	sub path {
 		my($setting)=@_;
+
+		return(undef) unless(ref($Path{$setting}) eq 'ARRAY');
 
 		return(reverse(@{$Path{$setting}}));
 	}
@@ -11871,7 +11873,7 @@ also only available from the console.
 		if($action eq 'list') {
 			'defer';
 		} elsif($action eq 'set') {
-			if($name=~m/acl/i) {
+			if($name eq 'acl') {
 				xx::acl_set(@args);
 			} else {
 				if(defined(xx::config_set($name, $value))) {
@@ -11882,7 +11884,7 @@ also only available from the console.
 				}
 			}
 		} elsif($action eq 'unset') {
-			if($name=~m/acl/i) {
+			if($name eq 'acl') {
 				xx::acl_unset(@args);
 			} else {
 				if(defined(xx::config_unset($name))) {
