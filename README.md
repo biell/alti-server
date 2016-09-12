@@ -1056,6 +1056,19 @@ Use the console-only `/xx list`, `/xx set`, `/xx unset`,
     `launcher_config.xml` file.  The default is false, don't
     fall back.
 
+  * **admins [player|vaporId]**<br>
+    Use `xx add` or `xx del` to add or delete player's from the
+    acl admins group.  When `extendPermissions` is enabled, these
+    players will have access to run any commands restricted to
+    the admins acl group.  Normally this command is not needed,
+    this functionality is tied to the `server add admins` command,
+    and that command should be used instead of this one.  This command
+    should only be used to query or fix issues with the admins group.
+
+  * **moderators [player|vaporId]**<br>
+    This works just like the `admins` group above, but for the
+    moderators role.
+
   * **clientCommand [command]**<br>
     Use `/xx add` or `/xx del` to add or delete commands which will
     be included in the client packet.  Doing so will allow players to
@@ -1117,6 +1130,23 @@ Use the console-only `/xx list`, `/xx set`, `/xx unset`,
     used after running `/updateNames` to pull in the ladder user database.
     In this case, anyone on ladder can be added (or removed) by using their
     most recent nickname or their ladder @AKA names.
+
+  * **acl [command] [groups...]**<br>
+    This command is slightly more complicated than the rest.  It is used
+    to set the acl groups which have access to run a command.  The groups
+    may be specified as comma or space seperated.  This overrides whatever
+    is already listed, it does not add or subtract; so specify all groups
+    an acl should have.  The following groups may be specified:
+
+    * *disabled* Nobody may run this command, it is disabled
+    * *all* Everybody may run this command, it is open
+    * *vote* Anyone can propose a vote for this command
+    * *admins* Server admins may run this command
+    * *moderators* Server moderators may run this command
+
+    If you `unset` a command, it goes back to it's default.  Which is to
+    fallback to default Altitude behaviour in most, but not all, cases.
+    The `unset` operation will tell you what that new value is.
 
 ## Angles
 Various interfaces in `alti+server` allow you to specify angles for

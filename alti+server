@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.37';
+my($VERSION)='3.38';
 
 =head1 NAME
 
@@ -1517,6 +1517,11 @@ stash are automatically saved to disk.
 				}
 			}
 		}
+
+		if(exists($Stash->{'xx'}{'global'})) {
+			$Stash->{'xx'}={'mods' => $Stash->{'xx'}};
+			$changes=1;
+		}
 		
 		if($changes) {
 			&save;
@@ -2599,56 +2604,102 @@ garunteed to keep the format correct.
 	use version;
 
 	my($Modsfile)="$INSTALL_ROOT/servers/mods.hjson";
+	my($Permsfile)="$INSTALL_ROOT/servers/permissions.hjson";
 
 	my(%Mods)=();
-	my(@Global)=('global');
-	my(@Server)=('servers');
+	my(@Global)=('mods', 'global');
+	my(@Server)=('mods', 'servers');
+	my(@Permissions)=('permissions');
 	my($Default);
 	my(%Path);
 
 	sub _datastructures {
-		$Server[1]=$config::Port;
+		$Server[2]=$config::Port;
 
 		$Default={
-			$Global[0]			=> {
-				'permissions'		=> {
-					'enabled'		=> json::false,
-					'fallback'	=> json::false,
-					'file_name'	=> 'permissions.hjson',
+			$Global[0]				=> {
+				$Global[1]			=> {
+					'permissions'		=> {
+						'enabled'		=> json::false,
+						'fallback'	=> json::false,
+						'file_name'	=> 'permissions.hjson',
+					},
+					'client_commands'	=> [
+					],
 				},
-				'client_commands'	=> [
-				],
+				$Server[1]				=> {
+					$Server[2]			=> {
+						'custom_join'		=> {
+							'ignore_default'	=> json::false,
+						},
+						'restrict_level'	=> {
+							'enabled'		=> json::false,
+							'min'		=> {
+								'ace'	=> 0,
+								'level'	=> 0,
+							},
+							'max'		=> {
+								'ace'	=> 10,
+								'level'	=> 60,
+							},
+						},
+						'whitelist'		=> {
+							'enabled'		=> json::false,
+							'allow'		=> [
+								'00000000-0000-0000-0000-000000000000',
+							],
+				
+						},
+					},
+				},
 			},
-			$Server[0]				=> {
-				$Server[1]			=> {
-					'custom_join'		=> {
-						'ignore_default'	=> json::false,
-					},
-					'restrict_level'	=> {
-						'enabled'		=> json::false,
-						'min'		=> {
-							'ace'	=> 0,
-							'level'	=> 0,
-						},
-						'max'		=> {
-							'ace'	=> 10,
-							'level'	=> 60,
-						},
-					},
-					'whitelist'		=> {
-						'enabled'		=> json::false,
-						'allow'		=> [
-							'00000000-0000-0000-0000-000000000000',
-						],
-			
-					},
+			$Permissions[0]				=> {
+				'user_groups'				=> {
+					'admins'				=> [
+								'00000000-0000-0000-0000-000000000000',
+					],
+					'moderators'			=> [
+								'00000000-0000-0000-0000-000000000000',
+					],
+					'disabled'			=> [],
+				},
+				'commands'				=> {
+					'abuse'				=> [ 'admins', 'moderators' ],
+					'assignTeam'			=> [ 'admins', 'moderators' ],
+					'balanceTeams'			=> [
+								'admins', 'moderators', 'vote'
+					],
+					'changeMap'			=> [
+								'admins', 'moderators', 'vote'
+					],
+					'raceAdd'				=> [ 'admins', 'moderators' ],
+					'raceCancel'			=> [ 'admins', 'moderators' ],
+					'raceDel'				=> [ 'admins', 'moderators' ],
+					'raceGoals'			=> [ 'admins', 'moderators' ],
+					'raceMap'				=> [ 'admins', 'moderators' ],
+					'raceStart'			=> [
+								'admins', 'moderators', 'vote'
+					],
+					'testDS'				=> [ 'disabled' ],
+					'testEM'				=> [ 'disabled' ],
+					'testHM'				=> [ 'disabled' ],
 				},
 			},
 		};
 
+		$Default->{$Permissions[0]}{'user_groups'}{'admins'}=[
+			split(m/;+/, config::option('admins'))
+		];
+		$Default->{$Permissions[0]}{'user_groups'}{'moderators'}=[
+			split(m/;+/, config::option('moderators'))
+		];
+
 		%Path=(
 			'extendPermissions'	=> [@Global, 'permissions', 'enabled'],
 			'aclFallback'		=> [@Global, 'permissions', 'fallback'],
+			'admins'			=> [@Permissions, 'user_groups', 'admins'],
+			'moderators'		=> [@Permissions, 'user_groups', 'moderators'],
+			'acl'			=> [@Permissions, 'commands'],
 			'clientCommand'	=> [@Global, 'client_commands'],
 			'joinIgnoreDefault'	=> [@Server, 'custom_join', 'ignore_default'],
 			'minAce'			=> [@Server, 'restrict_level', 'min', 'ace'],
@@ -2668,8 +2719,17 @@ garunteed to keep the format correct.
 	}
 
 	sub config_reload {
-		json::write_file(stash::get('xx'), $Modsfile);
+		return unless($Mods{'base'});
+
+		json::write_file(stash::get('mods', 'xx'), $Modsfile);
 		server::send('reloadModConfig');
+	}
+
+	sub perms_reload {
+		return unless($Mods{'permissions'});
+
+		json::write_file(stash::get('permissions', 'xx'), $Permsfile);
+		server::send('reloadPermissions');
 	}
 
 	sub initialize_mods {
@@ -2692,17 +2752,25 @@ garunteed to keep the format correct.
 
 		if($Mods{'base'}) {
 			if($config) {
+				delete($config->{$Permissions[0]}{'user_groups'}{'admins'});
+				delete($config->{$Permissions[0]}{'user_groups'}{'moderators'});
 				stash::marry($config, $Default);
 			} else {
 				$config={};
 				if(-r $Modsfile) {
-					stash::marry($config, json::read_file($Modsfile));
+					stash::marry($config->{$Global[0]}, json::read_file($Modsfile));
 				} else {
-					stash::marry($config, $Default);
+					stash::marry($config->{$Global[0]}, $Default->{$Global[0]});
+				}
+				if(-r $Permsfile) {
+					stash::marry($config->{$Permissions[0]}, json::read_file($Permsfile));
+				} else {
+					stash::marry($config->{$Permissions[0]}, $Default->{$Permissions[0]});
 				}
 			}
 			stash::set('xx', $config);
 			&config_reload;
+			&perms_reload;
 		}
 
 		config::add_commands('xx' => [
@@ -2808,6 +2876,7 @@ garunteed to keep the format correct.
 	sub config_del {
 		my($name, $value)=@_;
 		my($array)=stash::get(&path($name), 'xx');
+		my($parent);
 
 		if(ref($array) eq 'ARRAY') {
 			for(my $i=0; $i<@$array; $i++) {
@@ -2819,6 +2888,27 @@ garunteed to keep the format correct.
 		} else {
 			return(undef);
 		}
+	}
+
+	sub acl_set {
+		my($command, @groups)=@_;
+		my($acl)=[split(m/[,;|\s]+/, join(',', @groups))];
+
+		stash::set($command, &path('acl'), 'xx', $acl);
+
+		&perms_reload;
+	}
+
+	sub acl_unset {
+		my($command)=@_;
+		my($config)=stash::get('xx');
+
+		return(undef) if($command=~m/test[DEH]M/);
+
+		stash::delete($command, &path('acl'), 'xx');
+		stash::marry($config->{$Permissions[0]}, $Default->{$Permissions[0]});
+
+		&perms_reload;
 	}
 
 }
@@ -11653,6 +11743,19 @@ also only available from the console.
 		my($lookup);
 		my($current);
 
+		if($name=~m/(superA|a)dmins|moderators/i && $value && $value!~m/^[0-9a-f-]{36}$/) {
+			if($lookup=player::lookup($value)) {
+				$value=$lookup->{'vaporId'};
+			} elsif($lookup=db::psearch($value)) {
+				$value=$lookup->{'vaporid'};
+			} elsif(($lookup)=altbouncer::lookup($value)) {
+				$value=$lookup->{'vaporID'};
+			} else {
+				chat::whisper($s, 'Could not find a vaporID for', $name);
+				return;
+			}
+		}
+
 		if($action eq 'list') {
 			'defer';
 		} elsif($action eq 'set') {
@@ -11715,26 +11818,25 @@ also only available from the console.
 
 			$current=config::option($name);
 
-			if($name=~m/(superA|a)dmins|moderators/ && $value!~m/^[0-9a-f-]{36}$/) {
-				if($lookup=player::lookup($value)) {
-					$value=$lookup->{'vaporId'};
-				} elsif($lookup=db::psearch($value)) {
-					$value=$lookup->{'vaporid'};
-				} elsif(($lookup)=altbouncer::lookup($value)) {
-					$value=$lookup->{'vaporID'};
-				} else {
-					chat::whisper($s, 'Could not find vaporID');
-					return;
-				}
-			}
-
 			unless($current=~m/(^|;)$value(;|$)/) {
 				config::option_set($name, join(';', $current, $value));
+
+				if($name=~m/^(admins|moderators)$/) {
+					if(defined(xx::config_add($name, $value))) {
+						xx::perms_reload;
+					}
+				}
 			}
 		} elsif($action eq 'del') {
 			$current=config::option($name);
 			$current=~s/$value;|;?$value//;
 			config::option_set($name, $current);
+
+			if($name=~m/^(admins|moderators)$/) {
+				if(defined(xx::config_del($name, $value))) {
+					xx::perms_reload;
+				}
+			}
 		} else {
 			chat::whisper($s, 'Syntax: /server [list|set|unset] [...]');
 			return;
@@ -11753,7 +11855,7 @@ also only available from the console.
 		my($current);
 		my($lookup);
 
-		if($name=~m/allow/i && $value!~m/^[0-9a-f-]{36}$/) {
+		if($name=~m/allow|admins|moderators/i && $value && $value!~m/^[0-9a-f-]{36}$/) {
 			if($lookup=player::lookup($value)) {
 				$value=$lookup->{'vaporId'};
 			} elsif($lookup=db::psearch($value)) {
@@ -11769,29 +11871,45 @@ also only available from the console.
 		if($action eq 'list') {
 			'defer';
 		} elsif($action eq 'set') {
-			if(defined(xx::config_set($name, $value))) {
-				xx::config_reload;
+			if($name=~m/acl/i) {
+				xx::acl_set(@args);
 			} else {
-				chat::whisper($s, 'Invalid object or action:', $name);
-				return;
+				if(defined(xx::config_set($name, $value))) {
+					xx::config_reload;
+				} else {
+					chat::whisper($s, 'Invalid object or action:', $name);
+					return;
+				}
 			}
 		} elsif($action eq 'unset') {
-			if(defined(xx::config_unset($name))) {
-				xx::config_reload;
+			if($name=~m/acl/i) {
+				xx::acl_unset(@args);
 			} else {
-				chat::whisper($s, 'Invalid object or action:', $name);
-				return;
+				if(defined(xx::config_unset($name))) {
+					xx::config_reload;
+				} else {
+					chat::whisper($s, 'Invalid object or action:', $name);
+					return;
+				}
 			}
 		} elsif($action eq 'add') {
 			if(defined(xx::config_add($name, $value))) {
-				xx::config_reload;
+				if($name=~m/admins|moderators/i) {
+					xx::perms_reload;
+				} else {
+					xx::config_reload;
+				}
 			} else {
 				chat::whisper($s, 'Invalid object or action:', $name);
 				return;
 			}
 		} elsif($action eq 'del') {
 			if(defined(xx::config_del($name, $value))) {
-				xx::config_reload;
+				if($name=~m/admins|moderators/i) {
+					xx::perms_reload;
+				} else {
+					xx::config_reload;
+				}
 			} else {
 				chat::whisper($s, 'Invalid object or action:', $name);
 				return;
@@ -11802,8 +11920,24 @@ also only available from the console.
 		}
 
 		$current=xx::config($name);
-		if(ref($current) eq 'ARRAY') {
+		if(!defined($current)) {
+			chat::whisper($s, "$name not defined, default bahavior applies");
+		} elsif(ref($current) eq 'ARRAY') {
 			chat::whisper($s, "$name:", @$current);
+		} elsif(ref($current) eq 'HASH' && ref($current->{$args[0]}) eq 'ARRAY') {
+			chat::whisper($s, "$args[0]:", @{$current->{$args[0]}});
+		} elsif(ref($current) eq 'HASH') {
+			if(@args) {
+				if(exists($current->{$args[0]})) {
+					chat::whisper($s, "$args[0]:", $current->{$args[0]});
+				} elsif($name=~m/acl/i) {
+					chat::whisper($s, "$args[0]: fallback");
+				} else {
+					chat::whisper($s, "$args[0]: unset");
+				}
+			} else {
+				chat::whisper($s, "$name:", grep(!m/test[DEH]M/, keys(%$current)));
+			}
 		} else {
 			chat::whisper($s, "$name:", $current);
 		}
