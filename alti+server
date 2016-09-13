@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.40';
+my($VERSION)='3.41';
 
 =head1 NAME
 
@@ -4604,8 +4604,10 @@ is updated with them as the games progress.
 		
 				db::aliases($p, $p->{'nickname'});
 
-				unless($p->{'name'} && utils::like($p->{'name'}, $p->{'nickname'})) {
-					chat::moderator("$p->{'nickname'} is $p->{'name'}");
+				if(length($p->{'name'})>1 && length($p->{'nickname'})>1) {
+					unless(utils::like($p->{'name'}, $p->{'nickname'})) {
+						chat::moderator("$p->{'nickname'} is $p->{'name'}");
+					}
 				}
 			} else {
 				$p->{'block'}=stash::get('block', $p->{'vaporId'}, 'player');
