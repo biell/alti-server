@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.41';
+my($VERSION)='3.42';
 
 =head1 NAME
 
@@ -2133,7 +2133,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	}
 
 	sub find_maps {
-		my($packet_space)=1450-250-20*$Maxp-$Reserve;
+		my($packet_space)=1450-240-20*$Maxp-$Reserve;
 		my($mapdir)=config::option('mapDir');
 
 		ui::slog('Space reserved for maps:', $packet_space);
@@ -2311,6 +2311,16 @@ has occured.  After too many infractions, the player is kicked by the server.
 	}
 
 	sub harrasment {
+		local($_)=@_;
+
+		if(config::option('bullyKick') && m/^[A-Z\s?!.-]+$/) {
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+	sub yelling {
 		local($_)=@_;
 
 		if(config::option('bullyKick') && m/$Harrasment/i) {
@@ -2620,8 +2630,8 @@ garunteed to keep the format correct.
 			$Global[0]				=> {
 				$Global[1]			=> {
 					'permissions'		=> {
-						'enabled'		=> json::false,
-						'fallback'	=> json::false,
+						'enabled'		=> json::true,
+						'fallback'	=> json::true,
 						'file_name'	=> 'permissions.hjson',
 					},
 					'client_commands'	=> [
@@ -2743,8 +2753,6 @@ garunteed to keep the format correct.
 			return;
 		}
 
-		&_datastructures;
-
 		foreach(@$mods) {
 			($mod, $ver)=m/(\w+)\s+(\d+\.\d+\.\d+)/;
 			$ver=version->parse($ver);
@@ -2752,35 +2760,34 @@ garunteed to keep the format correct.
 			$Mods{$mod}=$ver;
 		}
 
-		if($Mods{'base'}) {
-			if($config) {
-				delete($config->{$Permissions[0]}{'user_groups'}{'admins'});
-				delete($config->{$Permissions[0]}{'user_groups'}{'moderators'});
-				stash::marry($config, $Default);
-			} else {
-				$config={};
-				if(-r $Modsfile) {
-					stash::marry($config->{$Global[0]}, json::read_file($Modsfile));
-				} else {
-					stash::marry($config->{$Global[0]}, $Default->{$Global[0]});
-				}
-				if(-r $Permsfile) {
-					stash::marry($config->{$Permissions[0]}, json::read_file($Permsfile));
-				} else {
-					stash::marry($config->{$Permissions[0]}, $Default->{$Permissions[0]});
-				}
-			}
-			stash::set('xx', $config);
-			&config_reload;
-			&perms_reload;
+		unless($Mods{'base'}) {
+			%Mods=();
+			return;
 		}
 
-		config::add_commands('xx' => [
-				['list', 'set', 'unset', 'add', 'del'],
-				[sort(keys(%Path))],
-				'string',
-			]
-		) if($Mods{'base'});
+		&_datastructures;
+
+		if($config) {
+			delete($config->{$Permissions[0]}{'user_groups'}{'admins'});
+			delete($config->{$Permissions[0]}{'user_groups'}{'moderators'});
+			stash::marry($config, $Default);
+		} else {
+			$config={};
+			if(-r $Modsfile) {
+				stash::marry($config->{$Global[0]}, json::read_file($Modsfile));
+			} else {
+				stash::marry($config->{$Global[0]}, $Default->{$Global[0]});
+			}
+			if(-r $Permsfile) {
+				stash::marry($config->{$Permissions[0]}, json::read_file($Permsfile));
+			} else {
+				stash::marry($config->{$Permissions[0]}, $Default->{$Permissions[0]});
+			}
+		}
+
+		stash::set('xx', $config);
+		&config_reload;
+		&perms_reload;
 
 		config::add_commands(
 			'xx' => [
@@ -2831,7 +2838,7 @@ garunteed to keep the format correct.
 		my($name, $value)=@_;
 		my($current)=stash::get(&path($name), 'xx');
 
-		if(ref($current)=~m/Boolean/) {
+		if(ref($current)=~m/Boolean/ || $value=~m/true|false/) {
 			if($value=~m/^false|no/i || !$value) {
 				return(stash::set(&path($name), 'xx', json::false));
 			} else {
@@ -2863,6 +2870,8 @@ garunteed to keep the format correct.
 	sub config_add {
 		my($name, $value)=@_;
 		my($array)=stash::get(&path($name), 'xx');
+
+		return(undef) unless(defined($array));
 
 		if(ref($array) eq 'ARRAY') {
 			foreach my $existing (@$array) {
@@ -4050,6 +4059,7 @@ types which alter the normal behavior.
 	my(%Turrets)=();
 	my(%Bases)=();
 	my(%Goals)=();
+	my(@Choices)=();
 
 	our($Xmid, $Ymid)=(0, 0);
 
@@ -4180,6 +4190,23 @@ types which alter the normal behavior.
 	sub idle {
 		return(0) unless($Map->{'map'});
 		return(utils::delta($Map->{'idle'}));
+	}
+
+	sub choices {
+		@Choices=@_;
+	}
+
+	sub choosen {
+		my($choice)=@_;
+		my($rv)=undef;
+
+		foreach my $map (@Choices) {
+			$rv=$choice if($choice eq $map);
+		}
+
+		@Choices=();
+
+		return($rv);
 	}
 
 	sub teams {
@@ -8678,8 +8705,16 @@ core protecting the flag.
 	#
 	## Change map to random map as requested by players/admin
 	'randomMap' => sub {
-		my ($e, $p) = @_;
-		server::send('changeMap', config::random_map);
+		my($e, $p)=@_;
+		my($next)=stash::get('nextMap', 'admin');
+
+		if($next) {
+			server::send('changeMap', $next);
+			map::choices($next);
+			stash::delete('nextMap', 'admin');
+		} else {
+			server::send('changeMap', config::random_map);
+		}
 	},
 
 	'removeMap'		=> sub {
@@ -8821,7 +8856,19 @@ core protecting the flag.
 		chat::whisper($p, 'Next map is now left to server');
 	},
 
-	'mapLoading'	=> sub {
+	'SelectNextMap'	=> sub {
+		my($e, $p)=@_;
+		my($next)=stash::get('nextMap', 'admin');
+
+		if($next) {
+			server::send('changeMap', $next);
+			map::choices($next);
+		} else {
+			map::choices(@{$e->{'arguments'}});
+		}
+	},
+
+	'mapLoading'		=> sub {
 		my($e, $p)=@_;
 		my($mapdir)=config::option('mapDir');
 		my($map)="$INSTALL_ROOT/maps/$mapdir/$e->{'map'}.altx";
@@ -8835,8 +8882,10 @@ core protecting the flag.
 		} else {
 			map::busy;
 
-			#Don't mark it used if there is a quick /vote changeMap :
-			queue::schedule { file::update_ctime($map) } 30;
+			if(map::choosen($e->{'map'})) {
+				#Don't mark it used if there is a quick /vote changeMap :
+				queue::schedule { file::update_ctime($map) } 30;
+			}
 		}
 
 		stash::delete('nextMap', 'admin') if($next);
@@ -11510,6 +11559,16 @@ core protecting the flag.
 			player::infraction($p, 0.25);
 		} elsif($e->{'blocked'} && config::option('bullyKick')) {
 			player::infraction($p, 0.25);
+		} elsif(config::yelling($e->{'message'})) {
+			player::infraction($p, 0.1);
+
+			$p->{'stats'}{'yelling'}++;
+			if($p->{'stats'}{'yelling'}%7 == 0) {
+				chat::whisper($p, 'stop yelling');
+			} elsif($p->{'stats'}{'yelling'}>30) {
+				server::send('addChatBlock', $p->{'vaporId'}, 'AllChat',
+					'2', 'minute', 'stop yelling in chat');
+			}
 		}
 	},
 
