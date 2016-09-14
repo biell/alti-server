@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.42';
+my($VERSION)='3.43';
 
 =head1 NAME
 
@@ -8858,14 +8858,8 @@ core protecting the flag.
 
 	'SelectNextMap'	=> sub {
 		my($e, $p)=@_;
-		my($next)=stash::get('nextMap', 'admin');
 
-		if($next) {
-			server::send('changeMap', $next);
-			map::choices($next);
-		} else {
-			map::choices(@{$e->{'arguments'}});
-		}
+		map::choices(@{$e->{'arguments'}});
 	},
 
 	'mapLoading'		=> sub {

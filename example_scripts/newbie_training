@@ -1,0 +1,16 @@
+#Send newbies to the Stam and Tolis' Academy training server.
+
+my($LEVEL)=30;
+my($SERVER)='46.101.20.237:27279';
+my($ENTRY)='';
+
+my %newbie_training = (
+	'clientAdd' => sub {
+		my($e, $p)=@_;
+
+		if($p->{'aceRank'}==0 && $p->{'level'}<$LEVEL) {
+			server::send('serverRequestPlayerChangeServer',
+				$p->{'nickname'}, $SERVER, $ENTRY);
+		}
+	},
+);
