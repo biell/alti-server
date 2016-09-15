@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='3.43';
+my($VERSION)='3.46';
 
 =head1 NAME
 
@@ -2313,7 +2313,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	sub harrasment {
 		local($_)=@_;
 
-		if(config::option('bullyKick') && m/^[A-Z\s?!.-]+$/) {
+		if(config::option('bullyKick') && m/$Harrasment/i) {
 			return(1);
 		} else {
 			return(0);
@@ -2323,7 +2323,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	sub yelling {
 		local($_)=@_;
 
-		if(config::option('bullyKick') && m/$Harrasment/i) {
+		if(config::option('bullyKick') && m/^[A-Z\s?!.-]+$/) {
 			return(1);
 		} else {
 			return(0);
