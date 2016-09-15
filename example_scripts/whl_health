@@ -1,0 +1,37 @@
+#Dynamically change spawnHealth after goals are scored
+
+my($HEALTH)=config::option('spawnHealth');
+
+sub set_health {
+		my(@playing)=(player::list('left'), player::list('right'));
+		my($health);
+
+		if(@playing<4) {
+			$health=100;
+		} elsif(@playing>=10) {
+			$health=200;
+		} else {
+			$health=100+int(@playing/2-1)*20;
+		}
+
+		if($health!=$HEALTH) {
+			server::send('testHealthModifier', $health);
+			$HEALTH=$health;
+		}
+}
+
+my %whl_health = (
+	'mapChange'	=> sub {
+		return unless(map::name('ball_whl'));
+
+		queue::schedule {
+			&set_health;
+		} $config::Launcher{'warmup'}{'ball'} - 2;
+	},
+
+	'goal'		=> sub {
+		return unless(map::name('ball_whl'));
+
+		&set_health;
+	},
+);
