@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.46';
+my($VERSION)='3.47';
 
 =head1 NAME
 
@@ -962,7 +962,9 @@ L<perl(1)> should be used to ensure basic operation.
 		my($time)=@_;
 		my($delta)=&delta($time);
 
-		if($delta<60) {
+		if($time<=1) {
+			return('never');
+		} elsif($delta<60) {
 			return('now');
 		} elsif($delta<6000) {
 			return(sprintf('%d minutes ago', $delta/60));
@@ -2062,6 +2064,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Commands{'updateNames'}=undef;
 		$Commands{'showAdmins'}=undef;
 		$Commands{'showModerators'}=undef;
+		$Commands{'playerSearch'}=['player'];
 		$Commands{'showPlayer'}=['player'];
 		$Commands{'showTeams'}=undef;
 		$Commands{'showSeen'}=undef;
@@ -4582,6 +4585,7 @@ is updated with them as the games progress.
 
 		$p->{'joined'}=1;
 		$p->{'alive'}=0;
+		$p->{'infractions'}=0;
 
 		if($p->{'nickname'}=~m/^Bot ([1-9]|[1-2][0-9])$/) {
 			$p->{'isBot'}=1;
@@ -12204,6 +12208,34 @@ also only available from the console.
 			foreach my $mod (split(m/;/, $mods)) {
 				chat::whisper($s, $mod);
 			}
+		}
+	},
+
+	'playerSearch'		=> sub {
+		my($s)=player::server;
+		my($location);
+		
+		if(db::enabled) {
+			foreach my $p (db::psearch(@_)) {
+				if($p->{'ip'}) {
+					$location=sprintf('%s(%s)',
+						$p->{'ip'}, utils::geoip($p->{'ip'}));
+				} else {
+					$location='';
+				}
+				chat::whisperf($s, '%36s  %-5d   %s',
+					$p->{'vaporid'},
+					$p->{'id'},
+					$p->{'name'},
+				);
+				chat::whisperf($s, '%36s  %-25s  %s',
+					$location,
+					$p->{'nickname'},
+					utils::date($p->{'seen'}),
+				);
+			}
+		} else {
+			chat::whisper($s, 'This function requires a database backend.');
 		}
 	},
 
