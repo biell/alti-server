@@ -24,6 +24,8 @@ my %whl_health = (
 	'mapChange'	=> sub {
 		return unless(map::name('ball_whl'));
 
+		$HEALTH=config::option('spawnHealth');
+
 		queue::schedule {
 			&set_health;
 		} $config::Launcher{'warmup'}{'ball'} - 2;
