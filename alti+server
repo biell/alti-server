@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.47';
+my($VERSION)='3.48';
 
 =head1 NAME
 
@@ -12223,12 +12223,12 @@ also only available from the console.
 				} else {
 					$location='';
 				}
-				chat::whisperf($s, '%36s  %-5d   %s',
+				chat::whisperf($s, '%36s  %-5d  %s',
 					$p->{'vaporid'},
 					$p->{'id'},
 					$p->{'name'},
 				);
-				chat::whisperf($s, '%36s  %-25s  %s',
+				chat::whisperf($s, '%36s  %-25s %s',
 					$location,
 					$p->{'nickname'},
 					utils::date($p->{'seen'}),
@@ -12561,8 +12561,13 @@ while(1) {
 						map::idle > config::option('timeIdleChange') ||
 						map::cpu  > config::option('cpuUsedChange')
 					) {
-						server::send('changeMap',
-							config::lobby || config::random_map);
+						if(config::lobby) {
+							unless(map::name eq config::lobby) {
+								server::send('changeMap', config::lobby);
+							}
+						} else {
+							server::send('changeMap', config::random_map);
+						}
 						map::end;
 						queue::background { altbouncer::upload } 0;
 						altbouncer::clear;
