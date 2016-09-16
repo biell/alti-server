@@ -90,11 +90,19 @@ alternate zones to spawn into.  The server will randomly spawn the single
 player in one of these.  This allows the standard spawn zone for that
 team to be boxed up like a coop game.  Here, any Bots can be seperated
 from the rest of the game.  In 1-life games, this box should have a turret
-to clean up the Bots.
+to clean up the Bots, or ensure they quickly run into an instant-kill wall.
 
 If everyone agrees that a specific player should be the prey, a vote can
 be called against the `/prey` command.  This can be used to override the
 default behavior of first to join a team is the prey.
+
+### 1-Life Hit
+This game type, created by Stam, forces players into the same plane
+(by default Biplane with Heavy Cannon) with only a primary weapon, and
+in a configuration where 1 shot kills.  This game type works for
+TDM, 1DM, and FFA game modes.  Maps which start with either `tdm_1lf_`,
+`1dm_1lf_`, `ffa_1lf_`, or simply `1lf_` will be automatically configured
+for this type.
 
 ## Map Integration
 Altitude maps end with a `.altx` extension.  These are simple archive files
@@ -357,7 +365,7 @@ manage Alti+ game maps.
     likely to cause players to leave the game.  However, it is useful for
     MDG games, where 13 against 1 seems a little too asymmetric.
 
-  * **/set gameType [coop|flag|race|ruin|zone|mdg|std|normal]**<br>
+  * **/set gameType [coop|flag|race|ruin|zone|mdg|1lh|std|normal]**<br>
     Normally the type of a game is ascertained by te file name.
     If that cannot be done properly, the game type can be set via this
     mechanism.

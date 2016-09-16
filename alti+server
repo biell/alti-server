@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.48';
+my($VERSION)='3.49';
 
 =head1 NAME
 
@@ -78,7 +78,7 @@ my(%OPTIONS)=(
 );
 
 my(@MODES)=qw(1bd 1de 1dm ball ffa tbd tdm);
-my(@TYPES)=qw(coop flag mdg race ruin zone);
+my(@TYPES)=qw(coop flag mdg race ruin zone 1lh);
 
 my($ROLL_LOGS)=4 * 2**20;
 
@@ -4057,6 +4057,7 @@ types which alter the normal behavior.
 
 	my($Cpu)=0;
 	my($Ds)=undef;
+	my($Start)=undef;
 	my(%Pickups)=();
 	my(%Powerups)=();
 	my(%Turrets)=();
@@ -4167,6 +4168,8 @@ types which alter the normal behavior.
 			$Type='ruin';
 		} elsif(m/(^|_)mdg(_|$)/) {
 			$Type='mdg';
+		} elsif(m/(^|_)1lh(_|$)/) {
+			$Type='1lh';
 		} else {
 			$Type='std';
 		}
@@ -4319,6 +4322,17 @@ types which alter the normal behavior.
 			return('^');
 		} else {
 			return('?');
+		}
+	}
+
+	sub timer {
+		my($limit)=$Ds->{'levelModeConfig'}{'objectiveGameTimeSeconds'};
+		my($used)=time()-$Start;
+
+		if(wantarray) {
+			return($limit, $used);
+		} else {
+			return($limit-$used);
 		}
 	}
 
@@ -4489,6 +4503,7 @@ types which alter the normal behavior.
 
 		$Cpu=List::Util::sum(server::cpu_secs);
 		$Ds=&definition($Map->{'map'});
+		$Start=time();
 		%Pickups=();
 		%Powerups=();
 		%Turrets=();
@@ -7242,6 +7257,15 @@ play though extended interfaces and server support.
 					}
 				}
 			}
+		} elsif(map::type('1lh')) {
+			my($health)=stash::get('spawnHealth', map::name, 'map');
+			my($weapons)=stash::get('weapons', map::name, 'map');
+			my($planes)=stash::get('planes', map::name, 'map');
+			my($bip)={'Biplane,,Heavy Cannon,' => '+'};
+
+			stash::set('spawnHealth', map::name, 'map', 1) unless($health);
+			stash::set('weapons', map::name, 'map', 2) unless($weapons);
+			stash::set('planes', map::name, 'map', $bip) unless($planes);
 		}
 
 		if(!stash::get(map::name, 'map') || stash::get('INIT', map::name, 'map')) {
@@ -9679,7 +9703,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'These are Alti+ game times, which are extentions to the mode');
 		chat::whisper($p, '/list gameType');
-		chat::whisper($p, '/set gameType <mapname|std|coop|race|ruin|flag|zone|mdg>');
+		chat::whisper($p, '/set gameType <mapname|std|coop|race|ruin|flag|zone|mdg|1lh>');
 		chat::whisper($p, '/unset gameType');
 		chat::whisper($p, 'mapname causes the type to be inferred from the map name');
 	},
@@ -10861,6 +10885,16 @@ core protecting the flag.
 				foreach my $msg (split(m/\s*;+\s*/, $intro)) {
 					queue::schedule { chat::whisper($p, $msg) } 5;
 				}
+			} elsif(map::type('flag')) {
+				chat::whisper($p, '** Capture opposing flag to score points **');
+			} elsif(map::type('race')) {
+				chat::whisper($p, '** This is a race, 1st to cross the finish line wins **');
+			} elsif(map::type('ruin')) {
+				chat::whisper($p, '** Destroy all structures **');
+			} elsif(map::type('mdg')) {
+				chat::whisper($p, '** Asymmetric game play, 1 vs many **');
+			} elsif(map::type('1lh')) {
+				chat::whisper($p, '** 1 hit kills **');
 			}
 
 			$p->{'stats'}{'intro'}=1;
@@ -11469,10 +11503,15 @@ core protecting the flag.
 
 	'demolitionChargePlanted'	=> sub {
 		my($e, $p)=@_;
+		my($timer, $used)=map::timer;
 
 		if(map::type('coop')) {
 			records::help($p, 10);
 			server::trigger('logPlanePositions', 'demolitionChargePlanted', $e, $p);
+		}
+
+		if(xx::mod('set_time_cmd') && $timer && $timer-$used<25) {
+			server::send('setTime', ($timer-25)*30);
 		}
 
 	},
