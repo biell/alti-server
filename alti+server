@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.50';
+my($VERSION)='3.51';
 
 =head1 NAME
 
@@ -11313,6 +11313,7 @@ core protecting the flag.
 							chat::whisper($p, $zone);
 						}
 					}
+				} else {
 					server::trigger('logPlanePositions', 'powerup', $e, $p);
 				}
 			}
