@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.52';
+my($VERSION)='3.53';
 
 =head1 NAME
 
@@ -53,6 +53,8 @@ my(%OPTIONS)=(
 	javaHome		=> '',			#Change JAVA_HOME to point to your JDK
 	xxEnabled		=> 1,			#Enable xx server patch if available
 	recordsTypes	=> 'coop,race,ruin',#Which map types to keep records on
+	saveLogTypes	=> 'coop',		#Save the logs for these game types
+	saveLogRecord	=> 5,			#Restrict save logs to top 5 placements
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
 								# normal: all commands and help
@@ -145,6 +147,118 @@ if(exists($ENV{'INSTALL4J_ADD_VM_PARAMS'})) {
 
 if(exists($ENV{'INSTALL4J_JAVA_HOME_OVERRIDE'})) {
 	$OPTIONS{'javaHome'}=$ENV{'INSTALL4J_JAVA_HOME_OVERRIDE'};
+}
+
+=pod
+
+In addition to all it's other features, B<alti+server> can package up
+the logs from games for later review.  This is helpful for tournaments or
+any game where resolving complaints is a possibility.
+
+=cut
+
+{	package log;
+
+	my($Logdir)="$INSTALL_ROOT/servers/log";
+	my($Enabled)=0;
+	my($Record)=undef;
+	my(@Stdout, @Chat, @Log, @Command, @Player);
+	my($Map, $Date);
+
+	sub start {
+		my($map, $mode, $type)=@_;
+		my($debug)=$OPTIONS{'debug'};
+		my($save_log)=$OPTIONS{'saveLogTypes'};
+		local($_);
+
+		$Enabled=$debug;
+
+		foreach(split(m/[,\s|]+/, $save_log)) {
+			if(m/^($mode|$type|all)$/i) {
+				$Enabled=1;
+				last;
+			}
+		}
+
+		$Record=undef;
+		$Map=$map;
+		$Date=POSIX::strftime("%Y%m%dT%H%M", gmtime(time));
+		@Stdout=();
+		@Chat=();
+		@Log=();
+		@Command=();
+	}
+
+	sub finish {
+		my($limit)=$OPTIONS{'saveLogRecord'};
+		my($out)=IO::Handle->new;
+		local($_);
+
+		return unless($Enabled);
+		return if($Record && $Record>$limit);
+
+		mkdir(0755, "$Logdir") unless(-d "$Logdir");
+		mkdir(0755, "$Logdir/$Map") unless(-d "$Logdir/$Map");
+		mkdir(0755, "$Logdir/$Map/$Date") unless(-d "$Logdir/$Map/$Date");
+		
+		open($out, '>', "$Logdir/$Map/$Date/stdout.txt");
+		for(@Stdout) {
+			print $out $_, "\n";
+		}
+		close($out);
+
+		open($out, '>', "$Logdir/$Map/$Date/chat.txt");
+		for(@Chat) {
+			print $out $_, "\n";
+		}
+		close($out);
+
+		open($out, '>', "$Logdir/$Map/$Date/log.txt");
+		for(@Log) {
+			print $out $_, "\n";
+		}
+		close($out);
+
+		open($out, '>', "$Logdir/$Map/$Date/command.txt");
+		for(@Command) {
+			print $out $_, "\n";
+		}
+		close($out);
+
+	}
+
+	sub record {
+		($Record)=@_;
+	}
+
+	sub stdout {
+		return unless($Enabled);
+		push(@Stdout, join(' ',
+			POSIX::strftime('%H:%M:%S', gmtime(time)), @_));
+	}
+
+	sub chat {
+		return unless($Enabled);
+		push(@Chat, join(' ', @_));
+	}
+
+	sub log {
+		return unless($Enabled);
+		push(@Log, join(' ',
+			POSIX::strftime('%H:%M:%S', gmtime(time)), @_));
+	}
+
+	sub command {
+		return unless($Enabled);
+		push(@Command, join(' ',
+			POSIX::strftime('%H:%M:%S', gmtime(time)), @_));
+	}
+
+	sub player {
+		return unless($Enabled);
+		push(@Player, join(' ', POSIX::strftime('%H:%M:%S', gmtime(time)),
+			Data::Dumper::Dumper(@_)));
+	}
 }
 
 =head2 Interface
@@ -313,6 +427,8 @@ delete($ENV{'COLUMNS'});
 			print $slog $entry, "\n";
 			close($slog);
 
+			log::stdout($entry);
+
 			$Swin->scrl(1);
 			$Swin->addstr($Sline-1, 0, $entry);
 			$Swin->refresh();
@@ -355,15 +471,18 @@ delete($ENV{'COLUMNS'});
 		my($type, $nick, $msg)=@_;
 		my($clog)=IO::Handle->new;
 		my($time)=POSIX::strftime("%Y%m%dT%H%M%S", localtime(time()));
+		my($entry)=sprintf("[%s:%-16s:%s] %s", $time, $nick, $type, $msg);
 
 		rename($Chatfile, $Chatfile_o) if(-s $Chatfile > $ROLL_LOGS);
 
 		open($clog, '>>', $Chatfile);
-		printf($clog "[%s:%-16s:%s] %s\n", $time, $nick, $type, $msg);
+		print $clog $entry, "\n";
 		close($clog);
 
+		log::chat($entry);
+
 		if($Redirect) {
-			printf($Redirect "[%s:%-16s:%s] %s\n", $time, $nick, $type, $msg);
+			print $Redirect $entry, "\n";
 		} else {
 			&display($nick, $type, $msg);
 		}
@@ -3906,7 +4025,10 @@ directly with it to manage the instance.
 	}
 
 	sub event {
-		return(json::decode($Log->getline));
+		my($line)=$Log->getline;
+		chomp($line);
+		log::log($line);
+		return(json::decode($line));
 	}
 
 	sub output {
@@ -3999,14 +4121,19 @@ directly with it to manage the instance.
 		my($command)=shift;
 		my($pipe)="$INSTALL_ROOT/servers/command.txt";
 		my($msg)=IO::Handle->new;
+		my($run);
 
 		foreach my $arg (@_) {
 			$command.=' ';
 			$command.=&altiquote($arg);
 		}
 		
+		$run=sprintf("%d,%s,%s", $config::Port, 'console', $command);
+
+		log::command($run);
+
 		open($msg, '>>', $pipe);
-		printf($msg "%d,%s,%s\n", $config::Port, 'console', $command);
+		print $msg $run, "\n";
 		close($msg);
 	}
 
@@ -4053,7 +4180,6 @@ types which alter the normal behavior.
 {	package map;
 
 	my($Map)=undef;
-	my($Type)=undef;
 
 	my($Cpu)=0;
 	my($Ds)=undef;
@@ -4157,32 +4283,24 @@ types which alter the normal behavior.
 		local($_)=@_;
 
 		if(m/(^|_)flag(_|$)/) {
-			$Type='flag';
+			$Map->{'type'}='flag';
 		} elsif(m/(^|_)zone(_|$)/) {
-			$Type='zone';
+			$Map->{'type'}='zone';
 		} elsif(m/(^|_)ra?ce(_|$)/) {
-			$Type='race';
+			$Map->{'type'}='race';
 		} elsif(m/(^|_)coop(_|$)/) {
-			$Type='coop';
+			$Map->{'type'}='coop';
 		} elsif(m/(^|_)ruin(_|$)/) {
-			$Type='ruin';
+			$Map->{'type'}='ruin';
 		} elsif(m/(^|_)mdg(_|$)/) {
-			$Type='mdg';
+			$Map->{'type'}='mdg';
 		} elsif(m/(^|_)1lh(_|$)/) {
-			$Type='1lh';
+			$Map->{'type'}='1lh';
 		} else {
-			$Type='std';
+			$Map->{'type'}='std';
 		}
 
-		return($Type);
-	}
-
-	sub type {
-		if(@_) {
-			return(grep(m/^$Type$/, @_)>0);
-		} else { 
-			return($Type);
-		}
+		return($Map->{'type'});
 	}
 
 	sub start	{
@@ -4235,6 +4353,7 @@ types which alter the normal behavior.
 
 	sub name		{ &_value_or_query('map', @_);		}
 	sub mode		{ &_value_or_query('mode', @_);		}
+	sub type		{ &_value_or_query('type', @_);		}
 
 	sub left		{
 		foreach(@_) {
@@ -4510,6 +4629,8 @@ types which alter the normal behavior.
 		%Bases=();
 		%Goals=();
 
+		log::start(@$Map{'map', 'mode', 'type'});
+
 		$Xmid=$Ds->{'views'}{'Game'}{'bounds'}{'maxX'}/2;
 		$Ymid=$Ds->{'views'}{'Game'}{'bounds'}{'maxY'}/2;
 
@@ -4548,6 +4669,7 @@ types which alter the normal behavior.
 
 	sub end {
 		ui::slog('INFO  : CPU used by', &name, ':', utils::secs2mins(&cpu));
+		log::finish;
 	}
 
 
@@ -5361,6 +5483,7 @@ they make the top 5.
 					$place++;
 				}
 
+				log::record($place);
 				splice(@$records, 5);
 			}
 		} else {
@@ -5384,6 +5507,7 @@ they make the top 5.
 					$records=[[$time, @holder]];
 				}
 
+				log::record($place);
 				if($place && $place<=5) {
 					stash::set(map::name, 'records', $records);
 				} else {
@@ -6947,13 +7071,25 @@ play though extended interfaces and server support.
 		my($zone)=stash::get($p->{'team'}, 'zones', map::name, 'map');
 		my($personal)=stash::get('keys', map::name, 'map') & 1;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
-		my($name, $keys, $color);
+		my($name, $keys, $color, @list);
 
 		if($door) {
 			if(($name=$door->{'doors'}{$pickup}) && &no_repeats($e, $p, $name)) {
 				unless(&door_open($p, $door->{'doors'}{$pickup})) {
 					&bench($p);
 					chat::whisper($p, $door->{'doors'}{$pickup}, 'is locked');
+
+					@list=();
+					foreach my $key (keys(%{$door->{'keys'}})) {
+						if($door->{'keys'}{$key} eq $door->{'doors'}{$pickup}) {
+							unless(&key_found($p, $key)) {
+								push(@list, "$door->{'name'}{$key}:$key");
+							}
+						}
+					}
+					if(@list) {
+						chat::whisper($p, 'Remaining:', @list);
+					}
 				}
 
 				return(1);
@@ -10771,7 +10907,11 @@ core protecting the flag.
 
 		if(length($p->{'name'})>1 && length($p->{'nickname'})>1) {
 			unless(utils::like($p->{'name'}, $p->{'nickname'})) {
-				chat::moderator("$p->{'nickname'} is $p->{'name'}");
+				queue::schedule {
+					if($p && $p->{'joined'}) {
+						chat::moderator("$p->{'nickname'} is $p->{'name'}");
+					}
+				} 10;
 			}
 		}
 
@@ -11713,6 +11853,8 @@ core protecting the flag.
 			$p->{'stats'}{'played'}+=$e->{'time'} - $p->{'spawn'};
 
 			rank::enter($p);
+
+			log::player($p);
 		}
 
 		if(map::mode('ball', 'tbd', 'tdm', 'ffa')) {
