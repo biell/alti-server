@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.53';
+my($VERSION)='3.54';
 
 =head1 NAME
 
@@ -167,8 +167,8 @@ any game where resolving complaints is a possibility.
 
 	sub start {
 		my($map, $mode, $type)=@_;
-		my($debug)=$OPTIONS{'debug'};
-		my($save_log)=$OPTIONS{'saveLogTypes'};
+		my($debug)=config::option('debug');
+		my($save_log)=config::option('saveLogTypes');
 		local($_);
 
 		$Enabled=$debug;
@@ -190,16 +190,16 @@ any game where resolving complaints is a possibility.
 	}
 
 	sub finish {
-		my($limit)=$OPTIONS{'saveLogRecord'};
+		my($limit)=config::option('saveLogRecord');
 		my($out)=IO::Handle->new;
 		local($_);
 
 		return unless($Enabled);
 		return if($Record && $Record>$limit);
 
-		mkdir(0755, "$Logdir") unless(-d "$Logdir");
-		mkdir(0755, "$Logdir/$Map") unless(-d "$Logdir/$Map");
-		mkdir(0755, "$Logdir/$Map/$Date") unless(-d "$Logdir/$Map/$Date");
+		mkdir("$Logdir") unless(-d "$Logdir");
+		mkdir("$Logdir/$Map") unless(-d "$Logdir/$Map");
+		mkdir("$Logdir/$Map/$Date") unless(-d "$Logdir/$Map/$Date");
 		
 		open($out, '>', "$Logdir/$Map/$Date/stdout.txt");
 		for(@Stdout) {
