@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.54';
+my($VERSION)='3.55';
 
 =head1 NAME
 
@@ -187,6 +187,7 @@ any game where resolving complaints is a possibility.
 		@Chat=();
 		@Log=();
 		@Command=();
+		@Player=();
 	}
 
 	sub finish {
@@ -221,6 +222,12 @@ any game where resolving complaints is a possibility.
 
 		open($out, '>', "$Logdir/$Map/$Date/command.txt");
 		for(@Command) {
+			print $out $_, "\n";
+		}
+		close($out);
+
+		open($out, '>', "$Logdir/$Map/$Date/player.txt");
+		for(@Player) {
 			print $out $_, "\n";
 		}
 		close($out);
@@ -8318,6 +8325,8 @@ core protecting the flag.
 		} elsif($type=~m/rude/i) {
 			player::infraction($a, 5);
 			chat::whisper($a, 'You are being rude, knock it off or get kicked');
+		} else {
+			chat::whisper($a, '/abuse [chat|ban|nick|rude] [player]');
 		}
 
 		stash::set('last', $a->{'vaporId'}, 'abuse', $today);
