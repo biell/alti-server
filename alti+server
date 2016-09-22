@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.55';
+my($VERSION)='3.56';
 
 =head1 NAME
 
@@ -136,6 +136,7 @@ my(%CURL_RV)=(
 );
 
 my(%HOOKS, %CONSOLE, %ALTIPLUS);
+my($RADIANS)=3.1415926535/180;
 
 if(exists($ENV{'INSTALL4J_ADD_VM_PARAMS'})) {
 	unless($ENV{'INSTALL4J_ADD_VM_PARAMS'}=~m/-verbose:gc/) {
@@ -162,7 +163,7 @@ any game where resolving complaints is a possibility.
 	my($Logdir)="$INSTALL_ROOT/servers/log";
 	my($Enabled)=0;
 	my($Record)=undef;
-	my(@Stdout, @Chat, @Log, @Command, @Player);
+	my(@Stdout, @Chat, @Log, @Command, @Note, @Player);
 	my($Map, $Date);
 
 	sub start {
@@ -226,10 +227,14 @@ any game where resolving complaints is a possibility.
 		}
 		close($out);
 
-		open($out, '>', "$Logdir/$Map/$Date/player.txt");
-		for(@Player) {
+		open($out, '>', "$Logdir/$Map/$Date/note.txt");
+		for(@Note) {
 			print $out $_, "\n";
 		}
+		close($out);
+
+		open($out, '>', "$Logdir/$Map/$Date/player.txt");
+		print $out Data::Dumper::Dumper([@Player]);
 		close($out);
 
 	}
@@ -261,10 +266,15 @@ any game where resolving complaints is a possibility.
 			POSIX::strftime('%H:%M:%S', gmtime(time)), @_));
 	}
 
+	sub note {
+		return unless($Enabled);
+		push(@Note, join(' ',
+			POSIX::strftime('%H:%M:%S', gmtime(time)), @_));
+	}
+
 	sub player {
 		return unless($Enabled);
-		push(@Player, join(' ', POSIX::strftime('%H:%M:%S', gmtime(time)),
-			Data::Dumper::Dumper(@_)));
+		push(@Player, @_);
 	}
 }
 
@@ -1015,7 +1025,38 @@ L<perl(1)> should be used to ensure basic operation.
 	sub direction {
 		my($x, $y)=@_;
 
-		return(int(atan2($y, $x)*180/3.14159));
+		return(int(atan2($y, $x)/$RADIANS));
+	}
+
+	sub angle {
+		my($a)=@_;
+
+		#Accept -90, 270, 'down', or 's' to signify straight down:
+		if($a eq 'up' || $a eq 'n' || $a eq 'north') {
+			$a=90;
+		} elsif($a eq 'down' || $a eq 's' || $a eq 'south') {
+			$a=-90;
+		} elsif($a eq 'left' || $a eq 'w' || $a eq 'west') {
+			$a=180;
+		} elsif($a eq 'right' || $a eq 'e' || $a eq 'east') {
+			$a=0;
+		} elsif($a eq 'ne' || $a eq 'northeast') {
+			$a=45;
+		} elsif($a eq 'se' || $a eq 'southeast') {
+			$a=-45;
+		} elsif($a eq 'sw' || $a eq 'southwest') {
+			$a=-135;
+		} elsif($a eq 'nw' || $a eq 'northwest') {
+			$a=135;
+		} elsif($a<=-180) {
+			$a=int($a + 360);
+		} elsif($a>180) {
+			$a=int($a - 360);
+		} else {
+			$a=int($a);
+		}
+
+		return($a);
 	}
 
 	sub transform {
@@ -1040,7 +1081,7 @@ L<perl(1)> should be used to ensure basic operation.
 			$a*=-1;
 		}
 
-		$a*=3.14159/180;	#convert to radians
+		$a*=$RADIANS;
 
 		return($x*cos($a)-$y*sin($a), $x*sin($a)+$y*cos($a));
 	}
@@ -1216,7 +1257,7 @@ L<perl(1)> should be used to ensure basic operation.
 		s/acid.*/Acid Bomb/i;
 
 		s/sup.*/Suppressor/i;
-		s/.*[db]ombs.*/Bombs/i;
+		s/.*[db]omb.*/Bombs/i;
 		s/flak/Flak Tailgun/i;
 
 		s/direct.*/Director/i;
@@ -4184,6 +4225,109 @@ types which alter the normal behavior.
 
 =cut
 
+{	package hull;
+
+	my(@Size)=();
+	my(@Regions)=([]);
+	my($Grid)=256;
+
+	sub reset {
+		@Size=@_;
+
+		@Regions=([]);
+		for(my($lg, $rg)=(0,$Grid); $lg<$Size[0]; $lg+=$Grid,$rg+=$Grid) {
+			for(my($bg,$tg)=(0,$Grid); $bg<$Size[1]; $bg+=$Grid,$tg+=$Grid) {
+				$Regions[$lg/$Grid][$bg/$Grid]=[];
+			}
+		}
+	}
+
+	sub bounds {
+		my($poly)=@_;
+		my($l, $b, $r, $t)=(@Size, 0, 0);
+
+		foreach my $point (@$poly) {
+			$l=$point->[0] if($point->[0]<$l);
+			$r=$point->[0] if($point->[0]>$r);
+			$b=$point->[1] if($point->[1]<$b);
+			$t=$point->[1] if($point->[1]>$t);
+		}
+
+		return($l, $b, $r, $t);
+	}
+
+	sub inside {
+		my($poly, $x, $y)=@_;
+		my($in)=0;
+		my($x1, $y1, $x2, $y2);
+
+		for(my $i=0; $i<$#$poly; $i++) {
+			($x1, $y1, $x2, $y2)=(@{$poly->[$i]}, @{$poly->[$i+1]});
+
+			return(1) if(	$y==$y1				&&
+						$y==$y2				&&
+						($x>=$x1 || $x>=$x2)	&&
+						($x<=$x1 || $x<=$x2));
+
+			$in^=($x1==$x2 || $x<=($y-$y1)*($x2-$x1)/($y2-$y1)+$x1) unless(
+						$y1==$y2				||
+						($y<=$y1 && $y<=$y2)	||
+						($y>$y1 && $y>$y2)		||
+						($x>$x1 && $x>$x2));
+		}
+
+		return($in);
+	}
+
+	sub add {
+		my($hull)=@_;
+		my($x, $y)=($hull->{'x'}, $hull->{'y'});
+		my($line)=$hull->{'texturedPoly'}{'hull'};
+		my($poly)=[];
+		my($lp, $bp, $rp, $tp);
+
+		return unless($hull->{'collidable'} eq 'true');
+
+		$line=~s/![-0-9]+,//;
+		while($line=~s/([-.\d]+),([-.\d]+),//) {
+			push(@$poly, [$1+$x, $2+$y]);
+		}
+		push(@$poly, $poly->[0]);
+
+		($lp, $bp, $rp, $tp)=&bounds($poly);
+
+		for(my($lg, $rg)=(0,$Grid); $lg<$Size[0]; $lg+=$Grid,$rg+=$Grid) {
+			last if($rp<$lg);
+			next if($lp>$rg);
+
+			for(my($bg,$tg)=(0,$Grid); $bg<$Size[1]; $bg+=$Grid,$tg+=$Grid) {
+				next if($bp>$tg);
+				last if($tp<$bg);
+
+				push(@{$Regions[$lg/$Grid][$bg/$Grid]}, $poly);
+			}
+		}
+	}
+
+	sub near {
+		my($x)=int($_[0]/$Grid);
+		my($y)=int($_[1]/$Grid);
+
+		return(@{$Regions[$x][$y]});
+	}
+
+	sub in_wall {
+		my($x, $y)=@_;
+
+		foreach my $poly (&near($x, $y)) {
+			return(1) if(&inside($poly, $x, $y));
+		}
+		return(undef);
+	}
+
+}
+
+
 {	package map;
 
 	my($Map)=undef;
@@ -4239,7 +4383,8 @@ types which alter the normal behavior.
 								'Goal',
 								'Turret',
 								'Base',
-								'String'
+								'String',
+								'geometry',
 							],
 			'ValueAttr'		=> [ 'value', 'index' ],
 			'GroupTags'		=> {
@@ -4670,6 +4815,14 @@ types which alter the normal behavior.
 		if(ref($obj) eq 'ARRAY') {
 			foreach my $ba (@$obj) {
 				$Bases{"$ba->{'x'},$ba->{'y'}"}=$ba->{'team'};
+			}
+		}
+
+		hull::reset(@{$Ds->{'views'}{'Game'}{'bounds'}}{'maxX', 'maxY'});
+		$obj=$Ds->{'views'}{'Game'}{'geometry'}[0]{'geometry'};
+		if(ref($obj) eq 'ARRAY') {
+			foreach my $geometry (@$obj) {
+				hull::add($geometry);
 			}
 		}
 	}
@@ -6575,36 +6728,23 @@ play though extended interfaces and server support.
 			return(utils::direction(@_[2,3]));
 		}
 
-		#Accept -90, 270, 'down', or 's' to signify straight down:
-		if($a eq 'up' || $a eq 'n' || $a eq 'north') {
-			$a=90;
-		} elsif($a eq 'down' || $a eq 's' || $a eq 'south') {
-			$a=-90;
-		} elsif($a eq 'left' || $a eq 'w' || $a eq 'west') {
-			$a=180;
-		} elsif($a eq 'right' || $a eq 'e' || $a eq 'east') {
-			$a=0;
-		} elsif($a eq 'ne' || $a eq 'northeast') {
-			$a=45;
-		} elsif($a eq 'se' || $a eq 'southeast') {
-			$a=-45;
-		} elsif($a eq 'sw' || $a eq 'southwest') {
-			$a=-135;
-		} elsif($a eq 'nw' || $a eq 'northwest') {
-			$a=135;
-		} elsif($a eq 'c' || $a eq 'center') {
-			$a=utils::direction($map::Xmid-$x, $map::Ymid-$y);
+		if($a eq 'c' || $a eq 'center') {
+			return(&direction($map::Xmid-$x, $map::Ymid-$y));
 		} elsif($a eq 'h' || $a eq 'hmirror') {
-			$a=utils::direction($map::Xmid-$x, 0);
+			return(&direction($map::Xmid-$x, 0));
 		} elsif($a eq 'v' || $a eq 'vmirror') {
-			$a=utils::direction(0, $map::Ymid-$y);
-		} elsif($a<=-180) {
-			$a=int($a + 360);
-		} elsif($a>180) {
-			$a=int($a - 360);
+			return(&direction(0, $map::Ymid-$y));
 		} else {
-			$a=int($a);
+			return(utils::angle($a));
 		}
+	}
+
+	sub course {
+		my($a, $d)=@_;
+
+		$a=utils::angle($a)*$RADIANS;
+		
+		return($d*sin($a), $d*cos($a));
 	}
 
 	sub plane_check {
@@ -6878,7 +7018,7 @@ play though extended interfaces and server support.
 		my($time)=$e->{'time'};
 		my($rv)=1;
 
-		$obj=join(',', @$e{'positionX','positionY'}) unless($obj);
+		$obj=join(',', @$e{'powerup','positionX','positionY'}) unless($obj);
 
 		$rv=0 if(exists($p->{'timer'}{$obj}) && $time<$p->{'timer'}{$obj});
 			
@@ -9087,6 +9227,7 @@ core protecting the flag.
 				server::send('overrideSpawnPoint', $player->{'nickname'}, 0, 0, 0);
 			}
 			$player->{'stats'}={};
+			$player->{'timer'}={};
 			$player->{'carrier'}=0;
 			$player->{'has'}=undef;
 			player::forgive($player);
@@ -11195,6 +11336,15 @@ core protecting the flag.
 
 		race::spawn($p);
 
+		if(	$p->{'perkGreen'} eq 'Rubberized Hull'	&&
+			$p->{'perkBlue'}  eq 'Reverse Thrust'	&&
+			$p->{'plane'}     =~ m/Loopy|Miranda/	&&
+			map::type('coop', 'race')
+		) {
+			log::note(player::name($p), 'spawned with rev/rubber:',
+				$p->{'nickname'}, $p->{'vaporId'});
+		}
+
 		if(chat::snarky) {
 			foreach my $snark (List::Util::shuffle(keys(%SNARKS))) {
 				$match=1;
@@ -11354,7 +11504,7 @@ core protecting the flag.
 		my(@fake_event)=();
 
 		#Don't repeat this specific powerup for 0.8 seconds
-		return unless(plus::no_repeats($e, $p, $e->{'powerup'}.$pickup));
+		return unless(plus::no_repeats($e, $p));
 
 		plus::capture($e, $p) if(map::type('flag'));
 
@@ -11527,7 +11677,10 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($v)=player::lookup($e->{'victim'});
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
+		my($is_crash)=0;
 		my($angle);
+
+		$is_crash=1 if($e->{'player'}==-1 && $e->{'source'} eq 'plane');
 
 		if($p) {
 			rank::score($p->{'team'}, 1) if(map::mode('tdm', '1dm'));
@@ -11551,14 +11704,28 @@ core protecting the flag.
 			$v->{'stats'}{'played'}+=$e->{'time'}-$v->{'spawn'};
 			$v->{'stats'}{'died'}++;
 
+			if($is_crash) {
+				$v->{'stats'}{'crashes'}++;
+
+				if(	$v->{'perkGreen'} eq 'Rubberized Hull'	&&
+					$v->{'perkBlue'}  eq 'Reverse Thrust'	&&
+					$v->{'plane'}     =~ m/Loopy|Miranda/	&&
+					map::type('std', 'coop', 'race')
+				) {
+					log::note(player::name($v), 'crashed with rev/rubber:',
+						json::encode($e), json::encode($v));
+
+					if(hull::in_wall(@$e{'victimPositionX','victimPositionY'})) {
+						ui::slog(player::name($v), 'crashed inside wall!');
+					}
+				}
+			}
+
 			plus::killed($v);
 			plus::check_spawn($v);
 
 			if($spawn_mode eq 'died' || $spawn_mode eq 'crash') {
-				if(	$e->{'player'}==-1 &&
-					$e->{'source'} eq 'plane' &&
-					$e->{'time'}-$v->{'spawn'} < 1750
-				) { #crash
+				if($is_crash && $e->{'time'}-$v->{'spawn'} < 1750) {
 					$p->{'stats'}{'crash'}++;
 					if(utils::coin_toss) {
 						$e->{'victimVelocityX'}*=-10;
@@ -11581,7 +11748,7 @@ core protecting the flag.
 
 		if(map::type('mdg')) {
 			if(map::mode('ball')) {
-				if($e->{'player'}==-1) {
+				if($is_crash) {
 					'crash';
 				} elsif($p->{'team'} == $v->{'team'}) {
 					'friendly fire';
