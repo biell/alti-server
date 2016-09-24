@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.56';
+my($VERSION)='3.57';
 
 =head1 NAME
 
@@ -83,6 +83,7 @@ my(@MODES)=qw(1bd 1de 1dm ball ffa tbd tdm);
 my(@TYPES)=qw(coop flag mdg race ruin zone 1lh);
 
 my($ROLL_LOGS)=4 * 2**20;
+my($RADIANS)=3.1415926535/180;
 
 =head1 DESCRIPTION
 
@@ -136,7 +137,6 @@ my(%CURL_RV)=(
 );
 
 my(%HOOKS, %CONSOLE, %ALTIPLUS);
-my($RADIANS)=3.1415926535/180;
 
 if(exists($ENV{'INSTALL4J_ADD_VM_PARAMS'})) {
 	unless($ENV{'INSTALL4J_ADD_VM_PARAMS'}=~m/-verbose:gc/) {
@@ -1058,6 +1058,15 @@ L<perl(1)> should be used to ensure basic operation.
 
 		return($a);
 	}
+
+	sub course {
+		my($x, $y, $a, $d)=@_;
+
+		$a=&angle($a)*$RADIANS;
+		
+		return($x+$d*cos($a), $y+$d*sin($a));
+	}
+
 
 	sub transform {
 		my($t, $x, $y)=@_;
@@ -4242,6 +4251,34 @@ types which alter the normal behavior.
 		}
 	}
 
+	sub det {
+		return($_[0]*$_[3]-$_[2]*$_[1]);
+	}
+
+	sub cross {
+		my($a1x,$a1y, $a2x,$a2y, $b1x,$b1y, $b2x,$b2y)=@_;
+		my($n)=&det($b1x-$a1x, $b1x-$b2x, $b1y-$a1y, $b1y-$b2y);
+		my($d)=&det($a2x-$a1x, $b1x-$b2x, $a2y-$a1y, $b1y-$b2y);
+		my($minx, $maxx)=utils::minmax($a1x, $a2x, $b1x, $b2x);
+		my($miny, $maxy)=utils::minmax($a1y, $a2y, $b1y, $b2y);
+		my($x, $y, $r);
+
+		if(-0.01<$d && $d<0.01) {
+			return(undef);
+		}
+
+		$r=$n/$d;
+		$x=$a1x+$r*($a2x-$a1x);
+		$y=$a1y+$r*($a2y-$a1y);
+
+		return(undef) if($x<$minx);
+		return(undef) if($x>$maxx);
+		return(undef) if($y<$miny);
+		return(undef) if($y>$maxy);
+
+		return([$x, $y]);
+	}
+
 	sub bounds {
 		my($poly)=@_;
 		my($l, $b, $r, $t)=(@Size, 0, 0);
@@ -4266,17 +4303,71 @@ types which alter the normal behavior.
 
 			return(1) if(	$y==$y1				&&
 						$y==$y2				&&
-						($x>=$x1 || $x>=$x2)	&&
-						($x<=$x1 || $x<=$x2));
+						($x1<=$x || $x2<=$x)	&&
+						($x<=$x2 || $x<=$x1));
 
-			$in^=($x1==$x2 || $x<=($y-$y1)*($x2-$x1)/($y2-$y1)+$x1) unless(
-						$y1==$y2				||
-						($y<=$y1 && $y<=$y2)	||
-						($y>$y1 && $y>$y2)		||
-						($x>$x1 && $x>$x2));
+			$in^=( $x1==$x2 || $x<=(($y-$y1)*($x2-$x1)/($y2-$y1)+$x1) ) if(
+						$y1!=$y2				&&
+						($x<=$x1 || $x<=$x2)	&&
+						($y1<$y  || $y2<$y)		&&
+						($y<=$y2 || $y<=$y1));
 		}
 
 		return($in);
+	}
+
+	sub zone {
+		my($x, $y, $l, $b, $r, $t)=@_;
+
+		if($y<$b) {
+			if($x<$l) {
+				return(1);
+			} elsif($x<=$r) {
+				return(2);
+			} else {
+				return(3);
+			}
+		} elsif($y<=$t) {
+			if($x<$l) {
+				return(4);
+			} elsif($x<=$r) {
+				return(5);
+			} else {
+				return(6);
+			}
+		} else {
+			if($x<$l) {
+				return(7);
+			} elsif($x<=$r) {
+				return(8);
+			} else {
+				return(9);
+			}
+		}
+	}
+
+	sub shrink {
+		my($poly, $l, $b, $r, $t)=@_;
+		my(@new)=();
+		my($zpre, $zcur, $znxt);
+
+		push(@new, $poly->[0]);
+		$zcur=&zone(@{$poly->[0]}, $l, $b, $r, $t);
+		$znxt=&zone(@{$poly->[1]}, $l, $b, $r, $t);
+		for(my $i=1; $i<$#$poly; $i++) {
+			$zpre=$zcur;
+			$zcur=$znxt;
+			$znxt=&zone(@{$poly->[$i+1]}, $l, $b, $r, $t);
+
+			if($zcur==5) {
+				push(@new, $poly->[$i]);
+			} elsif($zpre!=$zcur || $zcur!=$znxt) {
+				push(@new, $poly->[$i]);
+			}
+		}
+		push(@new, $poly->[-1]);
+		
+		return(\@new);
 	}
 
 	sub add {
@@ -4304,7 +4395,7 @@ types which alter the normal behavior.
 				next if($bp>$tg);
 				last if($tp<$bg);
 
-				push(@{$Regions[$lg/$Grid][$bg/$Grid]}, $poly);
+				push(@{$Regions[$lg/$Grid][$bg/$Grid]}, &shrink($poly, $lg, $bg, $rg, $tg));
 			}
 		}
 	}
@@ -4319,10 +4410,82 @@ types which alter the normal behavior.
 	sub in_wall {
 		my($x, $y)=@_;
 
+		if(@_==2) {
+			($x, $y)=@_;
+		} elsif(ref($_[0]) eq 'HASH') {
+			if(exists($_[0]{'victimPositionX'})) {
+				($x, $y)=@{$_[0]}{'victimPositionX','victimPositionY'};
+			} elsif(exists($_[0]{'postionX'})) {
+				($x, $y)=@{$_[0]}{'positionX','positionY'};
+			} else {
+				return(undef);
+			}
+		} else {
+			return(undef);
+		}
+
 		foreach my $poly (&near($x, $y)) {
-			return(1) if(&inside($poly, $x, $y));
+			return($poly) if(&inside($poly, $x, $y));
 		}
 		return(undef);
+	}
+
+
+	sub safe_spawn {
+		my($px, $py, $vx, $vy, $nx, $ny);
+		my(@angles)=qw(20 -20 40 -40 60 -60 80 -80 100 -100 120 -120 140 -140 160 -160 180);
+		my($was, $try);
+		my($poly);
+
+		if(@_==4) {
+			($px, $py, $vx, $vy)=@_;
+			$was=utils::direction($vx, $vy);
+		} elsif(@_==3) {
+			($px, $py, $was)=@_;
+		} elsif(@_==2) {
+			($px, $py)=@_;
+			$was=0;
+		} elsif(ref($_[0]) eq 'HASH') {
+			if(exists($_[0]{'victimPositionX'})) {
+				($px, $py)=@{$_[0]}{'victimPositionX','victimPositionY'};
+				($vx, $vy)=@{$_[0]}{'victimVelocityX','victimVelocityY'};
+				$was=utils::direction($vx, $vy);
+
+				if(abs($vx)<3 && abs($vy)<3 && ($poly=&in_wall($px, $py))) {
+					foreach my $a (@angles) {
+						($nx, $ny)=utils::course($px, $py, $a, 15);
+						unless(&inside($poly, $nx, $ny)) {
+							($px, $py)=($nx, $ny);
+							last;
+						}
+					}
+				} else {
+					$px-=$vx;
+					$py-=$vy;
+				}
+			} elsif(exists($_[0]{'positionX'})) {
+				($px, $py)=@{$_[0]}{'positionX','positionY'};
+				$was=0;
+			} else {
+				return(0, 0, 0);
+			}
+		} else {
+			return(0, 0, 0);
+		}
+
+		$try=$was;
+		while(	&in_wall(utils::course($px, $py, $try, 30)) ||
+				&in_wall(utils::course($px, $py, $try, 60)) ||
+				&in_wall(utils::course($px, $py, $try, 90))
+		) {
+			if(@angles) {
+				$try=utils::angle($was+shift(@angles));
+			} else {
+				return(-1, -1, -1);
+			}
+		}
+
+		return($px, $py, $try);
 	}
 
 }
@@ -6739,14 +6902,6 @@ play though extended interfaces and server support.
 		}
 	}
 
-	sub course {
-		my($a, $d)=@_;
-
-		$a=utils::angle($a)*$RADIANS;
-		
-		return($d*sin($a), $d*cos($a));
-	}
-
 	sub plane_check {
 		my($p)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
@@ -6873,6 +7028,10 @@ play though extended interfaces and server support.
 		my($override)=stash::get('spawnAngle', map::name, 'map');
 		my($angle)=&angle($x, $y, $override || @angle);
 		
+		if($x==-1 && $y==-1 && $angle[0]==-1) {
+			&spawn_previous($p);
+		}
+
 		if(abs($angle)>90) {
 			$x=POSIX::ceil($x);
 		} else {
@@ -11715,7 +11874,7 @@ core protecting the flag.
 					log::note(player::name($v), 'crashed with rev/rubber:',
 						json::encode($e), json::encode($v));
 
-					if(hull::in_wall(@$e{'victimPositionX','victimPositionY'})) {
+					if(hull::in_wall($e)) {
 						ui::slog(player::name($v), 'crashed inside wall!');
 					}
 				}
@@ -11725,17 +11884,13 @@ core protecting the flag.
 			plus::check_spawn($v);
 
 			if($spawn_mode eq 'died' || $spawn_mode eq 'crash') {
-				if($is_crash && $e->{'time'}-$v->{'spawn'} < 1750) {
-					$p->{'stats'}{'crash'}++;
-					if(utils::coin_toss) {
-						$e->{'victimVelocityX'}*=-10;
-					} else {
-						$e->{'victimVelocityY'}*=-10;
-					}
+				if($is_crash) {
+					plus::spawn_here($v, hull::safe_spawn($e));
+				} else {
+					plus::spawn_here($v, 
+						$e->{'victimPositionX'}, $e->{'victimPositionY'},
+						$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
 				}
-				plus::spawn_here($v,
-					$e->{'victimPositionX'}, $e->{'victimPositionY'},
-					$e->{'victimVelocityX'}, $e->{'victimVelocityY'});
 			} elsif($spawn_mode=~m/near|after/) {
 				plus::spawn_near($v,
 					$e->{'victimPositionX'}, $e->{'victimPositionY'});

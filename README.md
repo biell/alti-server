@@ -940,6 +940,16 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     point for members of that team, then the individual name is stored.
     Otherwise, the color of the team is stored with the record.
 
+  * **saveLogTypes [type1,type2,...]**<br>
+    For the listed game times, keep game specific logs in a special
+    directory heirarchy for later review.
+
+  * **saveLogRecord [#]**<br>
+    If `saveLogTypes` is set for a game type which has records, only
+    keep the logs if a record is set which is lower than `#`.  Basically,
+    this can be used to detect cheating.  We don't care much about cheaters
+    who record the worst time ever, but the best times should be legitimate.
+
   * **rotationRE [RE]**<br>
     Not all maps need to be in the map rotation, and should only
     be available via an admin */changeMap* or a */vote changeMap*.
