@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.57';
+my($VERSION)='3.58';
 
 =head1 NAME
 
@@ -11795,12 +11795,18 @@ core protecting the flag.
 
 			plus::checkpoint($e2, player::lookup($player)) if($delta<60);
 		}
+
+		#Turn x and y into velocity for angle calculation:
+		$x-=$e2->{'positionX'};
+		$y-=$e2->{'positionY'};
+		plus::spawn_here($p2, $e2->{'positionX'}, $e2->{'positionY'}, $x, $y);
 	},
 
 	'logPlanePositions:powerup'	=> sub {
 		my($e1, $p1, $e2, $p2)=@_;
 		my($x, $y)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
 
+		#Turn x and y into velocity for angle calculation:
 		$x-=$e2->{'positionX'};
 		$y-=$e2->{'positionY'};
 
