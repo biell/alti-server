@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.58';
+my($VERSION)='3.59';
 
 =head1 NAME
 
@@ -2808,6 +2808,7 @@ garunteed to keep the format correct.
 		$Default={
 			$Global[0]				=> {
 				$Global[1]			=> {
+					'position_log_time'	=> 0,
 					'permissions'		=> {
 						'enabled'		=> json::true,
 						'fallback'	=> json::true,
@@ -2884,6 +2885,7 @@ garunteed to keep the format correct.
 		];
 
 		%Path=(
+			'logPositions'		=> [@Global, 'position_log_time'],
 			'extendPermissions'	=> [@Global, 'permissions', 'enabled'],
 			'aclFallback'		=> [@Global, 'permissions', 'fallback'],
 			'admins'			=> [@Permissions, 'user_groups', 'admins'],
@@ -3043,7 +3045,11 @@ garunteed to keep the format correct.
 			}
 		}
 
-		stash::set(&path($name), 'xx', $default);
+		if(defined($default)) {
+			stash::set(&path($name), 'xx', $default);
+		} else {
+			stash::delete(&path($name), 'xx');
+		}
 	}
 
 	sub config_add {
@@ -4251,32 +4257,30 @@ types which alter the normal behavior.
 		}
 	}
 
-	sub det {
-		return($_[0]*$_[3]-$_[2]*$_[1]);
-	}
-
-	sub cross {
+	sub isect {
 		my($a1x,$a1y, $a2x,$a2y, $b1x,$b1y, $b2x,$b2y)=@_;
-		my($n)=&det($b1x-$a1x, $b1x-$b2x, $b1y-$a1y, $b1y-$b2y);
-		my($d)=&det($a2x-$a1x, $b1x-$b2x, $a2y-$a1y, $b1y-$b2y);
-		my($minx, $maxx)=utils::minmax($a1x, $a2x, $b1x, $b2x);
-		my($miny, $maxy)=utils::minmax($a1y, $a2y, $b1y, $b2y);
+		my($n)=($b1x-$a1x)*($b1y-$b2y) - ($b1y-$a1y)*($b1x-$b2x);
+		my($d)=($a2x-$a1x)*($b1y-$b2y) - ($a2y-$a1y)*($b1x-$b2x);
 		my($x, $y, $r);
 
-		if(-0.01<$d && $d<0.01) {
-			return(undef);
-		}
+		return() if(-0.01<$d && $d<0.01);
 
 		$r=$n/$d;
 		$x=$a1x+$r*($a2x-$a1x);
 		$y=$a1y+$r*($a2y-$a1y);
 
-		return(undef) if($x<$minx);
-		return(undef) if($x>$maxx);
-		return(undef) if($y<$miny);
-		return(undef) if($y>$maxy);
+		if($a1x<$a2x) {
+			return() if($x<$a1x || $x>$a2x);
+		} else {
+			return() if($x<$a2x || $x>$a1x);
+		}
+		if($a1y<$a2y) {
+			return() if($y<$a1y || $y>$a2y);
+		} else {
+			return() if($y<$a2y || $y>$a1y);
+		}
 
-		return([$x, $y]);
+		return($x, $y);
 	}
 
 	sub bounds {
@@ -4291,6 +4295,26 @@ types which alter the normal behavior.
 		}
 
 		return($l, $b, $r, $t);
+	}
+
+	sub cross {
+		my($poly, $a1x, $a1y, $a2x, $a2y)=@_;
+		my($b1x, $b1y, $b2x, $b2y);
+		my($px, $py);
+		my($cd, $md);
+
+		$md=utils::distance($a1x, $a1y, $a2x, $a2y);
+
+		for(my $i=0; $i<$#$poly; $i++) {
+			($b1x, $b1y, $b2x, $b2y)=(@{$poly->[$i]}, @{$poly->[$i+1]});
+
+			if(($px,$py)=&isect($a1x,$a1y, $a2x,$a2y, $b1x,$b1y, $b2x,$b2y)) {
+				$cd=utils::distance($a1x, $a1y, $px, $py);
+				$md=$cd if($cd<$md);
+			}
+		}
+
+		return($md);
 	}
 
 	sub inside {
@@ -4408,7 +4432,7 @@ types which alter the normal behavior.
 	}
 
 	sub in_wall {
-		my($x, $y)=@_;
+		my($x, $y);
 
 		if(@_==2) {
 			($x, $y)=@_;
@@ -4430,6 +4454,41 @@ types which alter the normal behavior.
 		return(undef);
 	}
 
+	sub hit_wall {
+		my($x1,$y1, $x2,$y2);
+		my(@polys)=();
+		my($mind, $curd);
+
+		if(@_==4) {
+			($x1,$y1, $x2,$y2)=@_;
+		} elsif(ref($_[0]) eq 'HASH') {
+			if(exists($_[0]{'victimPositionX'})) {
+				($x1, $y1)=@{$_[0]}{'victimPositionX','victimPositionY'};
+				($x2, $y2)=@_[1,2];
+			} elsif(exists($_[0]{'postionX'})) {
+				($x1, $y1)=@{$_[0]}{'positionX','positionY'};
+				($x2, $y2)=@_[1,2];
+			} else {
+				return(undef);
+			}
+		} else {
+			return(undef);
+		}
+
+		$mind=utils::distance($x1,$y1, $x2,$y2);
+		push(@polys, &near($x1, $y1));
+		if(int($x1/$Grid)!=int($x2/$Grid) || int($y1/$Grid)!=int($y2/$Grid)) {
+			push(@polys, &near($x2, $y2));
+		}
+
+		foreach my $poly (@polys) {
+			if($curd=&cross($x1,$y1, $x2,$y2)) {
+				$mind=$curd if($curd<$mind);
+			}
+		}
+
+		return($mind);
+	}
 
 	sub safe_spawn {
 		my($px, $py, $vx, $vy, $nx, $ny);
@@ -4474,9 +4533,9 @@ types which alter the normal behavior.
 		}
 
 		$try=$was;
-		while(	&in_wall(utils::course($px, $py, $try, 30)) ||
+		while(	&in_wall(utils::course($px, $py, $try, 90)) ||
 				&in_wall(utils::course($px, $py, $try, 60)) ||
-				&in_wall(utils::course($px, $py, $try, 90))
+				&in_wall(utils::course($px, $py, $try, 30))
 		) {
 			if(@angles) {
 				$try=utils::angle($was+shift(@angles));
@@ -11056,7 +11115,7 @@ core protecting the flag.
 			server::trigger(	'logPlanePositions',
 							'logPlanePositions:spawnHere',
 							$e1, $p1, $e2, $p2)
-		} 1;
+		} 0.5;
 	},
 
 	'logPlanePositions:logPlanePositions:spawnHere'	=> sub {
@@ -11095,7 +11154,7 @@ core protecting the flag.
 				server::trigger(	'logPlanePositions',
 								'logPlanePositions:changePlane',
 								$e1, $p1, $e2, $p2)
-			} 1;
+			} 0.5;
 		}
 	},
 
@@ -11786,6 +11845,7 @@ core protecting the flag.
 		my($e1, $p1, $e2, $p2)=@_;
 		my($pos)=$e1->{'positionByPlayer'};
 		my($x, $y)=split(m/,/,$pos->{$p2->{'player'}});
+		my($portals)=stash::get('portals', map::name, 'map');
 		my($delta);
 
 		foreach my $player (keys(%$pos)) {
@@ -11796,10 +11856,12 @@ core protecting the flag.
 			plus::checkpoint($e2, player::lookup($player)) if($delta<60);
 		}
 
-		#Turn x and y into velocity for angle calculation:
-		$x-=$e2->{'positionX'};
-		$y-=$e2->{'positionY'};
-		plus::spawn_here($p2, $e2->{'positionX'}, $e2->{'positionY'}, $x, $y);
+		unless($portals->{join(',', @$e2{'positionX','positionY'})}) {
+			#Turn x and y into velocity for angle calculation:
+			$x-=$e2->{'positionX'};
+			$y-=$e2->{'positionY'};
+			plus::spawn_here($p2, $e2->{'positionX'}, $e2->{'positionY'}, $x, $y);
+		}
 	},
 
 	'logPlanePositions:powerup'	=> sub {
@@ -12992,7 +13054,9 @@ while(1) {
 			if($TRIGGER=server::triggers($REQ->{'type'})) {
 				my($trigger)=shift(@$TRIGGER);
 				$HOOKS{$trigger}->(@EVENT, @$TRIGGER);
-			} elsif(exists($HOOKS{$REQ->{'type'}})) {
+			}
+
+			if(exists($HOOKS{$REQ->{'type'}})) {
 				$HOOKS{$REQ->{'type'}}->(@EVENT);
 			} elsif(exists($HOOKS{$REQ->{'command'}})) {
 				$HOOKS{$REQ->{'command'}}->(@EVENT);
@@ -13088,8 +13152,6 @@ while(1) {
 							server::send('changeMap', config::random_map);
 						}
 						map::end;
-						queue::background { altbouncer::upload } 0;
-						altbouncer::clear;
 					}
 
 					if(altbouncer::count > 100) {
