@@ -1058,6 +1058,11 @@ option `xxEnabled` to a false value.
 Use the console-only `/xx list`, `/xx set`, `/xx unset`,
 `/xx add`, and `/xx del` commands to modify the below values.
 
+  * **logPostions [#]**<br>
+    Specify a floating point number which signifies the number
+    of seconds apart to automatically log a `logPlanePositions`
+    event.  The default is 0, which means not to log automatically.
+
   * **extendPermisisons [true|false]**<br>
     Tell the patched server code to enable it's extensions to the
     Altitude permissions engine.  This add-on provides roles based
