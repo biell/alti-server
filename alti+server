@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='3.59';
+my($VERSION)='3.61';
 
 =head1 NAME
 
@@ -4482,7 +4482,7 @@ types which alter the normal behavior.
 		}
 
 		foreach my $poly (@polys) {
-			if($curd=&cross($x1,$y1, $x2,$y2)) {
+			if($curd=&cross($poly, $x1,$y1, $x2,$y2)) {
 				$mind=$curd if($curd<$mind);
 			}
 		}
@@ -4540,7 +4540,8 @@ types which alter the normal behavior.
 			if(@angles) {
 				$try=utils::angle($was+shift(@angles));
 			} else {
-				return(-1, -1, -1);
+				ui::slog("could not find a good angle at $px,$py");
+				return($px, $py, utils::angle($was+180));
 			}
 		}
 
