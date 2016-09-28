@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.61';
+my($VERSION)='3.62';
 
 =head1 NAME
 
@@ -5246,7 +5246,7 @@ is updated with them as the games progress.
 				return(int($p->{'infractions'}));
 			} else {
 				server::send('kick', $nick);
-				return(0);
+				return(int($p->{'infractions'}));
 			}
 		} else {
 			return(int($p->{'infractions'}));
@@ -7355,9 +7355,20 @@ play though extended interfaces and server support.
 	}
 
 	sub destroy {
-		my($p)=@_;
+		my($e, $p)=@_;
 		my($structure)=$Stats{$p->{'team'}}{'structure'};
 		my($progress);
+
+		if(map::mode('tbd') && map::type('std') && $e->{'target'} eq 'base') {
+			if($Stats{'base'}) {
+				if($e->{'time'}-$Stats{'base'} < 1500) {
+					chat::all('A STRANGE GAME');
+					chat::all('THE ONLY WINNING MOVE IS NOT TO PLAY');
+				}
+			} else {
+				$Stats{'base'}=$e->{'time'};
+			}
+		}
 
 		return unless(map::type('ruin'));
 		return unless($structure->{'total'});
@@ -12034,7 +12045,7 @@ core protecting the flag.
 			records::help($p, 2);
 		}
 
-		plus::destroy($p);
+		plus::destroy($e, $p);
 		records::destroy($e, $p);
 
 		if( ($p->{'stats'}{$e->{'target'}} % 35)==0 ) {
