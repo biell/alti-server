@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.63';
+my($VERSION)='3.64';
 
 =head1 NAME
 
@@ -12224,6 +12224,8 @@ core protecting the flag.
 			plus::restart_clear;
 			queue::clear;
 			records::enter($e);
+			log::finish;
+			log::start(@$Map{'map', 'mode', 'type'});
 		}
 	},
 
