@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.64';
+my($VERSION)='3.65';
 
 =head1 NAME
 
@@ -238,6 +238,13 @@ any game where resolving complaints is a possibility.
 		print $out Data::Dumper::Dumper([@Player]);
 		close($out);
 
+		$Date=POSIX::strftime("%Y%m%dT%H%M", gmtime(time));
+		@Stdout=();
+		@Chat=();
+		@Log=();
+		@Command=();
+		@Note=();
+		@Player=();
 	}
 
 	sub record {
@@ -12225,7 +12232,6 @@ core protecting the flag.
 			queue::clear;
 			records::enter($e);
 			log::finish;
-			log::start(@$Map{'map', 'mode', 'type'});
 		}
 	},
 
