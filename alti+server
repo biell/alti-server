@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.62';
+my($VERSION)='3.63';
 
 =head1 NAME
 
@@ -188,6 +188,7 @@ any game where resolving complaints is a possibility.
 		@Chat=();
 		@Log=();
 		@Command=();
+		@Note=();
 		@Player=();
 	}
 
@@ -4819,6 +4820,12 @@ types which alter the normal behavior.
 		}
 	}
 
+	sub team {
+		my($p, $team)=@_;
+
+		return($p->{'team'} == &team_number($team));
+	}
+
 	sub timer {
 		my($limit)=$Ds->{'levelModeConfig'}{'objectiveGameTimeSeconds'};
 		my($used)=time()-$Start;
@@ -5052,7 +5059,6 @@ types which alter the normal behavior.
 
 	sub end {
 		ui::slog('INFO  : CPU used by', &name, ':', utils::secs2mins(&cpu));
-		log::finish;
 	}
 
 
@@ -5798,6 +5804,10 @@ they make the top 5.
 		$Helpers{$p}+=$points;
 	}
 
+	sub team {
+		return(sort({ $Helpers{$b} <=> $Helpers{$a} } player::list(@_)));
+	}
+
 	sub enter {
 		my($e)=@_;
 		my(@types)=split(m/\W+/, config::option('recordsTypes'));
@@ -5822,12 +5832,20 @@ they make the top 5.
 
 		$time=sprintf("%0.2f", ($e->{'time'} - $Start)/$config::Clock);
 
+		if(map::mode('tdm', '1dm', '1de', '1bd')) {
+			foreach my $player (keys(%Helpers)) {
+				&help($player, $player->{'kills'}/$player->{'died'}*20-20);
+			}
+		}
+
 		if($Winner && map::type('race')) {
 			if(plus::spawns($Winner)>1) {
 				if(player::count() < $min_players) {
 					$save=0;
 				} else {
-					push(@holder, map::team_color($Winner->{'team'}));
+					#push(@holder, map::team_color($Winner->{'team'}));
+					@nicks=&team($Winner->{'team'});
+					push(@holder, join(', ', map(player::name($_), @nicks)));
 				}
 			} else {
 				push(@holder, player::name($Winner));
@@ -6811,7 +6829,8 @@ and provide slightly enhanced game play.
 		if($Last == $Team) {
 			unless($Passer == $Carrier) {
 				if($airtime>900 && $airtime<2200 && chat::snarky) {
-					chat::laud("Nice Pass $Passer->{'nickname'}!");
+					chat::laud("Nice Pass $Passer->{'nickname'}!")
+						unless($Passer->{'isbot'});
 				}
 				push(@Relay, $p);
 				$Passer->{'stats'}{'pass'}++;
@@ -7362,8 +7381,10 @@ play though extended interfaces and server support.
 		if(map::mode('tbd') && map::type('std') && $e->{'target'} eq 'base') {
 			if($Stats{'base'}) {
 				if($e->{'time'}-$Stats{'base'} < 1500) {
-					chat::all('A STRANGE GAME');
-					chat::all('THE ONLY WINNING MOVE IS NOT TO PLAY');
+					queue::schedule {
+						chat::all('A STRANGE GAME');
+						chat::all('THE ONLY WINNING MOVE IS NOT TO PLAY');
+					} 1;
 				}
 			} else {
 				$Stats{'base'}=$e->{'time'};
@@ -11916,6 +11937,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($v)=player::lookup($e->{'victim'});
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
+		my($assign)=stash::get('assignTeam', map::name, 'map');
 		my($is_crash)=0;
 		my($angle);
 
@@ -11930,12 +11952,28 @@ core protecting the flag.
 			ball::drop($v);
 		}
 
-		if($p && !$p->{'isBot'}) {
+		if($p && !$p->{'isBot'} && $p->{'team'}!=$v->{'team'}) {
 			$p->{'stats'}{'powerkill'}++ if($v->{'carrier'});
 			$p->{'stats'}{'kills'}++;
 			$p->{'stats'}{'kill'}{$v->{'nickname'}}++ unless($v->{'isBot'});
 
-			records::help($p, 2);
+			if(map::type('mdg')) {
+				if(plus::prey($p)) {
+					records::help($p, 5);
+				} else {
+					records::help($p, 10);
+				}
+			} elsif(map::type('ruin') && $assign) {
+				records::help($p, 5);
+			} elsif(map::mode('1de', '1bd')) {
+				records::help($p, 5);
+			} elsif(map::mode('tdm', '1dm', 'ffa')) {
+				records::help($p, 4);
+			} elsif(map::type('race')) {
+				records::help($p, 3);
+			} else {
+				records::help($p, 2);
+			}
 		}
 
 		if($v && !$v->{'isBot'}) {
@@ -12271,6 +12309,8 @@ core protecting the flag.
 		if(map::mode('ball', 'tbd', 'tdm', 'ffa')) {
 			queue::schedule { records::enter($e) } 2;
 		}
+
+		queue::schedule { log::finish } 2;
 
 		map::end;
 
