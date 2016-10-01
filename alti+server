@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.65';
+my($VERSION)='3.66';
 
 =head1 NAME
 
@@ -5841,7 +5841,8 @@ they make the top 5.
 
 		if(map::mode('tdm', '1dm', '1de', '1bd')) {
 			foreach my $player (keys(%Helpers)) {
-				&help($player, $player->{'kills'}/$player->{'died'}*20-20);
+				&help($player, $player->{'kills'}/$player->{'died'}*20-20)
+					if($player->{'died'}>2);
 			}
 		}
 
@@ -5891,7 +5892,6 @@ they make the top 5.
 					$place++;
 				}
 
-				log::record($place);
 				splice(@$records, 5);
 			}
 		} else {
@@ -5915,7 +5915,6 @@ they make the top 5.
 					$records=[[$time, @holder]];
 				}
 
-				log::record($place);
 				if($place && $place<=5) {
 					stash::set(map::name, 'records', $records);
 				} else {
@@ -5936,6 +5935,8 @@ they make the top 5.
 			&print;
 
 			if($save) {
+				log::record($place);
+
 				if($place && $place<=5) {
 					chat::all('Congratulations, you placed',  utils::nth($place));
 				} elsif($place) {
