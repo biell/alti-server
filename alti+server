@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.66';
+my($VERSION)='3.67';
 
 =head1 NAME
 
@@ -5796,7 +5796,7 @@ they make the top 5.
 	sub help {
 		my($p, $points)=@_;
 
-		return if($p->{'isBot'});
+		return unless($p->{'nickname'});
 
 		unless(exists($Helpers{$p})) {
 			foreach my $helper (keys(%Helpers)) {
@@ -11668,6 +11668,7 @@ core protecting the flag.
 		}
 
 		records::help($p, 20);
+
 		ball::goal($e, $p);
 
 		rank::score($p->{'team'}, 1);
