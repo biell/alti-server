@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.67';
+my($VERSION)='3.68';
 
 =head1 NAME
 
@@ -346,11 +346,13 @@ delete($ENV{'COLUMNS'});
 	my($Sline, $Iline)=($Rows/2-1, $Rows-3);
 	my($Iputw)=$Cols-6;
 
-	my($Swin)=newwin($Sline,   $Cols,   0,        0 );
+	my($Swin)=newpad(200,      $Cols);
 	my($Cwin)=newwin($Sline-1, $Cols-2, $Sline,   1 );
 	my($Iwin)=newwin(3,        $Cols-4, $Iline,   2 );
-	my($Chat)=newwin($Sline-3, $Cols-4, $Sline+1, 2 );
 	my($Iput)=newwin(1,        $Iputw,  $Iline+1, 3 );
+	my($Chat)=newpad(100,      $Cols-4);
+
+	my($Sscroll, $Cscroll)=(200, 100);
 
 	my($Redirect)=undef;
 
@@ -369,6 +371,73 @@ delete($ENV{'COLUMNS'});
 		$win->refresh();
 	}
 
+	sub adjust_pad {
+		my($pad, $index, $height, $width, $y, $x)=@_;
+
+		#$pad->prefresh(11-$height,0, $y,$x, $y+$height,$x+$width);
+		$pad->prefresh($index-$height,0, $y,$x, $y+$height-1,$x+$width);
+	}
+
+	sub refresh_chat {
+		&adjust_pad($Chat, $Cscroll, $Sline-3, $Cols-4, $Sline+1, 2 );
+	}
+
+	sub refresh_swin {
+		&adjust_pad($Swin, $Sscroll, $Sline,   $Cols,   0,        0 );
+	}
+
+	sub chat_scroll {
+		local($_)=@_;
+
+		if(m/next/i) {
+			if($Cscroll>97) {
+				$Cscroll=100;
+			} else {
+				$Cscroll+=2;
+			}
+		} elsif(m/prev/i) {
+			if($Cscroll<$Sline-5) {
+				$Cscroll=$Sline-3;
+			} else {
+				$Cscroll-=2;
+			}
+		} elsif(m/home/i) {
+			$Cscroll=$Sline-3;
+		} elsif(m/end/i) {
+			$Cscroll=100;
+		} elsif(m/(-?\d+)/) {
+			$Cscroll+=$1;
+		}
+
+		&refresh_chat;
+	}
+
+	sub swin_scroll {
+		local($_)=@_;
+
+		if(m/next/i) {
+			if($Sscroll>197) {
+				$Sscroll=200;
+			} else {
+				$Sscroll+=2;
+			}
+		} elsif(m/prev/i) {
+			if($Sscroll<$Sline-2) {
+				$Sscroll=$Sline;
+			} else {
+				$Sscroll-=2;
+			}
+		} elsif(m/home/i) {
+			$Sscroll=$Sline;
+		} elsif(m/end/i) {
+			$Sscroll=200;
+		} elsif(m/(-?\d+)/) {
+			$Sscroll+=$1;
+		}
+
+		&refresh_swin;
+	}
+
 	sub setup_screen {
 		my($default)=-1;
 		my($boxColor)='COLOR_'.uc(config::option('boxColor'));
@@ -379,10 +448,10 @@ delete($ENV{'COLUMNS'});
 		($Cols, $Rows, $Px, $Py)=GetTerminalSize;
 		($Sline, $Iline)=($Rows/2-1, $Rows-3);
 		($Iputw)=$Cols-6;
-		&adjust_win($Swin, $Sline,   $Cols,   0,        0 );
+		&refresh_swin;
 		&adjust_win($Cwin, $Sline-1, $Cols-2, $Sline,   1 );
 		&adjust_win($Iwin, 3,        $Cols-4, $Iline,   2 );
-		&adjust_win($Chat, $Sline-3, $Cols-4, $Sline+1, 2 );
+		&refresh_chat;
 		&adjust_win($Iput, 1,        $Iputw,  $Iline+1, 3 );
 
 		start_color();
@@ -403,9 +472,9 @@ delete($ENV{'COLUMNS'});
 		$Swin->scrollok(1);
 		$Chat->scrollok(1);
 
-		$Swin->redrawwin();
+		&refresh_swin;
 		$Cwin->redrawwin();
-		$Chat->redrawwin();
+		&refresh_chat;
 		$Iwin->redrawwin();
 		$Iput->redrawwin();
 
@@ -428,9 +497,9 @@ delete($ENV{'COLUMNS'});
 		cbreak();
 		keypad(1);
 
-		$Swin->refresh();
+		&refresh_swin;
 		$Cwin->refresh();
-		$Chat->refresh();
+		&refresh_chat;
 		$Iwin->refresh();
 		$Iput->refresh();
 	}
@@ -455,8 +524,8 @@ delete($ENV{'COLUMNS'});
 			log::stdout($entry);
 
 			$Swin->scrl(1);
-			$Swin->addstr($Sline-1, 0, $entry);
-			$Swin->refresh();
+			$Swin->addstr(199, 0, $entry);
+			&refresh_swin;
 			$Iput->refresh();
 		}
 	}
@@ -477,18 +546,18 @@ delete($ENV{'COLUMNS'});
 		$Chat->scrl(1);
 		if($pre) {
 			$Chat->attron(COLOR_PAIR(2));
-			$Chat->addstr($Sline-4, 0, $pre);
+			$Chat->addstr(99, 0, $pre);
 			$Chat->attroff(COLOR_PAIR(2));
 
 			$Chat->attron(COLOR_PAIR(3));
-			$Chat->addstr($Sline-4, $offset1, $type);
+			$Chat->addstr(99, $offset1, $type);
 			$Chat->attroff(COLOR_PAIR(3));
 
-			$Chat->addstr($Sline-4, $offset2, $text);
+			$Chat->addstr(99, $offset2, $text);
 		} else {
-			$Chat->addstr($Sline-4, 0, $text);
+			$Chat->addstr(99, 0, $text);
 		}
-		$Chat->refresh();
+		&refresh_chat;
 		$Iput->refresh();
 	}
 
@@ -540,6 +609,24 @@ delete($ENV{'COLUMNS'});
 	sub keypress {
 		my($input)=getch();
 		my($ord)=ord($input);
+		my($i2);
+
+		if($ord==033) {
+			nodelay(1);
+			while($i2=getch()) {
+				last if(!$i2 || $i2=~m/-1/);
+				$input.=$i2;
+			}
+			nodelay(0);
+
+			if($input=~m/\033\[7~/) {
+				$input=KEY_HOME;
+			} elsif($input=~m/\033\[8~/) {
+				$input=KEY_END;
+			} elsif($input=~m/\033O([q-y])/) {
+				$input=sprintf('%d', ord($1)-112);
+			}
+		}
 		
 		if($input == KEY_RESIZE) {
 			#&slog('resize not implemented'); #Not working
@@ -557,9 +644,29 @@ delete($ENV{'COLUMNS'});
 		} elsif($input == KEY_RIGHT) {
 			return('right');
 		} elsif($input == KEY_PPAGE) {
-			return('prev');
+			&chat_scroll('prev');
+			return(undef);
 		} elsif($input == KEY_NPAGE) {
-			return('next');
+			&chat_scroll('next');
+			return(undef);
+		} elsif($input == KEY_HOME) {
+			&chat_scroll('home');
+			return(undef);
+		} elsif($input == KEY_END) {
+			&chat_scroll('end');
+			return(undef);
+		} elsif($input == KEY_F(11)) {
+			&swin_scroll('prev');
+			return(undef);
+		} elsif($input == KEY_F(12)) {
+			&swin_scroll('next');
+			return(undef);
+		} elsif($input == KEY_F(9)) {
+			&swin_scroll('home');
+			return(undef);
+		} elsif($input == KEY_F(10)) {
+			&swin_scroll('end');
+			return(undef);
 		} elsif($input == KEY_BACKSPACE || $ord==127) {
 			return('bs');
 		} elsif($input == KEY_DC) {
@@ -569,6 +676,8 @@ delete($ENV{'COLUMNS'});
 		} elsif($input eq "\t") {
 			return('tab');
 		} elsif($input eq "\n") {
+			&swin_scroll('end');
+			&chat_scroll('end');
 			return('enter');
 		} else {
 			return($input);
@@ -808,6 +917,8 @@ list.
 				chat::all($Input);
 				&overwrite_input('');
 			}
+		} elsif(!defined($key)) {
+			'skip';
 		} else {
 			&insert_key($key);
 		}

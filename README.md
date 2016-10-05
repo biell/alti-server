@@ -1171,6 +1171,33 @@ Use the console-only `/xx list`, `/xx set`, `/xx unset`,
     fallback to default Altitude behaviour in most, but not all, cases.
     The `unset` operation will tell you what that new value is.
 
+## Console Interface
+Beyond the numerous additional game play extensions and settings, there is
+an enhanced altitude server console built into `alti+server`.   Any of
+the above [Console](#console) only or [xx](#xx) commands may only be executed
+on the console.  This interface alone may be the reason some people wish
+to use `alti+server` to wrap around the Altitude game engine.
+
+The console interface consists of 3 sections:
+  1. On top is the standard output of the Altitude game engine,
+  2. just below that is a chat window showing the player chat interaction, and
+  3. on bottom is an input window for chatting or running commands.
+ 
+Any line starting with a slash `/` character will be interpreted as a command,
+anything else will be interpreted as a message for the server to chat to
+all players.
+
+Each of the three sections has their own scroll back.  In the input window,
+you can use arrow keys to look through your history and modify the commands
+in it for new execution.  To scroll through the chat window, use `PageUp` and
+`PageDown`; to jump to the oldest and newest chat messages, use the `Home`
+and `End` keys respectively.  If you want to scroll back through the server's
+standard output, you can use F11 to go up, F12 for down, F9 to skip to the
+oldest message, and F10 to scroll all the way to the most recent.
+
+In case you get lost, if at any time you press enter in the input window, all
+windows will scroll to their most up-to-date section.
+
 ## Angles
 Various interfaces in `alti+server` allow you to specify angles for
 spawning.  When specifying angles, the following table lists the
