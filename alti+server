@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.69';
+my($VERSION)='3.70';
 
 =head1 NAME
 
@@ -375,7 +375,9 @@ delete($ENV{'COLUMNS'});
 		my($pad, $index, $height, $width, $y, $x)=@_;
 
 		#$pad->prefresh(11-$height,0, $y,$x, $y+$height,$x+$width);
+		$pad->redrawwin();
 		$pad->prefresh($index-$height,0, $y,$x, $y+$height-1,$x+$width);
+		$pad->refresh();
 	}
 
 	sub refresh_chat {
