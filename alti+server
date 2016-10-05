@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.68';
+my($VERSION)='3.69';
 
 =head1 NAME
 
@@ -7090,11 +7090,11 @@ play though extended interfaces and server support.
 		}
 
 		if($a eq 'c' || $a eq 'center') {
-			return(&direction($map::Xmid-$x, $map::Ymid-$y));
+			return(utils::direction($map::Xmid-$x, $map::Ymid-$y));
 		} elsif($a eq 'h' || $a eq 'hmirror') {
-			return(&direction($map::Xmid-$x, 0));
+			return(utils::direction($map::Xmid-$x, 0));
 		} elsif($a eq 'v' || $a eq 'vmirror') {
-			return(&direction(0, $map::Ymid-$y));
+			return(utils::direction(0, $map::Ymid-$y));
 		} else {
 			return(utils::angle($a));
 		}

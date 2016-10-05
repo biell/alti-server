@@ -1174,9 +1174,9 @@ Use the console-only `/xx list`, `/xx set`, `/xx unset`,
 ## Console Interface
 Beyond the numerous additional game play extensions and settings, there is
 an enhanced altitude server console built into `alti+server`.   Any of
-the above [Console](#console) only or [xx](#xx) commands may only be executed
-on the console.  This interface alone may be the reason some people wish
-to use `alti+server` to wrap around the Altitude game engine.
+the above [Server Options](#server-options) only or [xx](#xx) commands may
+only be executed on the console.  This interface alone may be the reason some
+people wish to use `alti+server` to wrap around the Altitude game engine.
 
 The console interface consists of 3 sections:
   1. On top is the standard output of the Altitude game engine,
@@ -1308,3 +1308,4 @@ for, and after 10 utterances, the aggressive player is kicked.
 ## More information
 See the MAP QA website for more information on using the server:
 http://mapqa.glaciated.org/
+
