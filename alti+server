@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.72';
+my($VERSION)='3.73';
 
 =head1 NAME
 
@@ -374,6 +374,7 @@ delete($ENV{'COLUMNS'});
 	sub adjust_pad {
 		my($pad, $index, $height, $width, $y, $x)=@_;
 
+		$pad->resize(200, $width);
 		$pad->redrawwin();
 		$pad->prefresh($index-$height,0, $y,$x, $y+$height-1,$x+$width-1);
 		$pad->refresh();
@@ -631,7 +632,7 @@ delete($ENV{'COLUMNS'});
 		}
 		
 		if($input == KEY_RESIZE) {
-			&slog('resize'); #Not working
+			#&slog('resize');
 			&setup_screen;
 			return();
 		} elsif($input eq "\014") {
@@ -4305,20 +4306,35 @@ directly with it to manage the instance.
 		my($command)=shift;
 		my($pipe)="$INSTALL_ROOT/servers/command.txt";
 		my($msg)=IO::Handle->new;
-		my($run);
+		my($event, $run);
 
-		foreach my $arg (@_) {
-			$command.=' ';
-			$command.=&altiquote($arg);
-		}
+		if(exists($ALTIPLUS{$command})) {
+			$event={
+				'port'		=> $config::Port,
+				'time'		=> (time()-$Start)*1000,
+				'source'		=> '00000000-0000-0000-0000-000000000000',
+				'group'		=> 'server',
+				'admin'		=> 1,
+				'superAdmin'	=> 1,
+				'type'		=> 'consoleCommandExecute',
+				'command'		=> $command,
+				'arguments'	=> [@_],
+			};
+			$HOOKS{$command}->($event, player::server());
+		} else {
+			foreach my $arg (@_) {
+				$command.=' ';
+				$command.=&altiquote($arg);
+			}
 		
-		$run=sprintf("%d,%s,%s", $config::Port, 'console', $command);
+			$run=sprintf("%d,%s,%s", $config::Port, 'console', $command);
 
-		log::command($run);
+			log::command($run);
 
-		open($msg, '>>', $pipe);
-		print $msg $run, "\n";
-		close($msg);
+			open($msg, '>>', $pipe);
+			print $msg $run, "\n";
+			close($msg);
+		}
 	}
 
 	sub trigger {
@@ -8605,7 +8621,7 @@ core protecting the flag.
 %HOOKS=(
 	'!'			=> sub {	#Admin command for configSize='tiny'
 		my($e, $p)=@_;
-		my($args)=@{$e->{'arguments'}};
+		my($args)=join(' ', @{$e->{'arguments'}});
 		my(@params);
 
 		unless($e->{'admin'}) {
@@ -8758,10 +8774,14 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($who)=player::lookup($e->{'arguments'}[0]);
 		my($name)=$who->{'nickname'};
+		my($ip)=$who->{'ip'};
 		my(@aliases)=();
 
 		if($who->{'name'}) {
 			$name.=" ($who->{'name'})";
+		}
+		if($who->{'country'}) {
+			$ip.="($who->{'country'})";
 		}
 		if(db::enabled) {
 			@aliases=db::select('aliases', qq{vaporid='$who->{"vaporId"}'});
@@ -8785,6 +8805,11 @@ core protecting the flag.
 		my($anick)=$a->{'nickname'};
 		my($ip)=$a->{'ip'};
 		my(@duration);
+
+		unless($anick) {
+			chat::whisper($p, "player $e->{'arguments'}[0] is invalid value");
+			return;
+		}
 
 		unless($p->{'admin'} || $p->{'moderator'}) {
 			chat::whisper($p, 'Only Admins and Moderators may use abuse');
