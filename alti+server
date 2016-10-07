@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.71';
+my($VERSION)='3.72';
 
 =head1 NAME
 
@@ -612,8 +612,6 @@ delete($ENV{'COLUMNS'});
 		my($input)=getch();
 		my($ord)=ord($input);
 		my($meta);
-
-		return($input) if($ord>=040 && $ord<0177);
 
 		if($ord==033) {
 			nodelay(1);
