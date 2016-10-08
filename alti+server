@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.74';
+my($VERSION)='3.75';
 
 =head1 NAME
 
@@ -8787,7 +8787,7 @@ core protecting the flag.
 			@aliases=db::select('aliases', qq{vaporid='$who->{"vaporId"}'});
 		}
 		
-		if(@aliases) {
+		if(@aliases>1) {
 			chat::whisperf($p, '%s, IP: %s, AKA: %s', $name, $ip,
 				join(', ', map($_->{'nickname'}, @aliases)));
 		} else {
