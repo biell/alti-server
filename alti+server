@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.73';
+my($VERSION)='3.74';
 
 =head1 NAME
 
@@ -8788,10 +8788,10 @@ core protecting the flag.
 		}
 		
 		if(@aliases) {
-			chat::whisperf($p, '%s, IP: %s, AKA: %s', $name, $who->{'ip'},
+			chat::whisperf($p, '%s, IP: %s, AKA: %s', $name, $ip,
 				join(', ', map($_->{'nickname'}, @aliases)));
 		} else {
-			chat::whisperf($p, '%s, IP: %s', $name, $who->{'ip'});
+			chat::whisperf($p, '%s, IP: %s', $name, $ip);
 		}
 	},
 
