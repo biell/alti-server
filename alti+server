@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.76';
+my($VERSION)='3.77';
 
 =head1 NAME
 
@@ -10265,9 +10265,11 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($spawn_angle)=stash::get('spawnAngle', map::name, 'map');
+		my($zones)=stash::get('zones', map::name, 'map');
 
 		if($spawn_mode) {
 			$spawn_mode.=" ($spawn_angle)" if($spawn_angle);
+			$spawn_mode.=' (checkpoints)' if($zones);
 			chat::whisper($p, 'spawnMode:', $spawn_mode);
 		}
 	},
@@ -10276,15 +10278,18 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($spawn_angle)=stash::get('spawnAngle', map::name, 'map');
+		my($zones)=stash::get('zones', map::name, 'map');
 
 		if($spawn_mode) {
 			$spawn_mode.=" ($spawn_angle)" if($spawn_angle);
+			$spawn_mode.=' (checkpoints)' if($zones);
 			chat::all('spawnMode:', $spawn_mode);
 		}
 	},
 
 	'set spawnMode'	=> sub {
 		my($e, $p, $spawn, $angle)=@_;
+		my($zones)=stash::get('zones', map::name, 'map');
 
 		if($angle=~m/(center|[hv]mirror)/i) {
 			stash::set('spawnAngle', map::name, 'map', lc($1));
@@ -10298,7 +10303,11 @@ core protecting the flag.
 			chat::all("Players spawn where died, use '/sz start' to spawn normal");
 			stash::set('spawnMode', map::name, 'map', 'died');
 		} elsif($spawn=~m/power|pick/i) {
-			chat::all("Players spawn at last powerup, use '/sz start' to spawn normal");
+			if($zones) {
+				chat::all("Players spawn at checkpoints, use '/sz start' to spawn normal");
+			} else {
+				chat::all("Players spawn at last powerup, use '/sz start' to spawn normal");
+			}
 			stash::set('spawnMode', map::name, 'map', 'powerup');
 		} elsif($spawn=~m/health/i) {
 			chat::all("Players spawn at last health powerup, use '/sz start' to spawn normal");
