@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.75';
+my($VERSION)='3.76';
 
 =head1 NAME
 
@@ -4306,7 +4306,7 @@ directly with it to manage the instance.
 		my($command)=shift;
 		my($pipe)="$INSTALL_ROOT/servers/command.txt";
 		my($msg)=IO::Handle->new;
-		my($event, $run);
+		my($event, @template, $run);
 
 		if(exists($ALTIPLUS{$command})) {
 			$event={
@@ -4318,8 +4318,19 @@ directly with it to manage the instance.
 				'superAdmin'	=> 1,
 				'type'		=> 'consoleCommandExecute',
 				'command'		=> $command,
-				'arguments'	=> [@_],
+				'arguments'	=> [],
 			};
+
+			@template=@{$ALTIPLUS{$command}{'arguments'}};
+			while(@template) {
+				if(@template>1) {
+					push(@{$event->{'arguments'}}, shift(@_));
+				} else {
+					push(@{$event->{'arguments'}}, join(' ', @_));
+				}
+				shift(@template);
+			}
+	
 			$HOOKS{$command}->($event, player::server());
 		} else {
 			foreach my $arg (@_) {
