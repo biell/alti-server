@@ -1306,6 +1306,6 @@ players.  Language which is often used in offensive statements is looked
 for, and after 10 utterances, the aggressive player is kicked.
 
 ## More information
-See the MAP QA website for more information on using the server:
-http://mapqa.glaciated.org/
+See the Altitude+ wiki for more information on using the server:
+http://altiplus.glaciated.org/
 
