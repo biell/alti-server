@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='3.77';
+my($VERSION)='3.79';
 
 =head1 NAME
 
@@ -6507,7 +6507,73 @@ These rankings can also be configured to select evenly matched teams.
 
 }
 
+=head2 Tournaments
+
+B<alti+server> recognizes that tournaments exist and keeps track of them.
+Right now, not much is done with tournaments as there is not much to do.
+The one place that tournaments are affected by B<alti+server> is in the
+case that a map's C<assignTeam> attribute is in effect.  Under this case,
+a tournament is modified (only the current tournament participants) to
+ensure players are assigned correctly.
+
 =cut
+
+{	package tourney;
+
+	my(@Left)=();
+	my(@Right)=();
+	my(%Players)=();
+	my($On)=undef;
+
+	sub clear {
+		@Left=();
+		@Right=();
+		%Players=();
+		$On=undef;
+	}
+
+	sub members {
+		my($left, $right)=@_;
+
+		ui::slog("left: @$left, right: @$right");
+		@Left=();
+		foreach my $vaporid (@$left) {
+			push(@Left, player::lookup($vaporid));
+		}
+
+		@Right=();
+		foreach my $vaporid (@$right) {
+			push(@Right, player::lookup($vaporid));
+		}
+
+		%Players=();
+		foreach my $player (@Left, @Right) {
+			ui::slog("playing: $player->{'nickname'}");
+			$Players{$player}=1;
+		}
+
+		$On=1;
+	}
+
+	sub assign {
+		my($p, $team)=@_;
+
+		ui::slog("assign: $p->{'nickname'} to $team ($On, $Players{$p})");
+		return(undef) unless($On);
+		return(undef) unless($Players{$p});
+
+		if(map::left($team)) {
+			server::send('modifyTournament', $p->{'nickname'}, 0);
+		} elsif(map::right($team)) {
+			server::send('modifyTournament', $p->{'nickname'}, 1);
+		} else {
+			server::send('modifyTournament', $p->{'nickname'}, -1);
+		}
+
+		return(1);
+	}
+	
+}
 
 =head2 Race Tournaments
 
@@ -7372,6 +7438,8 @@ play though extended interfaces and server support.
 
 	sub assign {
 		my($p, $team)=@_;
+
+		return if(tourney::assign($p, $team));
 
 		if(map::left($team)) {
 			server::send('assignTeam', $p->{'nickname'}, 0);
@@ -8895,6 +8963,22 @@ core protecting the flag.
 		} else {
 			config::command_help($p, 'upload');
 		}
+	},
+
+	'tournamentStart'		=> sub {
+		my($e, $p)=@_;
+
+		tourney::members($e->{'team0'}, $e->{'team1'});
+	},
+
+	'tournamentModified'	=> sub {
+		my($e, $p)=@_;
+
+		tourney::members($e->{'team0'}, $e->{'team1'});
+	},
+
+	'tournamentStop'		=> sub {
+		tourney::clear;
 	},
 
 	'raceMap' => sub {
@@ -11398,6 +11482,8 @@ core protecting the flag.
 		my($e)=@_;
 		my(@time)=($e->{'date'}=~m/(\d+) (\w+) (\d+) (\d+):(\d+):(\d+):(\d+)/);
 		my(%month)=qw(Jan 0  Feb 1  Mar 2  Apr 3  May 4  Jun 5  Jul 6  Aug 7  Sep 8  Oct 9  Nov 10  Dec 11);
+
+		tourney::clear;
 
 		$time[0]-=1900;
 		$time[1]=$month{$time[1]};
