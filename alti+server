@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.81';
+my($VERSION)='3.82';
 
 =head1 NAME
 
@@ -6535,8 +6535,15 @@ ensure players are assigned correctly.
 	sub members {
 		my($left, $right)=@_;
 
-		@Left=@$left;
-		@Right=@$left;
+		@Left=();
+		foreach my $vaporid (@$left) {
+			push(@Left, $vaporid);
+		}
+
+		@Right=();
+		foreach my $vaporid (@$right) {
+			push(@Right, $vaporid);
+		}
 
 		%Participants=();
 		foreach my $vaporid (@Left, @Right) {
