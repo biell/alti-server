@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.83';
+my($VERSION)='3.84';
 
 =head1 NAME
 
@@ -198,7 +198,8 @@ any game where resolving complaints is a possibility.
 		local($_);
 
 		return unless($Enabled);
-		return if($Record && $Record<$limit);
+		return unless($Record);
+		return if($Record>$limit);
 
 		mkdir("$Logdir") unless(-d "$Logdir");
 		mkdir("$Logdir/$Map") unless(-d "$Logdir/$Map");
