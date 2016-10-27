@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.80';
+my($VERSION)='3.81';
 
 =head1 NAME
 
@@ -6522,32 +6522,25 @@ ensure players are assigned correctly.
 
 	my(@Left)=();
 	my(@Right)=();
-	my(%Players)=();
+	my(%Participants)=();
 	my($On)=undef;
 
 	sub clear {
 		@Left=();
 		@Right=();
-		%Players=();
+		%Participants=();
 		$On=undef;
 	}
 
 	sub members {
 		my($left, $right)=@_;
 
-		@Left=();
-		foreach my $vaporid (@$left) {
-			push(@Left, player::lookup($vaporid));
-		}
+		@Left=@$left;
+		@Right=@$left;
 
-		@Right=();
-		foreach my $vaporid (@$right) {
-			push(@Right, player::lookup($vaporid));
-		}
-
-		%Players=();
-		foreach my $player (@Left, @Right) {
-			$Players{$player}=1;
+		%Participants=();
+		foreach my $vaporid (@Left, @Right) {
+			$Participants{$vaporid}=1;
 		}
 
 		$On=1;
@@ -6557,7 +6550,7 @@ ensure players are assigned correctly.
 		my($p, $team)=@_;
 
 		return(undef) unless($On);
-		return(undef) unless($Players{$p});
+		return(undef) unless($Participants{$p->{'vaporId'}});
 
 		if(map::left($team)) {
 			server::send('modifyTournament', $p->{'nickname'}, 0);
