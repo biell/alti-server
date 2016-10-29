@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.84';
+my($VERSION)='3.85';
 
 =head1 NAME
 
@@ -54,6 +54,7 @@ my(%OPTIONS)=(
 	xxEnabled		=> 1,			#Enable xx server patch if available
 	recordsTypes	=> 'coop,race,ruin',#Which map types to keep records on
 	saveLogTypes	=> 'coop',		#Save the logs for these game types
+	saveLogAlways  => undef,			#Always save logs, regardless of record
 	saveLogRecord	=> 5,			#Restrict save logs to top 5 placements
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
@@ -163,6 +164,7 @@ any game where resolving complaints is a possibility.
 	my($Logdir)="$INSTALL_ROOT/servers/log";
 	my($Enabled)=0;
 	my($Record)=undef;
+	my($Override)=undef;
 	my(@Stdout, @Chat, @Log, @Command, @Note, @Player);
 	my($Map, $Date);
 
@@ -194,12 +196,15 @@ any game where resolving complaints is a possibility.
 
 	sub finish {
 		my($limit)=config::option('saveLogRecord');
+		my($always)=config::option('saveLogAlways');
 		my($out)=IO::Handle->new;
 		local($_);
 
 		return unless($Enabled);
-		return unless($Record);
-		return if($Record>$limit);
+		unless($always) {
+			return unless($Record);
+			return if($Record>$limit);
+		}
 
 		mkdir("$Logdir") unless(-d "$Logdir");
 		mkdir("$Logdir/$Map") unless(-d "$Logdir/$Map");
@@ -6076,7 +6081,7 @@ they make the top 5.
 			&print;
 
 			if($save) {
-				log::record($place);
+				log::record(tourney::on() || $place);
 
 				if($place && $place<=5) {
 					chat::all('Congratulations, you placed',  utils::nth($place));
@@ -6525,6 +6530,10 @@ ensure players are assigned correctly.
 	my(@Right)=();
 	my(%Participants)=();
 	my($On)=undef;
+
+	sub on {
+		return($On);
+	}
 
 	sub clear {
 		@Left=();
@@ -9149,7 +9158,7 @@ core protecting the flag.
 			chat::whisper($p, "message not sent");
 			chat::whisper($p, 'language(', player::infraction($p, 1), ')');
 		} elsif(config::harrasment($msg)) {
-			player::infraction($p, 0.25);
+			player::infraction($p, 0.3);
 		} elsif($p->{'nickname'} eq 'server') {
 			chat::whisper($to, $msg);
 		} elsif(!stash::get('block', $to->{'vaporId'}, 'player')) {
@@ -12404,29 +12413,20 @@ core protecting the flag.
 
 	'chat'		=> sub {
 		my($e, $p)=@_;
+		my($bully_kick)=config::option('bullyKick');
 		my($to)='*';
 
 		#race::ready($p) if(race::on && $e->{'message'}=~m/^\s*go\s*$/i);
 
 		if($e->{'team'}) {
-			if($e->{'blocked'}) {
-				$to='!';
-				if(length($e->{'message'})>10) {
-					chat::whisper($p,
-						'Message (',
-						substr($e->{'message'}, 0, 8),
-						'...) not delivered'
-					);
-				} else {
-					chat::whisper($p,
-						'Message (',
-						$e->{'message'},
-						') not delivered'
-					);
-				}
-			} else {
-				$to=map::team_symbol($p->{'team'});
-			}
+			$to=map::team_symbol($p->{'team'});
+		}
+
+		if($e->{'blocked'}) {
+			$to='!';
+
+			$e->{'message'}=~m/^(.{1,10})/;
+			chat::whisper($p, 'Message (', $1, ') not delivered');
 		}
 
 		ui::chat_log($to, $p->{'nickname'}, $e->{'message'});
@@ -12434,18 +12434,19 @@ core protecting the flag.
 		if(config::language($e->{'message'})) {
 			chat::whisper($p, 'language(', player::infraction($p, 1), ')');
 		} elsif(config::harrasment($e->{'message'})) {
-			player::infraction($p, 0.25);
-		} elsif($e->{'blocked'} && config::option('bullyKick')) {
-			player::infraction($p, 0.25);
-		} elsif(config::yelling($e->{'message'})) {
+			player::infraction($p, 0.3);
+		} elsif($e->{'blocked'} && $bully_kick) {
 			player::infraction($p, 0.1);
+		} elsif(config::yelling($e->{'message'}) && $bully_kick) {
+			player::infraction($p, 0.2);
 
 			$p->{'stats'}{'yelling'}++;
-			if($p->{'stats'}{'yelling'}%7 == 0) {
+			if($p->{'stats'}{'yelling'}%6 == 0) {
 				chat::whisper($p, 'stop yelling');
-			} elsif($p->{'stats'}{'yelling'}>30) {
+			} elsif($p->{'stats'}{'yelling'}>20) {
 				server::send('addChatBlock', $p->{'vaporId'}, 'AllChat',
 					'2', 'minute', 'stop yelling in chat');
+				$p->{'stats'}{'yelling'}/=2;
 			}
 		}
 	},
