@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.86';
+my($VERSION)='3.87';
 
 =head1 NAME
 
@@ -7704,7 +7704,7 @@ play though extended interfaces and server support.
 					foreach my $key (keys(%{$door->{'keys'}})) {
 						if($door->{'keys'}{$key} eq $door->{'doors'}{$pickup}) {
 							unless(&key_found($p, $key)) {
-								push(@list, "$door->{'name'}{$key}:$key");
+								push(@list, $door->{'name'}{$key});
 							}
 						}
 					}
@@ -7736,7 +7736,7 @@ play though extended interfaces and server support.
 				@list=();
 				foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
 					unless(&key_found($p, $key)) {
-						push(@list, $key);
+						push(@list, $door->{'name'}{$key});
 					}
 				}
 
