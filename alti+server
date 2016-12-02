@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.85';
+my($VERSION)='3.86';
 
 =head1 NAME
 
@@ -7709,7 +7709,7 @@ play though extended interfaces and server support.
 						}
 					}
 					if(@list) {
-						chat::whisper($p, 'Remaining:', @list);
+						chat::whisper($p, 'Keys remaining:', @list);
 					}
 				}
 
@@ -7733,20 +7733,24 @@ play though extended interfaces and server support.
 
 				$keys=utils::invert(stash::get('keys', $p->{'team'}, 'door', map::name, 'map'));
 
+				@list=();
 				foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
 					unless(&key_found($p, $key)) {
-						return(0);
+						push(@list, $key);
 					}
 				}
 
-				if($personal) {
-					$Stats{$p}{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
-					chat::whisper($p, 'Door unlocked:', $door->{'keys'}{$pickup});
+				if(@list) {
+					chat::whisper($p, 'Keys remaining:', @list);
 				} else {
-					$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
-					chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
+					if($personal) {
+						$Stats{$p}{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+						chat::whisper($p, 'Door unlocked:', $door->{'keys'}{$pickup});
+					} else {
+						$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+						chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
+					}
 				}
-
 			}
 		}
 
