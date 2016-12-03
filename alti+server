@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.87';
+my($VERSION)='3.88';
 
 =head1 NAME
 
@@ -1707,12 +1707,6 @@ stash are automatically saved to disk.
 		} elsif(ref($def) ne 'HASH') {
 			$sor=$def;
 			return;
-		}
-
-		foreach my $key (keys(%$sor)) {
-			if(!defined($def->{$key})) {
-				delete($sor->{$key});
-			}
 		}
 
 		foreach my $key (keys(%$def)) {
