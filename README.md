@@ -417,6 +417,16 @@ manage Alti+ game maps.
     `zone`, for `team`.  The powerup which serves as this key will be
     located at coordinates `x`,`y`.
 
+  * **/add key [name] [door] [team] [powerup]**<br>
+    Create a key named `name` which can be used to enter the door `door` for
+    players on `team`.  This is a different kind of key.  A player must
+    posses `powerup` to pass through `door`.  In this method, you specify
+    the powerup by type (e.g. 'Homing Missle'), and you must not have used
+    it, it must be in your posession.  *You cannot carry a Health powerup*,
+    therefore it cannot be used as a key, it simply doesn't make sense.
+    Any other powerup type is fine.  If a door has both types of keys,
+    either one (**not both**) may open the door.
+
   * **/del key [name|zone|door]**<br>
     Delete all keys named `name`, or for the door or zone listed.
 

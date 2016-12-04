@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.88';
+my($VERSION)='3.89';
 
 =head1 NAME
 
@@ -1347,6 +1347,26 @@ L<perl(1)> should be used to ensure basic operation.
 		}
 
 		return($string);
+	}
+
+	sub powerup {
+		local($_)=@_;
+
+		s/bomb/Bomb/i;
+		s/plant.*/Demolition Charge/i;
+		s/.*charge/Demolition Charge/i;
+		s/ball/Ball/i;
+		s/health/Health/i;
+		s/shield/Shield/i;
+		s/wall/Wall/i;
+		s/.*missile/Homing Missile/i;
+
+		return($_);
+	}
+
+	sub is_powerup {
+		local($_)=&powerup(@_);
+		return(m/(Bomb|Demolition Charge|Ball|Health|Shield|Wall|Homing Missile)/);
 	}
 
 	sub plane {
@@ -7628,11 +7648,18 @@ play though extended interfaces and server support.
 	sub door_open {
 		my($p, $door)=@_;
 		my($team)=$p->{'team'};
+		my($keys)=stash::get('keys', $team, 'door', map::name, 'map');
 
-		return(
-			$Stats{$p}{$team}{'door'}{$door}
-			||  $Stats{$team}{'door'}{$door}
-		);
+		chat::debug('has', $p->{'has'}, 'keys', $keys->{$p->{'has'}}, 'door', $door);
+		if($p->{'has'} && $keys->{$p->{'has'}} eq $door) {
+			chat::debug('open');
+			return(1);
+		} else {
+			return(
+				$Stats{$p}{$team}{'door'}{$door}
+				||  $Stats{$team}{'door'}{$door}
+			);
+		}
 	}
 
 	sub zone_open {
@@ -7700,6 +7727,12 @@ play though extended interfaces and server support.
 							unless(&key_found($p, $key)) {
 								push(@list, $door->{'name'}{$key});
 							}
+							foreach my $player (player::list) {
+								if($player->{'has'} eq $key) {
+									chat::whisper($p, $player->{'name'},
+										"has the key ($key)");
+								}
+							}
 						}
 					}
 					if(@list) {
@@ -7731,6 +7764,12 @@ play though extended interfaces and server support.
 				foreach my $key (@{$keys->{$door->{'keys'}{$pickup}}}) {
 					unless(&key_found($p, $key)) {
 						push(@list, $door->{'name'}{$key});
+					}
+					foreach my $player (player::list) {
+						if($player->{'has'} eq $key) {
+							chat::whisper($p, $player->{'name'},
+								"has the key ($key)");
+						}
 					}
 				}
 
@@ -10811,6 +10850,7 @@ core protecting the flag.
 		chat::whisper($p, 'Keys unlock doors and zones, see /help doors or /help zones');
 		chat::whisper($p, '/list keys');
 		chat::whisper($p, '/add key <name> <door|zone> <team> <kx>,<ky>');
+		chat::whisper($p, '/add key <name> <door> <team> <powerup>');
 		chat::whisper($p, '/del key <name|door|zone> <team>');
 		chat::whisper($p, '/set keys <team|personal>');
 		chat::whisper($p, '/unset keys');
@@ -10878,20 +10918,27 @@ core protecting the flag.
 
 	'add key'		=> sub {
 		my($e, $p, $name, $opens, $team, $kx, $ky)=@_;
+		my($powerup);
 		my($doors);
+
+		if(utils::is_powerup($kx)) {
+			$powerup=utils::powerup($kx);
+		} else {
+			$powerup="$kx,$ky";
+		}
 
 		$team='*' unless($team);
 
 		if(map::left($team)) {
 			$doors=utils::invert(stash::get('doors', map::left, 'door', map::name, 'map'));
 			if(exists($doors->{$opens})) {
-				stash::set("$kx,$ky", 'keys', map::left, 'door', map::name, 'map', $opens);
-				stash::set("$kx,$ky", 'name', map::left, 'door', map::name, 'map', $name);
-				chat::all('Added left key', $name, 'for door', $opens, "($kx,$ky)");
+				stash::set($powerup, 'keys', map::left, 'door', map::name, 'map', $opens);
+				stash::set($powerup, 'name', map::left, 'door', map::name, 'map', $name);
+				chat::all('Added left key', $name, 'for door', $opens, "($powerup)");
 			} elsif(stash::get($opens, 'zones', map::left, 'zones', map::name, 'map')) {
-				stash::set("$kx,$ky", 'keys', map::left, 'zones', map::name, 'map', $opens);
-				stash::set("$kx,$ky", 'name', map::left, 'zones', map::name, 'map', $name);
-				chat::all('Added left key', $name, 'for zone', $opens, "($kx,$ky)");
+				stash::set($powerup, 'keys', map::left, 'zones', map::name, 'map', $opens);
+				stash::set($powerup, 'name', map::left, 'zones', map::name, 'map', $name);
+				chat::all('Added left key', $name, 'for zone', $opens, "($powerup)");
 			} else {
 				chat::whisper($p, 'You must define the left door or zone first');
 			}
@@ -10900,13 +10947,13 @@ core protecting the flag.
 		if(map::right($team)) {
 			$doors=utils::invert(stash::get('doors', map::right, 'door', map::name, 'map'));
 			if(exists($doors->{$opens})) {
-				stash::set("$kx,$ky", 'keys', map::right, 'door', map::name, 'map', $opens);
-				stash::set("$kx,$ky", 'name', map::right, 'door', map::name, 'map', $name);
-				chat::all('Added right key', $name, 'for door', $opens, "($kx,$ky)");
+				stash::set($powerup, 'keys', map::right, 'door', map::name, 'map', $opens);
+				stash::set($powerup, 'name', map::right, 'door', map::name, 'map', $name);
+				chat::all('Added right key', $name, 'for door', $opens, "($powerup)");
 			} elsif(stash::get($opens, 'zones', map::right, 'zones', map::name, 'map')) {
-				stash::set("$kx,$ky", 'keys', map::right, 'zones', map::name, 'map', $opens);
-				stash::set("$kx,$ky", 'name', map::right, 'zones', map::name, 'map', $name);
-				chat::all('Added right key', $name, 'for zone', $opens, "($kx,$ky)");
+				stash::set($powerup, 'keys', map::right, 'zones', map::name, 'map', $opens);
+				stash::set($powerup, 'name', map::right, 'zones', map::name, 'map', $name);
+				chat::all('Added right key', $name, 'for zone', $opens, "($powerup)");
 			} else {
 				chat::whisper($p, 'You must define the right door or zone first');
 			}
@@ -12037,7 +12084,7 @@ core protecting the flag.
 			records::help($p, 2) if(map::type('coop'));
 		}
 
-		$p->{'has'}=$e->{'powerup'};
+		$p->{'has'}=$e->{'powerup'} unless($e->{'powerup'} eq 'Health');
 
 		return if($p->{'isBot'});
 
