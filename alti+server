@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.89';
+my($VERSION)='3.90';
 
 =head1 NAME
 
@@ -7650,9 +7650,7 @@ play though extended interfaces and server support.
 		my($team)=$p->{'team'};
 		my($keys)=stash::get('keys', $team, 'door', map::name, 'map');
 
-		chat::debug('has', $p->{'has'}, 'keys', $keys->{$p->{'has'}}, 'door', $door);
 		if($p->{'has'} && $keys->{$p->{'has'}} eq $door) {
-			chat::debug('open');
 			return(1);
 		} else {
 			return(
