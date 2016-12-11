@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.90';
+my($VERSION)='3.91';
 
 =head1 NAME
 
@@ -2731,6 +2731,14 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'restrict'		=> 'tiny',
 	},
 
+	'timer'	=> {
+		'name'			=> 'timer',
+		'arguments'		=> ['string'],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 0,
+		'restrict'		=> 'tiny',
+	},
+
 	'who'	=> {
 		'name'			=> 'who',
 		'arguments'		=> ['player'],
@@ -4997,12 +5005,44 @@ types which alter the normal behavior.
 		my($limit)=$Ds->{'levelModeConfig'}{'objectiveGameTimeSeconds'};
 		my($used)=time()-$Start;
 
+		if(&mode('ball', 'ffa', 'tbd', 'tdm')) {
+			$limit=$config::Launcher{'roundTime'}{&mode};
+		}
+
 		if(wantarray) {
 			return($limit, $used);
 		} else {
 			return($limit-$used);
 		}
 	}
+
+	sub set_time {
+		my($time)=@_;
+		my($limit, $used)=&timer();
+		my($new)=$used;
+		my($change_type)=0;
+
+		return(undef) unless(xx::mod('set_time_cmd'));
+
+		$change_type=1 if($time=~s/^\+//);
+
+		if($time=~m/(\d+):(\d+)/) {
+			$time=$1*60+$2;
+		}
+
+		if($change_type<=0) {
+			$new=$limit-$time;
+		} elsif($change_type>0) {
+			$new=$time;
+		}
+
+		if($new>0) {
+			server::send('setTime', 30*$new);
+		} else {
+			server::send('setTime', 0);
+		}
+	}
+
 
 	sub powerup_lookup {
 		my($xy)=join(',', @_[0,1]);
@@ -8875,6 +8915,13 @@ core protecting the flag.
 		}
 	},
 
+	'timer'		=> sub {
+		my($e, $p)=@_;
+		my($time)=@{$e->{'arguments'}};
+
+		map::set_time($time);
+	},
+
 	'del'		=> sub {
 		my($e, $p)=@_;
 		my($type, $args)=@{$e->{'arguments'}};
@@ -12403,10 +12450,9 @@ core protecting the flag.
 			server::trigger('logPlanePositions', 'demolitionChargePlanted', $e, $p);
 		}
 
-		if(xx::mod('set_time_cmd') && $timer && $timer-$used<25) {
-			server::send('setTime', ($timer-25)*30);
+		if($timer && $timer-$used<25) {
+			map::set_time(25);
 		}
-
 	},
 
 	'logPlanePositions:demolitionChargePlanted'	=> sub {

@@ -209,6 +209,15 @@ manage Alti+ game maps.
     Change to a random map from the mapRotation.  This command requires
     a vote threshold of 66% or greater.
 
+  * **/timer [time]**<br>
+    Use the `xx` extention setTime to set the timer.  This function is mostly
+    a debugging interface, but it is nicer than using `setTime` directly.
+    You specify the time you want the timer to say, and this function sets
+    it for you.  You can specify 2 minutes and 30 seconds as either `2:30`
+    or `150`.  If you place a `+` sign in front of the time, it sets the
+    time to that much from the start.  So, a time of `+30` would set the timer
+    not to 30 seconds left, but instead 30 seconds into the timer.
+
   * **/who [player]**<br>
     Print information about `player` including their permanent name
     (if they have one), their IP address, and other nicknames they have
