@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.91';
+my($VERSION)='3.92';
 
 =head1 NAME
 
@@ -2945,7 +2945,7 @@ garunteed to keep the format correct.
 	my($Modsfile)="$INSTALL_ROOT/servers/mods.hjson";
 	my($Permsfile)="$INSTALL_ROOT/servers/permissions.hjson";
 
-	my(%Mods)=();
+	my($Version)=undef;
 	my(@Global)=('mods', 'global');
 	my(@Server)=('mods', 'servers');
 	my(@Permissions)=('permissions');
@@ -3062,39 +3062,51 @@ garunteed to keep the format correct.
 	}
 
 	sub config_reload {
-		return unless($Mods{'base'});
+		return unless($Version);
 
 		json::write_file(stash::get('mods', 'xx'), $Modsfile);
 		server::send('reloadModConfig');
 	}
 
 	sub perms_reload {
-		return unless($Mods{'permissions'});
+		return unless($Version);
 
 		json::write_file(stash::get('permissions', 'xx'), $Permsfile);
 		server::send('reloadPermissions');
 	}
 
+	sub enabled {
+		my($version)=@_;
+
+		if($version) {
+			return($version lt $Version);
+		} else {
+			return($Version);
+		}
+	}
+
 	sub initialize_mods {
-		my($mods)=@_;
+		my($version)=@_;
 		my($config)=stash::get('xx');
-		my($mod, $ver);
 
 		unless(config::option('xxEnabled')) {
 			return;
 		}
+		unless($version) {
+			server::shutdown();
+			db::shutdown();
 
-		foreach(@$mods) {
-			($mod, $ver)=m/(\w+)\s+(\d+\.\d+\.\d+)/;
-			$ver=version->parse($ver);
+			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+			ui::slog('! You must upgrade to release 0.1.0 of xx patches !');
+			ui::slog('! because it is a rewrite, this Alti+ version is  !');
+			ui::slog('! not compatible with this server patch level.    !');
+			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
 
-			$Mods{$mod}=$ver;
+			ui::shutdown;
+			exit(1);
 		}
 
-		unless($Mods{'base'}) {
-			%Mods=();
-			return;
-		}
+		$Version=$version;
 
 		&_datastructures;
 
@@ -3121,33 +3133,26 @@ garunteed to keep the format correct.
 		&perms_reload;
 
 		config::add_commands(
-			'xx' => [
+			'xx'				=> [
 				['list', 'set', 'unset', 'add', 'del'],
 				[sort(keys(%Path))],
 				'string',
 			],
 			'reloadModConfig'	=> [],
-		) if($Mods{'base'});
-
-		config::add_commands(
 			'reloadPermissions'	=> [],
-		) if($Mods{'permissions'});
-
-		config::add_commands(
-			'setTime'	=> [
+			'setTime'			=> [
 				'int'
 			],
-		) if($Mods{'set_time_cmd'});
-	}
-
-	sub mod {
-		my($mod)=@_;
-
-		if(exists($Mods{$mod})) {
-			return($Mods{$mod});
-		} else {
-			return(undef);
-		}
+			'getTime'			=> [],
+			'botPlaneSetup'	=> [
+				'int',
+				'int',
+				'int',
+				'int',
+				'int',
+			],
+			'botPlaneRandom'	=> [],
+		);
 	}
 
 	sub config {
@@ -5015,34 +5020,6 @@ types which alter the normal behavior.
 			return($limit-$used);
 		}
 	}
-
-	sub set_time {
-		my($time)=@_;
-		my($limit, $used)=&timer();
-		my($new)=$used;
-		my($change_type)=0;
-
-		return(undef) unless(xx::mod('set_time_cmd'));
-
-		$change_type=1 if($time=~s/^\+//);
-
-		if($time=~m/(\d+):(\d+)/) {
-			$time=$1*60+$2;
-		}
-
-		if($change_type<=0) {
-			$new=$limit-$time;
-		} elsif($change_type>0) {
-			$new=$time;
-		}
-
-		if($new>0) {
-			server::send('setTime', 30*$new);
-		} else {
-			server::send('setTime', 0);
-		}
-	}
-
 
 	sub powerup_lookup {
 		my($xy)=join(',', @_[0,1]);
@@ -7557,7 +7534,7 @@ play though extended interfaces and server support.
 			rank::score($p->{'team'}, 1);
 
 			push(@players, player::list);
-			push(@players, player::bots) if(xx::mod('bot_control'));
+			push(@players, player::bots) if(xx::enabled);
 			foreach my $player (@players) {
 				$player->{'stats'}{'played'}+=$e->{'time'}-$player->{'spawn'};
 				&bench($player);
@@ -8918,8 +8895,53 @@ core protecting the flag.
 	'timer'		=> sub {
 		my($e, $p)=@_;
 		my($time)=@{$e->{'arguments'}};
+		my($limit, $used)=map::timer;
+		my($change);
 
-		map::set_time($time);
+		return unless(xx::enabled);
+
+		if($time=~m/^[+-]/) {
+			server::trigger('getTime', 'deltaTime', $e, $p);
+		} else {
+			if($time=~m/(\d+):(\d+)/) {
+				$time=$1*60+$2;
+			}
+
+			$change=List::Util::max(0, $limit-$time);
+
+			server::send('setTime', 30*$change);
+		}
+	},
+
+	'getTime:deltaTime'	=> sub {
+		my($e1, $p1, $e2, $p2)=@_;
+		my($limit, $used)=map::timer;
+		my($current)=$e1->{'roundTimeTicks'}/30;
+		my($delta)=@{$e2->{'arguments'}};
+		my($change, $direction);
+
+		if($delta=~s/^\+//) {
+			$direction=-1;
+		} elsif($delta=~s/^-//) {
+			$direction=1;
+		} else {
+			ui::slog('invalid attempt to change timer');
+			return;
+		}
+
+		if($delta=~m/(\d+):(\d+)/) {
+			$delta=$1*60+$2;
+		}
+
+		$change=List::Util::max(0, $limit - $current + $delta*$direction);
+
+		server::send('setTime', int($change*30));
+	},
+	
+	'getTime' => sub {
+		my($e, $p)=@_;
+
+		ui::slog(json::encode($e));
 	},
 
 	'del'		=> sub {
@@ -11590,10 +11612,8 @@ core protecting the flag.
 
 	'serverPatches'	=> sub {	#LewisH server patch add-on
 		my($e)=@_;
-		my($mod, $ver, $a, $b, $c);
-		local($_);
 
-		xx::initialize_mods($e->{'mods'});
+		xx::initialize_mods($e->{'version'});
 	},
 
 	'clientAdd'		=> sub {
@@ -12451,7 +12471,7 @@ core protecting the flag.
 		}
 
 		if($timer && $timer-$used<25) {
-			map::set_time(25);
+			server::send('timer', 25);
 		}
 	},
 
@@ -12824,7 +12844,7 @@ also only available from the console.
 			ui::setup_screen if($name=~m/^ui|Color$/i);
 			if($name=~m/secretCode/) {
 				chat::whisper($s, 'run /restartServer to complete change');
-			} elsif($name=~m/aceLevel/ && xx::mod('custom_join')) {
+			} elsif($name=~m/aceLevel/ && xx::enabled) {
 				if(config::option('aceLevel')<config::option('noviceLevel')) {
 					xx::config_set('minAce', 0);
 					xx::config_set('minLevel', config::option('noviceLevel'));
@@ -12840,7 +12860,7 @@ also only available from the console.
 
 			if($name=~m/secretCode/) {
 				config::write_launcher_config($name => '');
-			} elsif($name=~m/aceLevel/ && xx::mod('custom_join')) {
+			} elsif($name=~m/aceLevel/ && xx::enabled) {
 				xx::config_unset('minAce');
 				xx::config_unset('minLevel');
 				xx::config_unset('levelRestrictions');
