@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.92';
+my($VERSION)='3.93';
 
 =head1 NAME
 
@@ -1239,6 +1239,11 @@ L<perl(1)> should be used to ensure basic operation.
 		m/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{16}$/;
 	}
 
+	sub is_int {
+		local($_)=@_;
+		m/^\d+$/;
+	}
+
 	sub proc_time {
 		my($pid)=@_;
 		my($stat)=IO::Handle->new;
@@ -1391,6 +1396,7 @@ L<perl(1)> should be used to ensure basic operation.
 	sub green {
 		local($_)=@_;
 
+		s/^no.*/No Green Perk/i;
 		s/rubber.*/Rubberized Hull/i;
 		s/ha.*/Heavy Armor/i;
 		s/.*armor/Heavy Armor/i;
@@ -1451,6 +1457,7 @@ L<perl(1)> should be used to ensure basic operation.
 	sub blue {
 		local($_)=@_;
 
+		s/^no.*/No Blue Perk/i;
 		s/turbo.*/Turbocharger/i;
 		s/ultra.*/Ultracapacitor/i;
 		s/rev.*/Reverse Thrust/i;
@@ -1462,6 +1469,53 @@ L<perl(1)> should be used to ensure basic operation.
 	sub is_blue {
 		local($_)=&blue(@_);
 		return(m/(Turbocharger|Ultracapacitor|Reverse Thrust|Ace Instincts)/);
+	}
+
+	sub skin {
+		local($_)=@_;
+
+		s/^no.*/No Skin/i;
+		s/^shark.*/Shark Skin/i;
+		s/^zebra.*/Zebra Skin/i;
+		s/^checker.*/Checker Skin/i;
+		s/^flame.*/Flame Skin/i;
+		s/^santa.*/Santa Hat/i;
+
+		return($_);
+	}
+
+	sub is_skin {
+		local($_)=&skin(@_);
+		return(m/(No Skin|Shark Skin|Zebra Skin|Checker Skin|Flame Skin|Santa Hat)/);
+	}
+
+	sub all_setups {
+		my(@reds)=(
+			'Loopy,Tracker', 'Loopy,Double Fire', 'Loopy,Acid Bomb',
+			'Bomber,Suppressor', 'Bomber,Bombs', 'Bomber,Flak Tailgun',
+			'Explodet,Director', 'Explodet,Thermobarics', 'Explodet,Remote Mine',
+			'Biplane,Dogfighter', 'Biplane,Recoilless Gun', 'Biplane,Heavy Cannon',
+			'Miranda,Trickster', 'Miranda,Laser', 'Miranda,Time Anchor',
+		);
+		my(@greens)=(
+			'Rubberized Hull', 'Heavy Armor',
+			'Repair Drone', 'Flexible Wings',
+		);
+		my(@blues)=(
+			'Turbocharger', 'Ultracapacitor',
+			'Reverse Thrust', 'Ace Instincts',
+		);
+		my(%setups)=();
+
+		foreach my $red (@reds) {
+			foreach my $green (@greens) {
+				foreach my $blue (@blues) {
+					$setups{join(',', $red, $green, $blue)}=1;
+				}
+			}
+		}
+
+		return(%setups);
 	}
 
 	sub coin_toss {
@@ -2952,6 +3006,60 @@ garunteed to keep the format correct.
 	my($Default);
 	my(%Path);
 
+	my(%Setup)=(
+		'plane'	=> {
+			'Loopy'			=> 0,
+			'Bomber'			=> 1,
+			'Explodet'		=> 2,
+			'Biplane'			=> 3,
+			'Miranda'			=> 4,
+		},
+		'red'	=> {
+			'Tracker'			=> 0,
+			'Double Fire'		=> 1,
+			'Acid Bomb'		=> 2,
+
+			'Suppressor'		=> 0,
+			'Bombs'			=> 1,
+			'Flak Tailgun'		=> 2,
+
+			'Director'		=> 0,
+			'Thermobarics'		=> 1,
+			'Remote Mine'		=> 2,
+
+			'Dogfighter'		=> 0,
+			'Recoilless Gun'	=> 1,
+			'Heavy Cannon'		=> 2,
+
+			'Trickster'		=> 0,
+			'Laser'			=> 1,
+			'Time Anchor'		=> 2,
+		},
+		'green'	=> {
+			'No Green Perk'	=> 0,
+			'Rubberized Hull'	=> 1,
+			'Heavy Armor'		=> 2,
+			'Repair Drone'		=> 3,
+			'Flexible Wings'	=> 4,
+		},
+		'blue'	=> {
+			'No Blue Perk'		=> 0,
+			'Turbocharger'		=> 1,
+			'Ultracapacitor'	=> 2,
+			'Reverse Thrust'	=> 3,
+			'Ace Instincts'	=> 4,
+		},
+		'skin'	=> {
+			'No Skin'			=> 0,
+			'Shark Skin'		=> 1,
+			'Zebra Skin'		=> 2,
+			'Checker Skin'		=> 3,
+			'Flame Skin'		=> 4,
+			'Santa Hat'		=> 5,
+		},
+	);
+
+
 	sub _datastructures {
 		$Server[2]=$config::Port;
 
@@ -3260,6 +3368,28 @@ garunteed to keep the format correct.
 		stash::marry($config->{$Permissions[0]}, $Default->{$Permissions[0]});
 
 		&perms_reload;
+	}
+
+	sub setup_bot {
+		my($plane)=utils::plane(shift // int(rand(5)));
+		my($red)=utils::red(shift // int(rand(3)));
+		my($green)=utils::green(shift // int(rand(4)+1));
+		my($blue)=utils::blue(shift // int(rand(4)+1));
+		my($skin)=utils::skin(shift);
+
+		return unless(&enabled);
+
+		if(!defined($skin) && utils::coin_toss) {
+			$skin=int(rand(6));
+		}
+
+		$plane=$Setup{'plane'}{$plane}	unless(utils::is_int($plane));
+		$red  =$Setup{'red'}{$red}		unless(utils::is_int($red));
+		$green=$Setup{'green'}{$green}	unless(utils::is_int($green));
+		$blue =$Setup{'blue'}{$blue}		unless(utils::is_int($blue));
+		$skin =$Setup{'skin'}{$skin}		unless(utils::is_int($skin));
+
+		server::send('botPlaneSetup', $plane, $red, $green, $blue, $skin);
 	}
 
 }
@@ -3696,7 +3826,7 @@ Supported databases are SQLite and PostgreSQL.
 		my($search)=lc($_[0]);
 		my(@player)=();
 
-		if($search=~m/^\d+$/) {
+		if(utils::is_int($search)) {
 			@player=&select('player', qq{ id='$search' });
 		} elsif($search=~m/^[\d.:]+$/) {
 			@player=&select('player', qq{ ip LIKE '$search%' });
@@ -4961,7 +5091,7 @@ types which alter the normal behavior.
 			return($Teams{$Map->{'rightTeam'}});
 		} elsif(&spec($team)) {
 			return('spec');
-		} elsif($team=~m/^\d+$/) {
+		} elsif(utils::is_int($team)) {
 			return($Teams{$team});
 		} else {
 			return('unknown');
@@ -4979,7 +5109,7 @@ types which alter the normal behavior.
 			return($Map->{'rightTeam'});
 		} elsif(&spec($team)) {
 			return(2);
-		} elsif($team=~m/^\d+$/) {
+		} elsif(utils::is_int($team)) {
 			return($team);
 		} else {
 			return(undef);
@@ -7164,6 +7294,7 @@ play though extended interfaces and server support.
 	my(%Stats)=();
 	my(%Reset)=();
 	my(%Restart)=();
+	my(%Planes)=();
 	my($Hunted)=undef;
 	my($Active)=0;
 	my($Captured)=0;
@@ -7236,45 +7367,30 @@ play though extended interfaces and server support.
 	sub plane_check {
 		my($p)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
-		my($setup)=join(',', @$p{'plane','perkGreen','perkRed','perkBlue'});
-		my($allow, $deny)=(1, '');
-		my($planere);
+		my($setup)=join(',', @$p{'plane','perkRed', 'perkGreen','perkBlue'});
 
-		return(1) unless(ref($planes) eq 'HASH');
+		return(1) unless(%Planes);
 
-		foreach my $restriction (values(%$planes)) {
-			if($restriction eq '+') {
-				$allow=0;
-				last;
-			}
-		}
-
-		foreach my $config (keys(%$planes)) {
-			$planere=$config;
-			$planere=~s/^,/.*,/;
-			$planere=~s/,$/,.*/;
-			1 while($planere=~s/,,/,.*,/);
-
-			if($setup=~m/$planere/) {
-				if($planes->{$config} eq '+') {
-					$allow=1;
-				} elsif($planes->{$config} eq '-') {
-					$deny=utils::simplify($config);
-				}
-			}
-		}
-
-		if($deny) {
-			chat::whisper($p, 'Disallowed plane configuration:', $deny);
-			return(0);
-		} elsif(!$allow) {
+		if(exists($Planes{$setup})) {
+			return(1);
+		} else {
 			chat::whisper($p, 'Plane restricitons:', join(', ',
 				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
 			));
 			return(0);
 		}
+	}
 
-		return(1);
+	sub next_bot {
+		my(@keys)=keys(%Planes);
+
+		return unless(%Planes);
+
+		xx::setup_bot(split(m/,/, utils::pluck(@keys))) if(xx::enabled);
+	}
+
+	sub any_bot {
+		server::send('botPlaneRandom') if(xx::enabled);
 	}
 
 	sub restart_clear {
@@ -8031,9 +8147,13 @@ play though extended interfaces and server support.
 	sub new {
 		my(@teams)=map::teams;
 		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($planes)=stash::get('planes', map::name, 'map');
+		my(%setups)=utils::all_setups;
+		my($planere);
 
 		%Stats=();
 		%Reset=();
+		%Planes=();
 		$Hunted=undef;
 		$Active=0;
 		$Captured=0;
@@ -8045,6 +8165,38 @@ play though extended interfaces and server support.
 
 		&restart_clear;
 		&round;
+
+		if(ref($planes)) {
+			foreach my $config (keys(%$planes)) {
+				next unless($planes->{$config} eq '+');
+
+				$planere=$config;
+				$planere=~s/^,/.*,/;
+				$planere=~s/,$/,.*/;
+				1 while($planere=~s/,,/,.*,/);
+
+				foreach my $setup (grep(m/$planere/, keys(%setups))) {
+					$Planes{$setup}=1;
+				}
+			}
+
+			unless(%Planes) {
+				%Planes=%setups;
+			}
+
+			foreach my $config (keys(%$planes)) {
+				next unless($planes->{$config} eq '-');
+
+				$planere=$config;
+				$planere=~s/^,/.*,/;
+				$planere=~s/,$/,.*/;
+				1 while($planere=~s/,,/,.*,/);
+
+				foreach my $setup (grep(m/$planere/, keys(%setups))) {
+					delete($Planes{$setup});
+				}
+			}
+		}
 
 		if(map::type('ruin')) {
 			foreach my $mine (0, 1) {
@@ -9517,7 +9669,7 @@ core protecting the flag.
 		my($name, $next, $mapname, $file, $mapconfig);
 		local($_);
 
-		return(0) unless($key=~m/^\d+$/);
+		return(0) unless(utils::is_int($key));
 
 		file::download("$url?file_id=$key");
 
@@ -10242,8 +10394,11 @@ core protecting the flag.
 			chat::all('planes:', join('; ',
 				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
 			));
+
+			plus::next_bot;
 		} else {
 			chat::all('planes: all');
+			plus::any_bot;
 		}
 	},
 
@@ -10255,6 +10410,15 @@ core protecting the flag.
 		if(map::mode('ffa')) {
 			chat::whisper($p, 'Plane enforcement is not possible in FFA');
 			return;
+		}
+
+		#convert to new format:
+		unless(ref($planes)) {
+			foreach my $plane (split(m/\|+/, $planes)) {
+				$planes={} unless(ref($planes));
+				$planes->{"$plane,,,"}='+';
+			}
+			stash::set('planes', map::name, 'map', $planes);
 		}
 
 		if($plane[0]=~m/all|none/i) {
@@ -11899,11 +12063,12 @@ core protecting the flag.
 		$p->{'team'}=$e->{'team'};
 		$p->{'stats'}{'turret'}=0;
 
-		@$p{'plane','perkGreen','perkRed','perkBlue','skin'}=
-			@$e{'plane','perkGreen','perkRed','perkBlue','skin'};
+		@$p{'plane','perkRed','perkGreen','perkBlue','skin'}=
+			@$e{'plane','perkRed','perkGreen','perkBlue','skin'};
 
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
+			plus::next_bot if(xx::enabled);
 			return;
 		} elsif(plus::capture_wait($e)) {
 			plus::bench($p);
@@ -11979,7 +12144,7 @@ core protecting the flag.
 		}
 	},
 
-	'playerInfoEv'	=> sub {	#LewisH server patch add-on
+	'playerInfoEv'	=> sub {	#LewisH server patch add-on (xx patches)
 		my($e, $p)=@_;
 		my($minlvl)=config::option('aceLevel');
 
@@ -11992,8 +12157,8 @@ core protecting the flag.
 				$e->{'perkBlue'}=~m/No Blue Perk/
 			);
 
-		@$p{'plane','perkGreen','perkRed','perkBlue'}=
-			@$e{'plane','perkGreen','perkRed','perkBlue'};
+		@$p{'plane','perkRed','perkGreen','perkBlue'}=
+			@$e{'plane','perkRed','perkGreen','perkBlue'};
 
 		if($e->{'level'}==60 && $p->{'level'}==59) {
 			chat::whisper($p, 'Congratulations, you made it to level 60!');
