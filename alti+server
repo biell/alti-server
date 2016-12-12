@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.93';
+my($VERSION)='3.94';
 
 =head1 NAME
 
@@ -1396,7 +1396,7 @@ L<perl(1)> should be used to ensure basic operation.
 	sub green {
 		local($_)=@_;
 
-		s/^no.*/No Green Perk/i;
+		s/no green.*/No Green Perk/i;
 		s/rubber.*/Rubberized Hull/i;
 		s/ha.*/Heavy Armor/i;
 		s/.*armor/Heavy Armor/i;
@@ -1457,7 +1457,7 @@ L<perl(1)> should be used to ensure basic operation.
 	sub blue {
 		local($_)=@_;
 
-		s/^no.*/No Blue Perk/i;
+		s/no blue.*/No Blue Perk/i;
 		s/turbo.*/Turbocharger/i;
 		s/ultra.*/Ultracapacitor/i;
 		s/rev.*/Reverse Thrust/i;
@@ -3379,8 +3379,12 @@ garunteed to keep the format correct.
 
 		return unless(&enabled);
 
-		if(!defined($skin) && utils::coin_toss) {
-			$skin=int(rand(6));
+		if(!defined($skin)) {
+			if(utils::coin_toss) {
+				$skin=int(rand(6));
+			} else {
+				$skin='No Skin';
+			}
 		}
 
 		$plane=$Setup{'plane'}{$plane}	unless(utils::is_int($plane));
@@ -7295,6 +7299,7 @@ play though extended interfaces and server support.
 	my(%Reset)=();
 	my(%Restart)=();
 	my(%Planes)=();
+	my(%Bots)=();
 	my($Hunted)=undef;
 	my($Active)=0;
 	my($Captured)=0;
@@ -7382,9 +7387,15 @@ play though extended interfaces and server support.
 	}
 
 	sub next_bot {
-		my(@keys)=keys(%Planes);
+		my(@keys);
 
-		return unless(%Planes);
+		if(%Bots) {
+			@keys=keys(%Bots);
+		} elsif(%Planes) {
+			@keys=keys(%Planes);
+		} else {
+			return;
+		}
 
 		xx::setup_bot(split(m/,/, utils::pluck(@keys))) if(xx::enabled);
 	}
@@ -8148,12 +8159,13 @@ play though extended interfaces and server support.
 		my(@teams)=map::teams;
 		my($assign)=stash::get('assignTeam', map::name, 'map');
 		my($planes)=stash::get('planes', map::name, 'map');
+		my($bots)=stash::get('bots', map::name, 'map');
 		my(%setups)=utils::all_setups;
-		my($planere);
 
 		%Stats=();
 		%Reset=();
 		%Planes=();
+		%Bots=();
 		$Hunted=undef;
 		$Active=0;
 		$Captured=0;
@@ -8167,10 +8179,9 @@ play though extended interfaces and server support.
 		&round;
 
 		if(ref($planes)) {
-			foreach my $config (keys(%$planes)) {
-				next unless($planes->{$config} eq '+');
+			foreach my $planere (keys(%$planes)) {
+				next unless($planes->{$planere} eq '+');
 
-				$planere=$config;
 				$planere=~s/^,/.*,/;
 				$planere=~s/,$/,.*/;
 				1 while($planere=~s/,,/,.*,/);
@@ -8184,16 +8195,27 @@ play though extended interfaces and server support.
 				%Planes=%setups;
 			}
 
-			foreach my $config (keys(%$planes)) {
-				next unless($planes->{$config} eq '-');
+			foreach my $planere (keys(%$planes)) {
+				next unless($planes->{$planere} eq '-');
 
-				$planere=$config;
 				$planere=~s/^,/.*,/;
 				$planere=~s/,$/,.*/;
 				1 while($planere=~s/,,/,.*,/);
 
 				foreach my $setup (grep(m/$planere/, keys(%setups))) {
 					delete($Planes{$setup});
+				}
+			}
+
+			foreach my $planere (keys(%$planes)) {
+				next unless($planes->{$planere} eq '=');
+
+				$planere=~s/^,/.*,/;
+				$planere=~s/,$/,.*/;
+				1 while($planere=~s/,,/,.*,/);
+
+				foreach my $setup (grep(m/$planere/, keys(%setups))) {
+					$Bots{$setup}=1;
 				}
 			}
 		}
@@ -9092,8 +9114,14 @@ core protecting the flag.
 	
 	'getTime' => sub {
 		my($e, $p)=@_;
+		my($timer);
 
-		ui::slog(json::encode($e));
+		return unless(exists($e->{'roundTimeTicks'}));
+
+		$timer=$e->{'roundTimeTicks'}/30;
+
+		#chat::whisperf($p, '%d:%02d', $timer/60, $timer%60);
+		chat::whisperf(player::server, '%d:%02d', $timer/60, $timer%60);
 	},
 
 	'del'		=> sub {
@@ -10356,14 +10384,15 @@ core protecting the flag.
 
 		chat::whisper($p, 'Allow only certain planes to join the game');
 		chat::whisper($p, '/list planes');
-		chat::whisper($p, '/add plane <+|-><Loopy|Bomber|Explodet|Biplane|Miranda> <perk> <...>');
-		chat::whisper($p, '/del plane <+|-><Loopy|Bomber|Explodet|Biplane|Miranda> <perk> <...>');
-		chat::whisper($p, 'With + or - adds or removes, otherwise sets');
+		chat::whisper($p, '/add plane <+|-|=><Loopy|Bomber|Explodet|Biplane|Miranda> <perk> <...>');
+		chat::whisper($p, '/del plane <+|-|=><Loopy|Bomber|Explodet|Biplane|Miranda> <perk> <...>');
+		chat::whisper($p, '+ allows, - denys, = sets Bot plane');
 	},
 
 	'list planes'	=> sub {
 		my($e, $p)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
+		my($bots)=stash::get('bots', map::name, 'map');
 		my($spec);
 
 		if(ref($planes) eq 'HASH') {
@@ -10373,11 +10402,18 @@ core protecting the flag.
 		} elsif($e->{'command'} eq 'list') {
 			chat::whisper($p, 'planes: all');
 		}
+
+		if(ref($bots) eq 'HASH') {
+			chat::whisper($p, 'bots:', join('; ',
+				map($bots->{$_}.utils::simplify($_), sort(keys(%$bots)))
+			));
+		}
 	},
 
 	'enable planes'	=> sub {
 		my($e, $p)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
+		my($bots)=stash::get('bots', map::name, 'map');
 
 		return unless(defined($planes));
 
@@ -10405,6 +10441,8 @@ core protecting the flag.
 	'add plane'	=> sub {
 		my($e, $p, @plane)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
+		my($bots)=stash::get('bots', map::name, 'map');
+		my($plane)=1;
 		my($tuple);
 
 		if(map::mode('ffa')) {
@@ -10425,12 +10463,14 @@ core protecting the flag.
 			stash::delete('planes', map::name, 'map');
 			chat::all('Plane enforcement for', map::name, 'is disabled');
 			return;
+		} elsif($plane[0]=~m/^(=)(\w.+)/) {
+			splice(@plane, 0, 1, $1, $2);
+			$plane=0;
 		} elsif($plane[0]=~m/^([+-])(\w.+)/) {
 			splice(@plane, 0, 1, $1, $2);
 		} elsif($plane[0]=~m/^\w/) {
 			unshift(@plane, '+');
 		}
-
 
 		for(my $i=1; $i<@plane; $i++) {
 			$plane[$i]=utils::plane($plane[$i]);
@@ -10446,18 +10486,25 @@ core protecting the flag.
 			join('', grep(utils::is_blue($_), @plane)),
 		);
 
-		$planes->{$tuple}=$plane[0];
-
-		stash::set('planes', map::name, 'map', $planes);
-		chat::all(map::name, 'Added plane restriction:', @plane);
+		if($plane) {
+			$planes->{$tuple}=$plane[0];
+			stash::set('planes', map::name, 'map', $planes);
+			chat::all(map::name, 'Added plane restriction:', @plane);
+		} else {
+			$bots->{$tuple}=$plane[0];
+			stash::set('bots', map::name, 'map', $bots);
+			chat::all(map::name, 'Added bot restriction:', @plane);
+		}
 	},
 
 	'del plane'	=> sub {
 		my($e, $p, @plane)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
+		my($bots)=stash::get('bots', map::name, 'map');
+		my($plane)=1;
 		my($tuple);
 
-		unless($planes) {
+		unless(ref($planes) || ref($bots)) {
 			chat::whisper($p, 'There are no plane restrictions');
 			return;
 		}
@@ -10468,10 +10515,18 @@ core protecting the flag.
 			return;
 		}
 
+		if($plane[0] eq '=') {
+			shift(@plane);
+			$plane=0;
+		}
+
 		if($plane[0] eq '+' || $plane[0] eq '-') {
 			shift(@plane);
 		}
 
+		if($plane[0]=~s/^=//) {
+			$plane=0;
+		};
 		$plane[0]=~s/^[+-]//;
 
 		$plane[0]=utils::plane($plane[0]);
@@ -10489,7 +10544,7 @@ core protecting the flag.
 			join('', grep(utils::is_blue($_), @plane)),
 		);
 
-		if(exists($planes->{$tuple})) {
+		if($plane && exists($planes->{$tuple})) {
 			delete($planes->{$tuple});
 			if(%$planes) {
 				stash::set('planes', map::name, 'map', $planes);
@@ -10497,6 +10552,15 @@ core protecting the flag.
 			} else {
 				stash::delete('planes', map::name, 'map');
 				chat::all('Plane enforcement for', map::name, 'is disabled');
+			}
+		} elsif(!$plane && exists($bots->{$tuple})) {
+			delete($bots->{$tuple});
+			if(%$bots) {
+				stash::set('bots', map::name, 'map', $bots);
+				chat::all(map::name, 'Removed bot restriction:', @plane);
+			} else {
+				stash::delete('bots', map::name, 'map');
+				chat::all('Bot override for', map::name, 'is disabled');
 			}
 		} else {
 			chat::all(map::name, 'Could not find restriction:', @plane);
