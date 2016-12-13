@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.94';
+my($VERSION)='3.95';
 
 =head1 NAME
 
@@ -1398,7 +1398,7 @@ L<perl(1)> should be used to ensure basic operation.
 
 		s/no green.*/No Green Perk/i;
 		s/rubber.*/Rubberized Hull/i;
-		s/ha.*/Heavy Armor/i;
+		s/^ha$/Heavy Armor/i;
 		s/.*armor/Heavy Armor/i;
 		s/repair.*/Repair Drone/i;
 		s/flex.*/Flexible Wings/i;
@@ -1415,29 +1415,29 @@ L<perl(1)> should be used to ensure basic operation.
 		local($_)=@_;
 
 		s/track.*/Tracker/i;
-		s/df.*/Double Fire/i;
+		s/^df$/Double Fire/i;
 		s/double.*/Double Fire/i;
 		s/acid.*/Acid Bomb/i;
 
 		s/sup.*/Suppressor/i;
-		s/.*[db]omb.*/Bombs/i;
-		s/flak/Flak Tailgun/i;
+		s/.*[db]ombs/Bombs/i;
+		s/flak.*/Flak Tailgun/i;
 
 		s/direct.*/Director/i;
 		s/thermo.*/Thermobarics/i;
 		s/remote.*/Remote Mine/i;
-		s/rm.*/Remote Mine/i;
+		s/^rm.*/Remote Mine/i;
 
 		s/dog.*/Dogfighter/i;
 		s/recoil.*/Recoilless Gun/i;
-		s/hc.*/Heavy Cannon/i;
+		s/^hc$/Heavy Cannon/i;
 		s/.*cannon/Heavy Cannon/i;
 
 		s/trick.*/Trickster/i;
 		s/laser/Laser/i;
 		s/time.*/Time Anchor/i;
 		s/.*anchor/Time Anchor/i;
-		s/ta.*/Time Anchor/i;
+		s/^ta$/Time Anchor/i;
 
 		return($_);
 	}
@@ -7369,23 +7369,6 @@ play though extended interfaces and server support.
 		}
 	}
 
-	sub plane_check {
-		my($p)=@_;
-		my($planes)=stash::get('planes', map::name, 'map');
-		my($setup)=join(',', @$p{'plane','perkRed', 'perkGreen','perkBlue'});
-
-		return(1) unless(%Planes);
-
-		if(exists($Planes{$setup})) {
-			return(1);
-		} else {
-			chat::whisper($p, 'Plane restricitons:', join(', ',
-				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
-			));
-			return(0);
-		}
-	}
-
 	sub next_bot {
 		my(@keys);
 
@@ -7402,6 +7385,80 @@ play though extended interfaces and server support.
 
 	sub any_bot {
 		server::send('botPlaneRandom') if(xx::enabled);
+	}
+
+	sub build_planes {
+		my($planes)=stash::get('planes', map::name, 'map');
+		my($bots)=stash::get('bots', map::name, 'map');
+		my(%setups)=utils::all_setups;
+
+		%Planes=();
+		%Bots=();
+
+		if(ref($planes)) {
+			foreach my $planere (keys(%$planes)) {
+				next unless($planes->{$planere} eq '+');
+
+				$planere=~s/^,/.*,/;
+				$planere=~s/,$/,.*/;
+				1 while($planere=~s/,,/,.*,/);
+
+				foreach my $setup (grep(m/$planere/, keys(%setups))) {
+					$Planes{$setup}=1;
+				}
+			}
+
+			unless(%Planes) {
+				%Planes=%setups;
+			}
+
+			foreach my $planere (keys(%$planes)) {
+				next unless($planes->{$planere} eq '-');
+
+				$planere=~s/^,/.*,/;
+				$planere=~s/,$/,.*/;
+				1 while($planere=~s/,,/,.*,/);
+
+				foreach my $setup (grep(m/$planere/, keys(%setups))) {
+					delete($Planes{$setup});
+				}
+			}
+		}
+
+		if(ref($bots)) {
+			foreach my $planere (keys(%$bots)) {
+				next unless($bots->{$planere} eq '=');
+
+				$planere=~s/^,/.*,/;
+				$planere=~s/,$/,.*/;
+				1 while($planere=~s/,,/,.*,/);
+
+				foreach my $setup (grep(m/$planere/, keys(%setups))) {
+					$Bots{$setup}=1;
+				}
+			}
+		}
+
+		if(%Bots || %Planes) {
+			&next_bot;
+		}
+	}
+
+	sub plane_check {
+		my($p)=@_;
+		my($planes)=stash::get('planes', map::name, 'map');
+		my($setup)=join(',', @$p{'plane','perkRed', 'perkGreen','perkBlue'});
+
+		return(1) unless(%Planes);
+
+		if(exists($Planes{$setup})) {
+			return(1);
+		} else {
+			chat::whisper($p, 'Plane restricitons:', join(', ',
+				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
+			));
+			return(0);
+		}
 	}
 
 	sub restart_clear {
@@ -8158,14 +8215,9 @@ play though extended interfaces and server support.
 	sub new {
 		my(@teams)=map::teams;
 		my($assign)=stash::get('assignTeam', map::name, 'map');
-		my($planes)=stash::get('planes', map::name, 'map');
-		my($bots)=stash::get('bots', map::name, 'map');
-		my(%setups)=utils::all_setups;
 
 		%Stats=();
 		%Reset=();
-		%Planes=();
-		%Bots=();
 		$Hunted=undef;
 		$Active=0;
 		$Captured=0;
@@ -8178,47 +8230,7 @@ play though extended interfaces and server support.
 		&restart_clear;
 		&round;
 
-		if(ref($planes)) {
-			foreach my $planere (keys(%$planes)) {
-				next unless($planes->{$planere} eq '+');
-
-				$planere=~s/^,/.*,/;
-				$planere=~s/,$/,.*/;
-				1 while($planere=~s/,,/,.*,/);
-
-				foreach my $setup (grep(m/$planere/, keys(%setups))) {
-					$Planes{$setup}=1;
-				}
-			}
-
-			unless(%Planes) {
-				%Planes=%setups;
-			}
-
-			foreach my $planere (keys(%$planes)) {
-				next unless($planes->{$planere} eq '-');
-
-				$planere=~s/^,/.*,/;
-				$planere=~s/,$/,.*/;
-				1 while($planere=~s/,,/,.*,/);
-
-				foreach my $setup (grep(m/$planere/, keys(%setups))) {
-					delete($Planes{$setup});
-				}
-			}
-
-			foreach my $planere (keys(%$planes)) {
-				next unless($planes->{$planere} eq '=');
-
-				$planere=~s/^,/.*,/;
-				$planere=~s/,$/,.*/;
-				1 while($planere=~s/,,/,.*,/);
-
-				foreach my $setup (grep(m/$planere/, keys(%setups))) {
-					$Bots{$setup}=1;
-				}
-			}
-		}
+		&build_planes;
 
 		if(map::type('ruin')) {
 			foreach my $mine (0, 1) {
@@ -8238,7 +8250,7 @@ play though extended interfaces and server support.
 			my($health)=stash::get('spawnHealth', map::name, 'map');
 			my($weapons)=stash::get('weapons', map::name, 'map');
 			my($planes)=stash::get('planes', map::name, 'map');
-			my($bip)={'Biplane,,Heavy Cannon,' => '+'};
+			my($bip)={'Biplane,Heavy Cannon,,' => '+'};
 
 			stash::set('spawnHealth', map::name, 'map', 1) unless($health);
 			stash::set('weapons', map::name, 'map', 2) unless($weapons);
@@ -10423,7 +10435,7 @@ core protecting the flag.
 				$planes={} unless(ref($planes));
 				$planes->{"$plane,,,"}='+';
 			}
-			stash::set('planes', map::name, 'map', $planes);
+			stash::set('planes', map::name, 'map', $planes) if(ref($planes));
 		}
 
 		if(ref($planes) eq 'HASH') {
@@ -10456,7 +10468,7 @@ core protecting the flag.
 				$planes={} unless(ref($planes));
 				$planes->{"$plane,,,"}='+';
 			}
-			stash::set('planes', map::name, 'map', $planes);
+			stash::set('planes', map::name, 'map', $planes) if(ref($planes));
 		}
 
 		if($plane[0]=~m/all|none/i) {
@@ -10474,27 +10486,29 @@ core protecting the flag.
 
 		for(my $i=1; $i<@plane; $i++) {
 			$plane[$i]=utils::plane($plane[$i]);
-			$plane[$i]=utils::green($plane[$i]);
 			$plane[$i]=utils::red($plane[$i]);
+			$plane[$i]=utils::green($plane[$i]);
 			$plane[$i]=utils::blue($plane[$i]);
 		}
 
 		$tuple=join(',',
 			join('', grep(utils::is_plane($_), @plane)),
-			join('', grep(utils::is_green($_), @plane)),
 			join('', grep(utils::is_red($_), @plane)),
+			join('', grep(utils::is_green($_), @plane)),
 			join('', grep(utils::is_blue($_), @plane)),
 		);
 
 		if($plane) {
 			$planes->{$tuple}=$plane[0];
-			stash::set('planes', map::name, 'map', $planes);
+			stash::set('planes', map::name, 'map', $planes) if(ref($planes));
 			chat::all(map::name, 'Added plane restriction:', @plane);
 		} else {
 			$bots->{$tuple}=$plane[0];
-			stash::set('bots', map::name, 'map', $bots);
+			stash::set('bots', map::name, 'map', $bots) if(ref($bots));
 			chat::all(map::name, 'Added bot restriction:', @plane);
 		}
+
+		plus::build_planes;
 	},
 
 	'del plane'	=> sub {
@@ -10532,15 +10546,15 @@ core protecting the flag.
 		$plane[0]=utils::plane($plane[0]);
 
 		for(my $i=1; $i<@plane; $i++) {
-			$plane[$i]=utils::green($plane[$i]);
 			$plane[$i]=utils::red($plane[$i]);
+			$plane[$i]=utils::green($plane[$i]);
 			$plane[$i]=utils::blue($plane[$i]);
 		}
 
 		$tuple=join(',',
 			join('', grep(utils::is_plane($_), @plane)),
-			join('', grep(utils::is_green($_), @plane)),
 			join('', grep(utils::is_red($_), @plane)),
+			join('', grep(utils::is_green($_), @plane)),
 			join('', grep(utils::is_blue($_), @plane)),
 		);
 
@@ -10565,6 +10579,8 @@ core protecting the flag.
 		} else {
 			chat::all(map::name, 'Could not find restriction:', @plane);
 		}
+
+		plus::build_planes;
 	},
 
 	'help ballScore'	=> sub {
