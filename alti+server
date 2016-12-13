@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.95';
+my($VERSION)='3.96';
 
 =head1 NAME
 
@@ -515,7 +515,7 @@ delete($ENV{'COLUMNS'});
 
 	sub slog {
 		my($slog)=IO::Handle->new;
-		my($entry)=join(' ', @_);
+		my($entry)=join(' ', map({ (ref($_))?(json::encode($_)):($_) } @_));
 
 		chomp($entry);
 
@@ -8697,6 +8697,8 @@ sub event {
 
 	if($event->{'group'} eq 'server') {
 		$player=player::server;
+	} elsif($event->{'source'} eq '00000000-0000-0000-0000-000000000000') {
+		$player=player::server;
 	} else {
 		$player=player::event_search($event);
 	}
@@ -9086,7 +9088,9 @@ core protecting the flag.
 
 		return unless(xx::enabled);
 
-		if($time=~m/^[+-]/) {
+		if($time eq '') {
+			server::send('getTime');
+		} elsif($time=~m/^[+-]/) {
 			server::trigger('getTime', 'deltaTime', $e, $p);
 		} else {
 			if($time=~m/(\d+):(\d+)/) {
@@ -9126,14 +9130,14 @@ core protecting the flag.
 	
 	'getTime' => sub {
 		my($e, $p)=@_;
+		my($limit, $used)=map::timer;
 		my($timer);
 
 		return unless(exists($e->{'roundTimeTicks'}));
 
-		$timer=$e->{'roundTimeTicks'}/30;
+		$timer=$limit - $e->{'roundTimeTicks'}/30;
 
-		#chat::whisperf($p, '%d:%02d', $timer/60, $timer%60);
-		chat::whisperf(player::server, '%d:%02d', $timer/60, $timer%60);
+		chat::whisperf($p, '%d:%02d', $timer/60, $timer%60);
 	},
 
 	'del'		=> sub {
