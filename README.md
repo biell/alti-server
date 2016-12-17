@@ -53,7 +53,7 @@ checkpoint names.
 
 A to B races would also be easy, with checkpoints along the way, and the
 6th checkpoint at the end.  If a final (winning) checkpoint is all that
-is desired in an A to B, then setting `/set ballScore -1 -1` would also
+is desired in an A to B, then setting `/set score -1 -1` would also
 help accomplish this game type.
 
 Records will be kept for races.  For races where each team has a single
@@ -267,10 +267,17 @@ manage Alti+ game maps.
     default behaviour.  For a list of
     settings, see the `/set` commands below.
 
-  * **/set ballScore [left] [right]**<br>
-    Set the initial ball score for *ball* mode games to `left` and `right`.
+  * **/set score [left] [right]**<br>
+    Set the initial score for *ball* mode games to `left` and `right`.
     These values must be integers.  If they are negative, then that value
     will be subtracted from the winning score value.
+
+    Set the winning score for *tdm* and *1dm* game modes to `left` and `right`.
+    These values must be integers, they should always be positive for games
+    of this mode.  This is necessary in game `race` types to set the winning
+    score, which should be a count of checkpoints, not laps.  This is
+    also helpful for regular tdm matches where you wish to either set
+    a mercy rule or just end after a certain number of kills.
 
   * **/set assignTeam [left|right|none]**<br>
     Specify that players must join either the `left` or `right` team,
