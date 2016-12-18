@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.97';
+my($VERSION)='3.98';
 
 =head1 NAME
 
@@ -7169,7 +7169,7 @@ interface.
 
 		if(map::mode('ball')) {
 			server::send('overrideBallScore', $left, $right);
-		} elsif(map::mode('tdm', '1dm') && xx::enabled) {
+		} elsif(map::mode('tdm') && xx::enabled) {
 			server::send('overrideTdmScore', $left, $right);
 		}
 	}
@@ -7310,7 +7310,7 @@ interface.
 			} elsif($Score[1]>=$goals) {
 				return(map::right);
 			}
-		} elsif(map::mode('tdm', '1dm') && xx::enabled) {
+		} elsif(map::mode('tdm') && xx::enabled) {
 			if($Score[0]>=$win->[0]) {
 				return(map::left);
 			} elsif($Score[1]>=$win->[1]) {
@@ -7374,18 +7374,16 @@ play though extended interfaces and server support.
 			if($score[0] >= $goals) {
 				$Stats{'winner'}='left';
 				records::winner($p);
-			}
-			if($score[1] >= $goals) {
+			} elsif($score[1] >= $goals) {
 				$Stats{'winner'}='right';
 				records::winner($p);
 			}
-		} elsif(map::mode('tdm', '1dm') && xx::enabled) {
-			if($score[0] >= $win->[0]) {
+		} elsif(map::mode('tdm') && xx::enabled) {
+			if($win->[0] > 0 && $score[0] >= $win->[0]) {
 				$Stats{'winner'}='left';
 				records::winner($p);
 				xx::set_time(0);
-			}
-			if($score[1] >= $win->[1]) {
+			} elsif($win->[1] > 0 && $score[1] >= $win->[1]) {
 				$Stats{'winner'}='right';
 				records::winner($p);
 				xx::set_time(0);
@@ -7810,7 +7808,7 @@ play though extended interfaces and server support.
 		return unless(map::mode('ball', 'tdm'));
 		return if(&game_over);
 
-		if(map::mode('tdm', '1dm')) {
+		if(map::mode('tdm')) {
 			$count=List::Util::max(@{stash::get('score', map::name, 'map')});
 		}
 
@@ -10671,7 +10669,7 @@ core protecting the flag.
 		my($goals)=$config::Launcher{'goals'};
 		my($l, $r);
 
-		return unless(map::mode('ball', 'tdm', '1dm'));
+		return unless(map::mode('ball', 'tdm'));
 
 		if($scores && map::mode('ball') && !race::on) {
 			($l, $r)=@$scores;
@@ -10679,7 +10677,7 @@ core protecting the flag.
 			$r=$goals+$r if($r<0);
 			ball::update_score($l, $r);
 			ball::set_score($l, $r);
-		} elsif(map::mode('tdm', '1dm')) {
+		} elsif(map::mode('tdm')) {
 			chat::all('score:', @$scores);
 		} else {
 			ball::update_score(0, 0);
@@ -10691,14 +10689,14 @@ core protecting the flag.
 		my($e, $p, $l, $r)=@_;
 		my($goals)=$config::Launcher{'goals'};
 
-		return unless(map::mode('ball', 'tdm', '1dm'));
+		return unless(map::mode('ball', 'tdm'));
 
 		if(map::mode('ball') && ( $l<=-$goals || $r<=-$goals || $goals<=$l || $goals<=$r )) {
 			chat::whisper($p, "Invalid goal #, must be between -$goals and $goals");
 		} elsif($l==0 && $r==0) {
 			chat::whisper($p, "Initial score returned to normal for next round");
 			stash::delete('score', map::name, 'map');
-		} elsif(map::mode('tdm', '1dm')) {
+		} elsif(map::mode('tdm')) {
 			chat::whisper($p, "Winning score set to $l, $r");
 			stash::set('score', map::name, 'map', [$l, $r]);
 		} else {
@@ -12631,11 +12629,11 @@ core protecting the flag.
 		$is_crash=1 if($e->{'player'}==-1 && $e->{'source'} eq 'plane');
 
 		if($p) {
-			if(map::mode('tdm', '1dm')) {
+			if(map::mode('tdm')) {
 				if(map::type('race')) {
 					ball::score;
-				} else {
-					ball::goal($e, $p);
+				} elsif($v && $v->{'team'} != $p->{'team'}) {
+					plus::score($p);
 					rank::score($p->{'team'}, 1);
 				}
 			}
