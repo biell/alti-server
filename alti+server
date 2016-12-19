@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='3.98';
+my($VERSION)='3.99';
 
 =head1 NAME
 
@@ -4311,10 +4311,10 @@ directly with it to manage the instance.
 
 		chdir($INSTALL_ROOT);
 
-		until(utils::ping($nimbly)) {
-			ui::slog('Cannot contact updateServer', $nimbly);
-			sleep(60);
-		}
+		#until(utils::ping($nimbly)) {
+		#	ui::slog('Cannot contact updateServer', $nimbly);
+		#	sleep(60);
+		#}
 
 		$Launcher_pid=open($Server, '-|:unix', './server_launcher', '-noui');
 		$Server->autoflush(1);
@@ -13846,6 +13846,7 @@ while(1) {
 						exit(1);
 					}
 				}
+
 
 				ui::save_log;
 				server::save_log;
