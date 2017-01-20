@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.00';
+my($VERSION)='4.01';
 
 =head1 NAME
 
@@ -339,6 +339,7 @@ delete($ENV{'COLUMNS'});
 {	package ui;
 
 	use Curses;
+	use Carp;
 	use Term::ReadKey;
 
 	initscr();
@@ -537,6 +538,10 @@ delete($ENV{'COLUMNS'});
 			&refresh_swin;
 			$Iput->refresh();
 		}
+	}
+
+	sub trace {
+		&slog(time(), '(', @_, ')', Carp::longmess());
 	}
 
 	sub save_log {
@@ -1282,6 +1287,26 @@ L<perl(1)> should be used to ensure basic operation.
 		} else {
 			return(POSIX::strftime("%Y-%m-%d", gmtime($time)));
 		}
+	}
+
+	sub timer {
+		my($time, $sign)=@_;
+
+		if($time=~m/^(-|\+)?(\d+):(\d+)$/) {
+			$time=$2*60+$3;
+			$time*=-1 if($1 eq '-');
+		}
+
+		if($time<0) {
+			$sign='-';
+			$time=abs($time);
+		} elsif($sign) {
+			$sign='+';
+		} else {
+			$sign='';
+		}
+
+		return(sprintf("$sign%d:%02d", $time/60, $time%60));
 	}
 
 	sub secs2mins {
@@ -3386,6 +3411,11 @@ garunteed to keep the format correct.
 
 		return unless(&enabled);
 
+		if($change=~m/(-|\+)?(\d+):(\d+)$/) {
+			$change=$2*60+$3;
+			$change*=-1 if($1 eq '-');
+		}
+
 		server::send('setTime', 30 * List::Util::max(0, int($limit-$change)));
 	}
 
@@ -4020,7 +4050,7 @@ them to the AltBouncer system.
 		my($log)=IO::Handle->new;
 		my($time)=time()*1000;
 
-		rename($Seenlog, $Seenlog_o) if(-s $Seenlog > 262144);
+		rename($Seenlog, $Seenlog_o) if(-s $Seenlog > $ROLL_LOGS);
 		open($log, '>>', $Seenlog);
 		print $log join(',', $time, @$p{'vaporId','ip','nickname'}), "\n";
 		close($log);
@@ -4046,6 +4076,10 @@ them to the AltBouncer system.
 		my($time, $vid, $ip, $nick);
 
 		open($log, '<', $Seenlog);
+
+		if(seek($log, -262144, 2)) {
+			$log->getline;
+		}
 
 		while(<$log>) {
 			($time, $vid, $ip, $nick)=m/^(\d+),([\da-f-]+),([\d.:]+),(.+)$/;
@@ -8337,13 +8371,15 @@ play though extended interfaces and server support.
 					foreach my $racer (race::list) {
 						plus::assign($racer, $assign);
 					}	
-				} $config::Launcher{'warmup'}{map::mode}/4;
+				} $config::Launcher{'warmup'}{map::mode}/4-1;
 			}
 		} elsif(map::type('coop')) {
 			if($assign) {
 				queue::schedule {
 					foreach my $player (player::list('both')) {
-						plus::assign($player, $assign);
+						unless(map::team($player, $assign)) {
+							plus::assign($player, $assign);
+						}
 					}
 				} $config::Launcher{'warmup'}{map::mode}-4;
 			}
@@ -9190,7 +9226,7 @@ core protecting the flag.
 
 		$timer=$limit - $e->{'roundTimeTicks'}/30;
 
-		chat::whisperf($p, '%d:%02d', $timer/60, $timer%60);
+		chat::whisperf($p, utils::timer($timer));
 	},
 
 	'del'		=> sub {
@@ -9493,6 +9529,8 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($nick)=shift(@{$e->{'arguments'}});
 		our($kicker, $kickee);
+
+		log::record(1);
 
 		records::help($p, -100);
 
@@ -11006,8 +11044,8 @@ core protecting the flag.
 		chat::whisper($p, 'Manage map records');
 		chat::whisper($p, '/list records');
 		chat::whisper($p, '/del record <time>');
-		chat::whisper($p, '/set record <none|round|plant>');
-		chat::whisper($p, '/unset record');
+		#chat::whisper($p, '/set record <none|round|plant>');
+		#chat::whisper($p, '/unset record');
 	},
 
 	'list records'	=> sub {
@@ -11685,7 +11723,7 @@ core protecting the flag.
 		chat::whisper($p, 'Mark a powerup special to the game type (e.g. flag or race)');
 		chat::whisper($p, '/list powerups');
 		chat::whisper($p, '/add powerup <name> <team> <x>,<y>');
-		chat::whisper($p, '/del powerup <name> <team> <x>,<y>');
+		chat::whisper($p, '/del powerup <team> <x>,<y>');
 	},
 
 	'list powerups'	=> sub {
@@ -11764,7 +11802,119 @@ core protecting the flag.
 			}
 		}
 	},
-	
+
+	'help timer'	=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, 'Set the starting timer or mark a powerup to change the timer');
+		chat::whisper($p, '  This feature requires the "xx" server patches');
+		chat::whisper($p, '/list timer');
+		chat::whisper($p, '/set timer <#:##>');
+		chat::whisper($p, '/unset timer');
+		chat::whisper($p, '/add timer <[+|-]#:##> <team> <x>,<y>');
+		chat::whisper($p, '/del timer <team> <x>,<y>');
+	},
+
+	'list timer'	=> sub {
+		my($e, $p)=@_;
+		my($timers)=stash::get('timers', map::name, 'map');
+		my($team);
+
+		unless(ref($timers) eq 'HASH') {
+			chat::whisper($p, 'No timer settings');
+			return;
+		}
+
+		if(exists($timers->{'start'})) {
+			chat::whisper($p, 'Start timer:',
+				utils::timer($timers->{'start'}));
+		}
+
+		if($e->{'admin'} || team::left($p->{'team'})) {
+			$team=$timers->{team::left()};
+			foreach my $timer (sort(keys(%$team))) {
+				chat::whisper($p, $timer, ':',
+					utils::timer($team->{$timer}, 1));
+			}
+		} elsif($e->{'admin'} || team::right($p->{'team'})) {
+			$team=$timers->{team::right()};
+			foreach my $timer (sort(keys(%$team))) {
+				chat::whisper($p, $timer, ':',
+					utils::timer($team->{$timer}, 1));
+			}
+		}
+	},
+
+	'list timers'	=> sub {
+		$HOOKS{'list timer'}->(@_);
+	},
+
+	'set timer'	=> sub {
+		my($e, $p, $time)=@_;
+
+		if($time) {
+			stash::set('start', 'timers', map::name, 'map', $time);
+			chat::whisper($p, 'Starting timer set to:', utils::timer($time));
+		} else {
+			stash::delete('start', 'timers', map::name, 'map');
+			chat::whisper($p, 'Starting timer set to default');
+		}
+	},
+
+	'unset timer'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('start', 'timers', map::name, 'map');
+		chat::whisper($p, 'Starting timer set to default');
+	},
+
+	'add timer'	=> sub {
+		my($e, $p, $time, $team, $px, $py)=@_;
+		my($color);
+
+		$team='*' unless($team);
+
+		if(map::left($team)) {
+			$color=map::team_color('left');
+			stash::set("$px,$py", map::left, 'timers', map::name, 'map', $time);
+			chat::all("Added left ($color) timer:", $time, "($px,$py)");
+		}
+
+		if(map::right($team)) {
+			$color=map::team_color('right');
+			stash::set("$px,$py", map::right, 'timers', map::name, 'map', $time);
+			chat::all("Added right ($color) timer:", $time, "($px,$py)");
+		}
+	},
+
+	'del timer'	=> sub {
+		my($e, $p, $team, $px, $py)=@_;
+		my($timer);
+		my($color);
+
+		$team='*' unless($team);
+
+		if(map::left($team)) {
+			$color=map::team_color('left');
+			$timer=stash::get("$px,$py", map::left, 'timers', map::name, 'map');
+			if(stash::delete("$px,$py", map::left, 'timers', map::name, 'map')) {
+				chat::all("Deleted left ($color) timer:", $timer, "($px,$py)");
+			} else {
+				chat::whisper($p, 'No left timer at', "$px,$py");
+			}
+		}
+
+		if(map::right($team)) {
+			$color=map::team_color('right');
+			$timer=stash::get("$px,$py", map::right, 'timers', map::name, 'map');
+			if(stash::delete("$px,$py", map::right, 'timers', map::name, 'map')) {
+				chat::all("Deleted right ($color) timer:", $timer, "($px,$py)");
+			} else {
+				chat::whisper($p, 'No right timer at', "$px,$py");
+			}
+		}
+	},
+
 	'prey'		=> sub {
 		my($e, $p)=@_;
 		my($nick)=@{$e->{'arguments'}};
@@ -12199,6 +12349,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
+		my($timers)=stash::get('timers', map::name, 'map');
 		my(@records)=split(m/\W+/, config::option('recordsTypes'));
 		my($match);
 
@@ -12255,6 +12406,10 @@ core protecting the flag.
 			} else {
 				records::mark($e) if(map::type(@records));
 				race::mark($e);
+
+				if($timers->{'start'}) {
+					xx::set_time($timers->{'start'});
+				}
 			}
 		}
 
@@ -12435,6 +12590,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
+		my($timers)=stash::get($p->{'team'}, 'timers', map::name, 'map');
 		my($spawn)=$p->{'stats'}{'spawns'}[-1];
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my(@fake_event)=();
@@ -12446,6 +12602,10 @@ core protecting the flag.
 
 		if(map::type('race') && plus::checkpoint($e, $p)) {
 			server::trigger('logPlanePositions', 'checkpoint', $e, $p)
+		}
+
+		if($timers && $timers->{$pickup} && xx::enabled) {
+			server::send('timer', $timers->{$pickup});
 		}
 
 		plus::divert($e, $p);

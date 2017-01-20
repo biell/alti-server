@@ -503,8 +503,25 @@ manage Alti+ game maps.
     *gameType* is set to `flag`, then the team which picks up the powerup
     earns a goal, and the players respawn.
 
-  * **/del powerup [name] [team]**<br>
-    Delete the special powerup `name` for `team`.
+  * **/del powerup [team] [x],[y]**<br>
+    Delete the special powerup ``team` at `x`,`y`.
+
+  * **/set timer [#:##]**<br>
+    Set the initial timer to be `#:##`, instead of the default server setting.
+    This setting only works if the `xx` server patches are applied, and the
+    time is less than the server default.
+
+  * **/unset timer**<br>
+    Unset the default timer overload and return to default behaviour
+    of using the server's setting.
+
+  * **/add timer [+|-#:##] [team] [x],[y]**<br>
+    Add a timer update to the powerup at `x`,`y`.  This timer should start
+    with a plus `+` or minus `-` to indicate if the timer should go up
+    or down.  `team` can be specified as with powerups.
+
+  * **/del timer [team] [x],[y]**<br>
+    Delete the timer for `team` at `x`,`y`.
 
   * **/add note [x],[y] [message text]**<br>
     Create a message associated with the powerup at coordinates `x`,`y`.
