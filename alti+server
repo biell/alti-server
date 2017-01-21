@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.03';
+my($VERSION)='4.04';
 
 =head1 NAME
 
@@ -8711,14 +8711,14 @@ automatically loaded.
 
 All scripts are loaded and run in the B<alti+server> runtime, there are
 B<ZERO> protections.  This is necessary to ensure scripts can interact
-fully with the server code.  A hash named C<%State> should be used to
+fully with the server code.  A block labeled C<HOOKS> should be used to
 keep state between calls to hooks.
 
 A script is actually a perl hash definition which contains hooks for
 events which will be thrown by the server.  So, your file would look like:
 
   #pretend people care about having player ID 0:
-  my %cool_script = (
+  HOOKS {
       'clientAdd' => sub {
           my($e, $p)=@_;
 
@@ -8732,7 +8732,7 @@ events which will be thrown by the server.  So, your file would look like:
           chat::all('player ID 0 is free, disconnect and reconnect to get it!')
               if($p->{'id'}==0);
 	 },
-  );
+  };
 
 By default, these hooks
 will be executed after the server has internally serviced each hook.
@@ -8754,7 +8754,6 @@ or C<:post> string at the end of your hook name (e.g. C<clientRemove:pre>).
 	mkdir($Sdir, 0750) unless(-d $Sdir);
 
 	sub HOOKS {
-		ui::slog($Name);
 		my($script_hooks)=$_[0];
 
 		return(undef) unless(ref($script_hooks) eq 'HASH');
