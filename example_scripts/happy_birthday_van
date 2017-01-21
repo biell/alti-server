@@ -1,6 +1,6 @@
 #Say happy birthday when Van enters on his birthday
 
-my %happy_birthday_van = (
+HOOKS {
 	'clientAdd' => sub {
 		my($e, $p)=@_;
 		my(@today)=gmtime(time);
@@ -16,4 +16,4 @@ my %happy_birthday_van = (
 		queue::schedule { chat::all('Happy Birthday dear Van') } 5;
 		queue::schedule { chat::all('Happy Birthday to you')   } 6;
 	},
-);
+};

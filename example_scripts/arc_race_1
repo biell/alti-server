@@ -1,7 +1,7 @@
 #Start ARC Race 1 when all players are on-line
 #If it is 15 minutes past the hour and at least 2 players are on-line, start
 
-my %arc_race_1 = (
+HOOKS {
 	'mapChange'	=> sub {
 		$State{'arc_race_1'}={};
 	},
@@ -41,4 +41,4 @@ my %arc_race_1 = (
 			queue::schedule { server::send('raceStart'); } 20;
 		}
 	},
-);
+};

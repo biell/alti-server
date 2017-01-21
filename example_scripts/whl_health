@@ -20,7 +20,7 @@ sub set_health {
 		}
 }
 
-my %whl_health = (
+HOOKS {
 	'mapChange'	=> sub {
 		return unless(map::name('ball_whl'));
 
@@ -36,4 +36,4 @@ my %whl_health = (
 
 		&set_health;
 	},
-);
+};

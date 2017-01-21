@@ -4,7 +4,7 @@ my($LEVEL)=30;
 my($SERVER)='46.101.20.237:27279';
 my($ENTRY)='';
 
-my %newbie_training = (
+HOOKS {
 	'clientAdd' => sub {
 		my($e, $p)=@_;
 
@@ -13,4 +13,4 @@ my %newbie_training = (
 				$p->{'nickname'}, $SERVER, $ENTRY);
 		}
 	},
-);
+};

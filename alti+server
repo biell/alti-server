@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.02';
+my($VERSION)='4.03';
 
 =head1 NAME
 
@@ -8749,34 +8749,51 @@ or C<:post> string at the end of your hook name (e.g. C<clientRemove:pre>).
 	my(%Script)=();
 	my(@Scripts)=();
 	my($Sdir)="$INSTALL_ROOT/servers/alti+scripts";
+	my($Name)=undef;
 
 	mkdir($Sdir, 0750) unless(-d $Sdir);
+
+	sub HOOKS {
+		ui::slog($Name);
+		my($script_hooks)=$_[0];
+
+		return(undef) unless(ref($script_hooks) eq 'HASH');
+		return(undef) unless(%$script_hooks);
+
+		foreach my $hook_key (keys(%$script_hooks)) {
+			if($hook_key=~m/:/) {
+				$Script{$Name}{$hook_key}=$script_hooks->{$hook_key};
+			} else {
+				$Script{$Name}{"$hook_key:post"}=$script_hooks->{$hook_key};
+			}
+		}
+
+		return(1);
+	}
+
+	sub hooks {
+		&HOOKS(@_);
+	}
 
 	sub install {
 		my($script)=IO::Handle->new;
 		my(%script_hooks)=();
-		my($name);
 		local($/)=undef;
 
 		foreach my $file (<$Sdir/*>) {
 			next unless(-r $file);
 			
-			$name=basename($file);
+			$Name=basename($file);
 
 			open($script, '<', $file);
-			if(%script_hooks=eval(<$script>)) {
-				foreach my $hook_key (keys(%script_hooks)) {
-					if($hook_key=~m/:/) {
-						$Script{$name}{$hook_key}=$script_hooks{$hook_key};
-					} else {
-						$Script{$name}{"$hook_key:post"}=$script_hooks{$hook_key};
-					}
-				}
-				ui::slog("Loaded script: $name");
+			if(eval(<$script>)) {
+				ui::slog("Loaded script: $Name");
 			} else {
-				ui::slog("Failed to load script $name:", $@);
+				ui::slog("Failed to load script $Name:", $@);
 			}
+			close($script);
 
+			$Name=undef;
 		}
 
 		@Scripts=sort(keys(%Script));
