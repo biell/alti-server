@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.01';
+my($VERSION)='4.02';
 
 =head1 NAME
 
@@ -810,8 +810,11 @@ list.
 				ui::flash();
 				return('/'.join(' ', @cmd, $str));
 			} elsif($str ne $prefix) {
+				if($prefix=~m/\s/) {
+					$prefix=~s/^/"/;
+					$prefix=~s/$/"/ if(@Clist==1);
+				}
 				@Clist=();
-				$prefix=~s/^/"/ if($prefix=~m/\s/);
 				return('/'.join(' ', @cmd, $prefix));
 			} else {
 				ui::slog('Choices:', @Clist) if(@Clist>1);
@@ -2651,7 +2654,15 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	sub commands {
 		my($re)=@_;
-		grep(m|^\Q$re|i, keys(%Commands));
+		my(@commands)=grep(m|^\Q$re|i, keys(%Commands));
+
+		if(wantarray) {
+			return(@commands);
+		} elsif(@commands==1) {
+			return($commands[0]);
+		} else {
+			return($re);
+		}
 	}
 
 	sub arguments {
@@ -4506,6 +4517,7 @@ directly with it to manage the instance.
 			push(@cmd, $1 // $2 // $3);
 		}
 
+		$cmd[0]=config::commands($cmd[0]);
 		return(@cmd);
 	}
 
@@ -5700,6 +5712,11 @@ is updated with them as the games progress.
 		my($team)=@_;
 		my($left)=scalar(grep(map::left($_->{'team'}), @Players));
 		my($right)=scalar(grep(map::right($_->{'team'}), @Players));
+		my($competition)=player::count()/$config::Maxp;
+
+		if(map::type('coop')) {
+			return( 1.33 - ($left+$right)/$config::Maxp );
+		}
 
 		return(0) unless($left && $right);
 
@@ -6035,6 +6052,7 @@ they make the top 5.
 	my($Start)=0;
 	my($Winner)=undef;
 	my($Destroy)=undef;
+	my($First)=600;
 
 
 	sub fmt_record {
@@ -6372,10 +6390,30 @@ they make the top 5.
 		stash::delete('records');
 	}
 
+	sub first {
+		return($First);
+	}
+
 	sub init {
+		my($limit, $used)=map::timer;
+		my($records);
 		$Winner=undef;
 		$Destroy=undef;
 		%Helpers=();
+
+		if(db::enabled) {
+			$records=db::records(map::name);
+		} else {
+			$records=stash::get(map::name, 'records');
+		}
+
+		if(ref($records)) {
+			$First=$records->[0];
+		} elsif($limit>0) {
+			$First=List::Util::min(600, $limit);
+		} else {
+			$First=600;
+		}
 
 		&move2db if(db::enabled);
 	}
@@ -6394,10 +6432,15 @@ These rankings can also be configured to select evenly matched teams.
 	my($Base)=600;
 	my(%Team); tie %Team, 'Tie::RefHash';
 
-	sub _quality_curve { # modified logistic curve)
+	sub _quality_curve { # modified logistic curve
 		my($seconds)=@_;
+		my($normal)=600;
 
-		return(sprintf('%0.2f', 1/(1+1.01**(abs($seconds)-600))));
+		if(map::type('coop')) {
+			$normal=records::first;
+		}
+
+		return(sprintf('%0.2f', 1/(1+1.01**(abs($seconds)-$normal))));
 	}
 
 	sub scale {
@@ -6406,6 +6449,10 @@ These rankings can also be configured to select evenly matched teams.
 		my($goal_ratio)=$config::Launcher{'goals'}/6;
 		my($competition)=player::count()/$config::Maxp;
 		my($duration, $quality);
+
+		if(map::type('coop')) {
+			$competition=1.33-$competition;
+		}
 
 		if($config::Launcher{'roundTime'}{$mode}) {
 			$duration=$config::Launcher{'roundTime'}{$mode};
@@ -6449,16 +6496,20 @@ These rankings can also be configured to select evenly matched teams.
 			$rate+=$stats->{'powerkill'}/$minute;
 			$rate+=$stats->{'kills'}/$minute;
 			$rate-=$stats->{'died'}/$minute;
+			$rate-=$stats->{'collateral'}/$minute;
 			$rate-=$stats->{'fumble'}/$minute/2;
 		} elsif(map::mode('tdm', 'ffa')) {
 			$rate+=$stats->{'kills'}/$minute;
+			$rate-=$stats->{'collateral'}/$minute;
 			$rate-=$stats->{'died'}/$minute;
 		} elsif(map::mode('1bd', '1dm', '1de')) {
 			$rate+=$stats->{'powerkill'};
 			$rate+=$stats->{'kills'};
+			$rate-=$stats->{'collateral'}*2;
 			$rate-=$stats->{'died'}/3;
 		} elsif(map::mode('ball')) {
 			$rate+=$stats->{'powerkill'}/$minute;
+			$rate-=$stats->{'collateral'}/$minute;
 			$rate-=$stats->{'fumble'}/$minute;
 		}
 
@@ -6466,10 +6517,12 @@ These rankings can also be configured to select evenly matched teams.
 		$rate=utils::mid(-5, $rate, 5);
 
 		#Team:
-		if($stats->{'differential'}>0) {
-			$rate+=20;
-		} elsif($stats->{'differential'}<0) {
-			$rate-=19;
+		unless(map::type('coop', 'race')) {
+			if($stats->{'differential'}>0) {
+				$rate+=20;
+			} elsif($stats->{'differential'}<0) {
+				$rate-=19;
+			}
 		}
 
 		return($rate);
@@ -12888,7 +12941,8 @@ core protecting the flag.
 		}
 
 		if($p->{'team'} == $v->{'team'}) {
-			records::help($p, -4);
+			records::help($p, -5);
+			$p->{'stats'}{'collateral'}++;
 			chat::snark($v, "$v->{'nickname'} was killed by friendly fire");
 		} elsif($e->{'multi'}>5) {
 			chat::snark($p, "$p->{'nickname'} says Booyah!!");
@@ -12985,8 +13039,12 @@ core protecting the flag.
 			$player=player::lookup($player_id);
 			$player->{'ping'}=$pings{$player_id};
 
-			if($player->{'alive'} && map::type('coop')) {
-				records::help($player, 1);
+			if(map::type('coop')) {
+				if($player->{'alive'}) {
+					records::help($player, 1);
+				} elsif($player->{'team'}>2) {
+					records::help($player, -1);
+				}
 			}
 		}
 
