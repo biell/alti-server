@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.04';
+my($VERSION)='4.05';
 
 =head1 NAME
 
@@ -7316,7 +7316,7 @@ interface.
 		my($e, $p)=@_;
 		my($airtime)=$e->{'time'}-$Shot;
 
-		unless($e->{'type'} eq 'powerupPickup' && $e->{'powerup'} eq 'Ball') {
+		unless($e->{'command'} eq 'powerupPickup' && $e->{'powerup'} eq 'Ball') {
 			return(undef);
 		}
 
@@ -8813,13 +8813,10 @@ or C<:post> string at the end of your hook name (e.g. C<clientRemove:pre>).
 
 	sub pre {
 		my($e, $p)=@_;
-		my($type)=join(':', $e->{'type'}, 'pre');
 		my($command)=join(':', $e->{'command'}, 'pre');
 
 		foreach my $script (@Scripts) {
-			if(ref($Script{$script}{$type}) eq 'CODE') {
-				$Script{$script}{$type}->($e, $p);
-			} elsif(ref($Script{$script}{$command}) eq 'CODE') {
+			if(ref($Script{$script}{$command}) eq 'CODE') {
 				$Script{$script}{$command}->($e, $p);
 			}
 		}
@@ -8827,13 +8824,10 @@ or C<:post> string at the end of your hook name (e.g. C<clientRemove:pre>).
 
 	sub post {
 		my($e, $p)=@_;
-		my($type)=join(':', $e->{'type'}, 'post');
 		my($command)=join(':', $e->{'command'}, 'post');
 
 		foreach my $script (@Scripts) {
-			if(ref($Script{$script}{$type}) eq 'CODE') {
-				$Script{$script}{$type}->($e, $p);
-			} elsif(ref($Script{$script}{$command}) eq 'CODE') {
+			if(ref($Script{$script}{$command}) eq 'CODE') {
 				$Script{$script}{$command}->($e, $p);
 			}
 		}
@@ -8880,6 +8874,10 @@ sub event {
 	} else {
 		$event->{'admin'}=0;
 		$event->{'superAdmin'}=0;
+	}
+
+	unless(exists($event->{'command'})) {
+		$event->{'command'}=$event->{'type'};
 	}
 
 	return($event, $player);
@@ -14021,14 +14019,12 @@ while(1) {
 			@EVENT=&event($REQ);
 
 			script::pre(@EVENT);
-			if($TRIGGER=server::triggers($REQ->{'type'})) {
+			if($TRIGGER=server::triggers($REQ->{'command'})) {
 				my($trigger)=shift(@$TRIGGER);
 				$HOOKS{$trigger}->(@EVENT, @$TRIGGER);
 			}
 
-			if(exists($HOOKS{$REQ->{'type'}})) {
-				$HOOKS{$REQ->{'type'}}->(@EVENT);
-			} elsif(exists($HOOKS{$REQ->{'command'}})) {
+			if(exists($HOOKS{$REQ->{'command'}})) {
 				$HOOKS{$REQ->{'command'}}->(@EVENT);
 			}
 			script::post(@EVENT);
