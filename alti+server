@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.05';
+my($VERSION)='4.06';
 
 =head1 NAME
 
@@ -925,6 +925,8 @@ list.
 
 				if(exists($CONSOLE{$cmd[0]})) {
 					$CONSOLE{$cmd[0]}->(splice(@cmd, 1));
+				} elsif(exists($script::Console{$cmd[0]})) {
+					$script::Console{$cmd[0]}->(splice(@cmd, 1));
 				} else {
 					server::send(@cmd);
 				}
@@ -8712,7 +8714,10 @@ automatically loaded.
 All scripts are loaded and run in the B<alti+server> runtime, there are
 B<ZERO> protections.  This is necessary to ensure scripts can interact
 fully with the server code.  A block labeled C<HOOKS> should be used to
-keep state between calls to hooks.
+keep state between calls to hooks.  A block labeled C<CONSOLE> can be
+used to define commands available to admins when logged into the console.
+The interface does not currently have a way of exporting commands to players,
+as this would require restarting the server when loading scripts.
 
 A script is actually a perl hash definition which contains hooks for
 events which will be thrown by the server.  So, your file would look like:
@@ -8734,10 +8739,27 @@ events which will be thrown by the server.  So, your file would look like:
 	 },
   };
 
+  CONSOLE {
+  	'whoZero'	=> sub {
+		my($s)=player::server;
+		my($zero)=player::lookup(0);
+
+		if($zero) {
+			chat::whisper($s, $zero->{'nickname'}, 'has playerId 0');
+		} else {
+			chat::whisper($s, 'Nobody has playerId 0');
+		}
+	},
+  };
+
 By default, these hooks
 will be executed after the server has internally serviced each hook.
 However, you can explicitly set this behavior by placing a C<:pre>
 or C<:post> string at the end of your hook name (e.g. C<clientRemove:pre>).
+In addition to tracking the user, if an admin is on the server's console,
+an extra command '/whoZero' will show them which user has the coveted player
+ID.
+
 
 =cut
 
@@ -8750,6 +8772,8 @@ or C<:post> string at the end of your hook name (e.g. C<clientRemove:pre>).
 	my(@Scripts)=();
 	my($Sdir)="$INSTALL_ROOT/servers/alti+scripts";
 	my($Name)=undef;
+
+	our(%Console)=();
 
 	mkdir($Sdir, 0750) unless(-d $Sdir);
 
@@ -8772,6 +8796,24 @@ or C<:post> string at the end of your hook name (e.g. C<clientRemove:pre>).
 
 	sub hooks {
 		&HOOKS(@_);
+	}
+
+	sub CONSOLE {
+		my($console_cmds)=$_[0];
+
+		return(undef) unless(ref($console_cmds) eq 'HASH');
+		return(undef) unless(%$console_cmds);
+
+		foreach my $cmd (keys(%$console_cmds)) {
+			$Console{$cmd}=$console_cmds->{$cmd};
+			config::add_commands($cmd => undef);
+		}
+
+		return(1);
+	}
+
+	sub console {
+		&CONSOLE(@_);
 	}
 
 	sub install {
@@ -12010,7 +12052,7 @@ core protecting the flag.
 		} elsif($p->{'admin'} && $zone=~m/^here$/i) {
 			server::trigger('logPlanePositions', 'spawnHere', $e, $p);
 		} elsif($spawn_mode ne 'zone') {
-			chat::whisper($p, "Zone spawning not allowed in mode: $spawn_mode");
+			chat::whisper($p, 'Zone spawning not allowed in mode:', $spawn_mode||'standard');
 		} elsif(ref($coords) eq 'ARRAY') {
 			if(plus::zone_open($p, $zone)) {
 				if($p->{'alive'}) {

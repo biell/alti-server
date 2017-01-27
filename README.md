@@ -1323,7 +1323,7 @@ code.  See the `example_scripts` directory on github for examples.
 ## Snarky Server
 The server can be configured to emit snarky comments from time to time by
 setting the code OPTION `snarkChance` to a positive value.  Setting this
-value to 20 (for example) should give each player a 1 in 20 change for
+value to 20 (for example) should give each player a 1 in 20 chance for
 receiving a snarky comment for things for which a comment like this may
 occur.  The most commong snarky comments are for plane configuraion choices
 and occur when a plan spawns.  So, if a `snarkChance` is set to 20 and a

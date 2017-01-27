@@ -14,21 +14,24 @@ sub set_health {
 			$health=100+int(@playing/2-1)*20;
 		}
 
-		if($health!=$HEALTH) {
-			server::send('testHealthModifier', $health);
-			$HEALTH=$health;
-		}
+		server::send('testHealthModifier', $health) unless($health==$HEALTH);
 }
 
 HOOKS {
 	'mapChange'	=> sub {
 		return unless(map::name('ball_whl'));
 
-		$HEALTH=config::option('spawnHealth');
-
 		queue::schedule {
 			&set_health;
 		} $config::Launcher{'warmup'}{'ball'} - 2;
+	},
+
+	'testHealthModifier'	=> sub {
+		my($e, $p)=@_;
+
+		return unless(map::name('ball_whl'));
+
+		$HEALTH=$e->{'arguments'}[0];
 	},
 
 	'goal'		=> sub {
@@ -37,3 +40,12 @@ HOOKS {
 		&set_health;
 	},
 };
+
+CONSOLE {
+	'showHealth'	=> sub {
+		my($p)=player::server;
+
+		chat::whisper($p, 'spawnHealth:', $HEALTH);
+	},
+};
+
