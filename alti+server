@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.06';
+my($VERSION)='4.07';
 
 =head1 NAME
 
@@ -4810,7 +4810,11 @@ types which alter the normal behavior.
 		my($x)=int($_[0]/$Grid);
 		my($y)=int($_[1]/$Grid);
 
-		return(@{$Regions[$x][$y]});
+		if(ref($Regions[$x][$y]) eq 'ARRAY') {
+			return(@{$Regions[$x][$y]});
+		} else {
+			return();
+		}
 	}
 
 	sub in_wall {
