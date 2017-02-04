@@ -1,4 +1,6 @@
-#Dynamically change spawnHealth after goals are scored
+#Dynamically change spawnHealth after goals are scored, only on ball_whl
+
+MAP 'ball_whl';
 
 my($HEALTH)=config::option('spawnHealth');
 
@@ -19,8 +21,6 @@ sub set_health {
 
 HOOKS {
 	'mapChange'	=> sub {
-		return unless(map::name('ball_whl'));
-
 		queue::schedule {
 			&set_health;
 		} $config::Launcher{'warmup'}{'ball'} - 2;
@@ -29,14 +29,10 @@ HOOKS {
 	'testHealthModifier'	=> sub {
 		my($e, $p)=@_;
 
-		return unless(map::name('ball_whl'));
-
 		$HEALTH=$e->{'arguments'}[0];
 	},
 
 	'goal'		=> sub {
-		return unless(map::name('ball_whl'));
-
 		&set_health;
 	},
 };

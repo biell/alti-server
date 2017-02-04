@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.08';
+my($VERSION)='4.09';
 
 =head1 NAME
 
@@ -8783,10 +8783,19 @@ ID.
 	my(@Scripts)=();
 	my($Sdir)="$INSTALL_ROOT/servers/alti+scripts";
 	my($Name)=undef;
+	my(@Maps)=();
 
 	our(%Console)=();
 
 	mkdir($Sdir, 0750) unless(-d $Sdir);
+
+	sub MAP {
+		@Maps=@_;
+	}
+
+	sub map {
+		&MAP(@_);
+	}
 
 	sub HOOKS {
 		my($script_hooks)=$_[0];
@@ -8795,10 +8804,20 @@ ID.
 		return(undef) unless(%$script_hooks);
 
 		foreach my $hook_key (keys(%$script_hooks)) {
-			if($hook_key=~m/:/) {
-				$Script{$Name}{$hook_key}=$script_hooks->{$hook_key};
+			if(@Maps) {
+				foreach my $map (@Maps) {
+					if($hook_key=~m/:/) {
+						$Script{$Name}{$hook_key}{$map}=$script_hooks->{$hook_key};
+					} else {
+						$Script{$Name}{"$hook_key:post"}{$map}=$script_hooks->{$hook_key};
+					}
+				}
 			} else {
-				$Script{$Name}{"$hook_key:post"}=$script_hooks->{$hook_key};
+				if($hook_key=~m/:/) {
+					$Script{$Name}{$hook_key}=$script_hooks->{$hook_key};
+				} else {
+					$Script{$Name}{"$hook_key:post"}=$script_hooks->{$hook_key};
+				}
 			}
 		}
 
@@ -8849,6 +8868,7 @@ ID.
 		}
 
 		@Scripts=sort(keys(%Script));
+		@Maps=();
 	}
 
 	sub remove {
@@ -8867,10 +8887,15 @@ ID.
 	sub pre {
 		my($e, $p)=@_;
 		my($command)=join(':', $e->{'command'}, 'pre');
+		my($map)=map::name;
 
 		foreach my $script (@Scripts) {
+			next unless(exists($Script{$script}{$command}));
+
 			if(ref($Script{$script}{$command}) eq 'CODE') {
 				$Script{$script}{$command}->($e, $p);
+			} elsif(ref($Script{$script}{$command}{$map}) eq 'CODE') {
+				$Script{$script}{$command}{$map}->($e, $p);
 			}
 		}
 	}
@@ -8878,10 +8903,15 @@ ID.
 	sub post {
 		my($e, $p)=@_;
 		my($command)=join(':', $e->{'command'}, 'post');
+		my($map)=map::name;
 
 		foreach my $script (@Scripts) {
+			next unless(exists($Script{$script}{$command}));
+
 			if(ref($Script{$script}{$command}) eq 'CODE') {
 				$Script{$script}{$command}->($e, $p);
+			} elsif(ref($Script{$script}{$command}{$map}) eq 'CODE') {
+				$Script{$script}{$command}{$map}->($e, $p);
 			}
 		}
 	}
@@ -11956,8 +11986,8 @@ core protecting the flag.
 				chat::whisper($p, $timer, ':',
 					utils::timer($team->{$timer}, 1));
 			}
-		} elsif($e->{'admin'} || team::right($p->{'team'})) {
-			$team=$timers->{team::right()};
+		} elsif($e->{'admin'} || map::right($p->{'team'})) {
+			$team=$timers->{map::right()};
 			foreach my $timer (sort(keys(%$team))) {
 				chat::whisper($p, $timer, ':',
 					utils::timer($team->{$timer}, 1));
