@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.07';
+my($VERSION)='4.08';
 
 =head1 NAME
 
@@ -2776,7 +2776,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'help' => {
 		'name'			=> 'help',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2791,7 +2791,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'list' => {
 		'name'			=> 'list',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'zones', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2799,7 +2799,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'set' => {
 		'name'			=> 'set',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys'], 'string'],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys', 'timer'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2807,7 +2807,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'unset' => {
 		'name'			=> 'unset',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys']],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys', 'timer']],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2815,7 +2815,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'add' => {
 		'name'			=> 'add',
-		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone'], 'string'],
+		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'timer', 'zone'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2823,7 +2823,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'del' => {
 		'name'			=> 'del',
-		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'zone', 'record'], 'string'],
+		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'timer', 'zone', 'record'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -4964,6 +4964,7 @@ types which alter the normal behavior.
 		9	=> 'azure',	'azure'	=> 9,
 		10	=> 'pink',	'pink'	=> 10,
 		11	=> 'brown',	'brown'	=> 11,
+		100	=> 'ffa',		'ffa'	=> 100,
 	);
 	my($Color_re)=join('|', grep(length>2, keys(%Teams)));
 
@@ -5125,6 +5126,8 @@ types which alter the normal behavior.
 	}
 
 	sub right		{
+		return(undef) if(map::mode('ffa'));
+
 		foreach(@_) {
 			return(1) if(m/^$Teams{$Map->{'rightTeam'}}$/i);
 			return(1) if(m/^(right|>|all|both|\*|1)$/i);
@@ -5390,6 +5393,10 @@ types which alter the normal behavior.
 		$Map=$mapref;
 		&set_type($Map->{'map'});
 		$Map->{'idle'}=time();
+
+		if($Map->{'leftTeam'}==2) {
+			$Map->{'leftTeam'}=100;
+		}
 
 		$Cpu=List::Util::sum(server::cpu_secs);
 		$Ds=&definition($Map->{'map'});
@@ -11943,8 +11950,8 @@ core protecting the flag.
 				utils::timer($timers->{'start'}));
 		}
 
-		if($e->{'admin'} || team::left($p->{'team'})) {
-			$team=$timers->{team::left()};
+		if($e->{'admin'} || map::left($p->{'team'})) {
+			$team=$timers->{map::left()};
 			foreach my $timer (sort(keys(%$team))) {
 				chat::whisper($p, $timer, ':',
 					utils::timer($team->{$timer}, 1));
@@ -12320,6 +12327,10 @@ core protecting the flag.
 		my(@found)=();
 		my($zones, $doors, $keys, $planes, $intro);
 		
+		if(map::mode('ffa') && $e->{'team'}>2) {
+			$e->{'team'}=100;
+		}
+
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			return;
@@ -12465,6 +12476,10 @@ core protecting the flag.
 		my($timers)=stash::get('timers', map::name, 'map');
 		my(@records)=split(m/\W+/, config::option('recordsTypes'));
 		my($match);
+
+		if(map::mode('ffa') && $e->{'team'}>2) {
+			$e->{'team'}=100;
+		}
 
 		$p->{'team'}=$e->{'team'};
 		$p->{'stats'}{'turret'}=0;
@@ -13894,7 +13909,8 @@ also only available from the console.
 				push(@list, '('.$player->{'nickname'}.')');
 			}
 		}
-		chat::whisperf($s, '%-16s: %s', "right ($right)", join(', ', @list));
+		chat::whisperf($s, '%-16s: %s', "right ($right)", join(', ', @list))
+			unless(map::mode('ffa'));
 
 		chat::whisperf($s, '%-16s: %s', 'spec',
 			join(', ', map($_->{'nickname'}, player::list('spec'))));
