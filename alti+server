@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.09';
+my($VERSION)='4.10';
 
 =head1 NAME
 
@@ -6232,6 +6232,9 @@ they make the top 5.
 		$save=0 if(map::mode('tbd', '1de', '1bd') && map::type('coop')
 				&& ($e->{'time'}-$Destroy) > 3000);
 
+		$save=0 if(map::mode('ffa', 'tdm') && map::type('coop')
+				&& !plus::coop_timers());
+
 		$time=sprintf("%0.2f", ($e->{'time'} - $Start)/$config::Clock);
 
 		if(map::mode('tdm', '1dm', '1de', '1bd')) {
@@ -7894,6 +7897,42 @@ play though extended interfaces and server support.
 		}
 	}
 
+	sub timer {
+		my($e, $p)=@_;
+		my($pickup)=join(',', @$e{'positionX','positionY'});
+		my($timers)=stash::get($p->{'team'}, 'timers', map::name, 'map');
+
+		if($timers->{$pickup}) {
+			records::help($p, 20);
+		} else {
+			records::help($p, 10);
+		}
+
+		unless(exists($Stats{'timers'}{$p->{'team'}})) {
+			foreach my $timer (keys(%$timers)) {
+				$Stats{'timers'}{$p->{'team'}}{$timer}=0;
+			}
+		}
+		$Stats{'timers'}{$p->{'team'}}{$pickup}=1;
+	}
+
+	sub coop_timers {
+		my($p)=@_;
+		my($timers)=stash::get('timers', map::name, 'map');
+		my(@teams)=keys(%$timers);
+		my($found);
+
+		foreach my $timer (keys(%$timers)) {
+			$found=0;
+			foreach my $team (@teams) {
+				$found|=$Stats{'timers'}{$team}{$timer};
+			}
+			return(0) unless($found);
+		}
+
+		return(1);
+	}
+
 	sub checkpoint {
 		my($e, $p)=@_;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
@@ -8734,6 +8773,7 @@ A script is actually a perl hash definition which contains hooks for
 events which will be thrown by the server.  So, your file would look like:
 
   #pretend people care about having player ID 0:
+
   HOOKS {
       'clientAdd' => sub {
           my($e, $p)=@_;
@@ -8771,6 +8811,8 @@ In addition to tracking the user, if an admin is on the server's console,
 an extra command '/whoZero' will show them which user has the coveted player
 ID.
 
+Optionally, you can also add a line like C<MAP 'name';> where these functions
+will only be run on that map.
 
 =cut
 
@@ -12762,8 +12804,9 @@ core protecting the flag.
 			server::trigger('logPlanePositions', 'checkpoint', $e, $p)
 		}
 
-		if($timers && $timers->{$pickup} && xx::enabled) {
+		if($timers && exists($timers->{$pickup}) && xx::enabled) {
 			server::send('timer', $timers->{$pickup});
+			plus::timer($e, $p) if(map::type('coop'));
 		}
 
 		plus::divert($e, $p);
