@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.11';
+my($VERSION)='4.12';
 
 =head1 NAME
 
@@ -4607,7 +4607,10 @@ directly with it to manage the instance.
 	}
 
 	sub triggers {
-		my($command)=@_;
+		my($req)=@_;
+		my($command)=$req->{'command'};
+
+		return() if($req->{'type'} eq 'consoleCommandExecute');
 
 		if(exists($Trigger{$command})) {
 			return(shift(@{$Trigger{$command}}));
@@ -8376,10 +8379,10 @@ play though extended interfaces and server support.
 		if($Hunted==$p) {
 			return(1);
 		} elsif(map::type('tag')) {
-			chat::all('!!', $p->{'nickname'}, 'is it !!');
+			chat::all('*', $p->{'nickname'}, 'is it *');
 			$Hunted=$p;
 		} elsif(!$Hunted) {
-			chat::all('!! Everyone against', $p->{'nickname'}, '!!');
+			chat::all('* Everyone against', $p->{'nickname'}, '*');
 			$Hunted=$p;
 			if(map::left($map_team) && map::left($p->{'team'})) {
 				return(1);
@@ -8398,7 +8401,7 @@ play though extended interfaces and server support.
 				&assign($Hunted, 'left');
 				&assign($p, 'right');
 			}
-			chat::all('!! Everyone against', $p->{'nickname'}, '!!');
+			chat::all('* Everyone against', $p->{'nickname'}, '*');
 			$Hunted=$p;
 		}
 	}
@@ -13337,16 +13340,6 @@ core protecting the flag.
 		my($e, $p, $player, $it)=@_;
 		my($pos)=$e->{'positionByPlayer'}{$player->{'player'}};
 
-		ui::slog('begin');
-		ui::slog(@_);
-		ui::slog($e);
-		ui::slog($player);
-		ui::slog($it);
-		ui::slog($player->{'player'});
-		ui::slog($e->{'positionByPlayer'});
-		ui::slog($pos);
-		ui::slog('end');
-
 		return if($pos eq '-1,-1');
 
 		if($it<60000) {
@@ -14328,7 +14321,7 @@ while(1) {
 			@EVENT=&event($REQ);
 
 			script::pre(@EVENT);
-			if($TRIGGER=server::triggers($REQ->{'command'})) {
+			if($TRIGGER=server::triggers($REQ)) {
 				my($trigger)=shift(@$TRIGGER);
 				$HOOKS{$trigger}->(@EVENT, @$TRIGGER);
 			}
