@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.10';
+my($VERSION)='4.11';
 
 =head1 NAME
 
@@ -81,7 +81,7 @@ my(%OPTIONS)=(
 );
 
 my(@MODES)=qw(1bd 1de 1dm ball ffa tbd tdm);
-my(@TYPES)=qw(coop flag mdg race ruin zone 1lh);
+my(@TYPES)=qw(coop flag mdg tag race ruin zone 1lh);
 
 my($ROLL_LOGS)=4 * 2**20;
 my($RADIANS)=3.1415926535/180;
@@ -1318,6 +1318,12 @@ L<perl(1)> should be used to ensure basic operation.
 		my($time)=@_;
 
 		return(sprintf('%02d:%04.1f', $time/60, POSIX::fmod($time, 60)));
+	}
+
+	sub usecs2mins {
+		my($time)=@_;
+
+		&secs2mins($time/1000);
 	}
 
 	sub secs2hrs {
@@ -5041,22 +5047,57 @@ types which alter the normal behavior.
 		}
 	}
 
+	sub area {
+		my($x, $y);
+		my($gx, $gy);
+		my($across, $up);
+
+		if(@_==1) {
+			($x, $y)=split(m/,/, $_[0]);
+		} else {
+			($x, $y)=@_;
+		}
+
+		$gx=int(3*$x / $Ds->{'views'}{'Game'}{'bounds'}{'maxX'});
+		$gy=int(3*$y / $Ds->{'views'}{'Game'}{'bounds'}{'maxY'});
+
+		if($gy==0) {
+			$up='bottom';
+		} elsif($gy==1) {
+			$up='middle';
+		} else {
+			$up='top';
+		}
+
+		if($gx==0) {
+			$across='left';
+		} elsif($gx==1) {
+			$across='center';
+		} else {
+			$across='right';
+		}
+
+		return("$up-$across");
+	}
+
 	sub set_type {
 		local($_)=@_;
 
-		if(m/(^|_)flag(_|$)/) {
+		if(m/(^|_)flag(_|$)/i) {
 			$Map->{'type'}='flag';
-		} elsif(m/(^|_)zone(_|$)/) {
+		} elsif(m/(^|_)zone(_|$)/i) {
 			$Map->{'type'}='zone';
-		} elsif(m/(^|_)ra?ce(_|$)/) {
+		} elsif(m/(^|_)ra?ce(_|$)/i) {
 			$Map->{'type'}='race';
-		} elsif(m/(^|_)coop(_|$)/) {
+		} elsif(m/(^|_)coop(_|$)/i) {
 			$Map->{'type'}='coop';
-		} elsif(m/(^|_)ruin(_|$)/) {
+		} elsif(m/(^|_)ruin(_|$)/i) {
 			$Map->{'type'}='ruin';
-		} elsif(m/(^|_)mdg(_|$)/) {
+		} elsif(m/(^|_)mdg(_|$)/i) {
 			$Map->{'type'}='mdg';
-		} elsif(m/(^|_)1lh(_|$)/) {
+		} elsif(m/(^|_)tag(_|$)/i) {
+			$Map->{'type'}='tag';
+		} elsif(m/(^|_)1lh(_|$)/i) {
 			$Map->{'type'}='1lh';
 		} else {
 			$Map->{'type'}='std';
@@ -5119,6 +5160,7 @@ types which alter the normal behavior.
 
 	sub left		{
 		foreach(@_) {
+			return(1) if($_ >= 100);
 			return(1) if(m/^$Teams{$Map->{'leftTeam'}}$/i);
 			return(1) if(m/^(left|<|all|both|\*|0)$/i);
 		}
@@ -5693,6 +5735,16 @@ is updated with them as the games progress.
 			return(grep(map::spec($_->{'team'}), @Players));
 		} else {
 			return(@Players);
+		}
+	}
+
+	sub random {
+		my(@list)=grep($_->{'alive'}, @Players);
+
+		if(@list) {
+			return($list[int(rand(@list))]);
+		} else {
+			return($Players[int(rand(@Players))]);
 		}
 	}
 
@@ -7903,9 +7955,9 @@ play though extended interfaces and server support.
 		my($timers)=stash::get($p->{'team'}, 'timers', map::name, 'map');
 
 		if($timers->{$pickup}) {
-			records::help($p, 20);
-		} else {
 			records::help($p, 10);
+		} else {
+			records::help($p, 20);
 		}
 
 		unless(exists($Stats{'timers'}{$p->{'team'}})) {
@@ -7919,15 +7971,16 @@ play though extended interfaces and server support.
 	sub coop_timers {
 		my($p)=@_;
 		my($timers)=stash::get('timers', map::name, 'map');
-		my(@teams)=keys(%$timers);
-		my($found);
+		my(%merge)=();
 
-		foreach my $timer (keys(%$timers)) {
-			$found=0;
-			foreach my $team (@teams) {
-				$found|=$Stats{'timers'}{$team}{$timer};
+		foreach my $team (keys(%$timers)) {
+			foreach my $timer (keys(%{$timers->{$team}})) {
+				$merge{$timer}|=$Stats{'timers'}{$team}{$timer};
 			}
-			return(0) unless($found);
+		}
+
+		foreach my $timer (keys(%merge)) {
+			return(0) unless($merge{$timer});
 		}
 
 		return(1);
@@ -8316,32 +8369,17 @@ play though extended interfaces and server support.
 		}
 	}
 
-	sub prey {
-		my($p)=@_;
-
-		if($Hunted==$p) {
-			return(1);
-		} elsif(!$Hunted || !$Hunted->{'joined'}) {
-			$Hunted=$p;
-			return(1);
-		} else {
-			return(0);
-		}
-	}
-
-	sub cower {
-		my($p)=@_;
-
-		$Hunted=undef;
-	}
-
 	sub change_hunted {
 		my($p)=@_;
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
 
 		if($Hunted==$p) {
 			return(1);
+		} elsif(map::type('tag')) {
+			chat::all('!!', $p->{'nickname'}, 'is it !!');
+			$Hunted=$p;
 		} elsif(!$Hunted) {
+			chat::all('!! Everyone against', $p->{'nickname'}, '!!');
 			$Hunted=$p;
 			if(map::left($map_team) && map::left($p->{'team'})) {
 				return(1);
@@ -8360,8 +8398,28 @@ play though extended interfaces and server support.
 				&assign($Hunted, 'left');
 				&assign($p, 'right');
 			}
+			chat::all('!! Everyone against', $p->{'nickname'}, '!!');
 			$Hunted=$p;
 		}
+	}
+
+	sub prey {
+		my($p)=@_;
+
+		if($Hunted==$p) {
+			return(1);
+		} elsif(!$Hunted || !$Hunted->{'joined'}) {
+			&change_hunted($p);
+			return(1);
+		} else {
+			return(0);
+		}
+	}
+
+	sub cower {
+		my($p)=@_;
+
+		$Hunted=undef;
 	}
 
 	sub enter {
@@ -12360,6 +12418,10 @@ core protecting the flag.
 			$name=$p->{'nickname'};
 		}
 
+		if(map::type('tag') && plus::hunted($p)) {
+			plus::change_hunted(player::random);
+		}
+
 		records::help($p, -10);
 
 		race::del($p);
@@ -12400,7 +12462,11 @@ core protecting the flag.
 		my($zones, $doors, $keys, $planes, $intro);
 		
 		if(map::mode('ffa') && $e->{'team'}>2) {
-			$e->{'team'}=100;
+			if(map::type('coop', 'ruin')) {
+				$e->{'team'}=100;
+			} else {
+				$e->{'team'}=100+$p->{'player'};
+			}
 		}
 
 		if($p->{'isBot'}) {
@@ -12455,6 +12521,8 @@ core protecting the flag.
 				chat::whisper($p, '** Destroy all structures **');
 			} elsif(map::type('mdg')) {
 				chat::whisper($p, '** Asymmetric game play, 1 vs many **');
+			} elsif(map::type('tag')) {
+				chat::whisper($p, '** This is tag, only try to kill the player who is it **');
 			} elsif(map::type('1lh')) {
 				chat::whisper($p, '** 1 hit kills **');
 			}
@@ -12524,6 +12592,10 @@ core protecting the flag.
 			} elsif(map::left($p->{'team'})) {
 				plus::assign($p, 'right');
 			}
+		} elsif(map::type('tag') && plus::hunted($p)) {
+			if(map::spec($p->{'team'})) {
+				plus::change_hunted(player::random);
+			}
 		} elsif(map::right($map_team) && map::left($p->{'team'})) {
 			plus::assign($p, 'right');
 			return;
@@ -12550,7 +12622,11 @@ core protecting the flag.
 		my($match);
 
 		if(map::mode('ffa') && $e->{'team'}>2) {
-			$e->{'team'}=100;
+			if(map::type('coop', 'ruin')) {
+				$e->{'team'}=100;
+			} else {
+				$e->{'team'}=100+$p->{'player'};
+			}
 		}
 
 		$p->{'team'}=$e->{'team'};
@@ -12590,6 +12666,8 @@ core protecting the flag.
 			} elsif(map::left($p->{'team'})) {
 				plus::assign($p, 'right');
 			}
+		} elsif(map::type('tag') && plus::prey($p)) {
+			$p->{'stats'}{'tagged'}=$e->{'time'};
 		} elsif(map::right($map_team) && map::left($p->{'team'})) {
 			plus::assign($p, 'right');
 			return;
@@ -12674,6 +12752,19 @@ core protecting the flag.
 		}
 
 		plus::plane_check($p); #Notify only, don't enforce until spawn
+	},
+
+	'#logPlanePositions'	=> sub {
+		my($e, $p)=@_;
+		my($pos)=$e->{'positionByPlayer'};
+
+		if(xx::enabled && xx::config('logPositions')) {
+			foreach my $player (player::list) {
+				if(exists($pos->{$player->{'player'}})) {
+					$player->{'stats'}{'pos'}=$pos->{$player->{'player'}};
+				}
+			}
+		}
 	},
 
 	'goal'	=> sub {
@@ -13082,6 +13173,16 @@ core protecting the flag.
 					plus::score($p);
 				}
 			}
+		} elsif(map::type('tag')) {
+			if(plus::hunted($v)) {
+				$v->{'stats'}{'it'}+=$e->{'time'}-$v->{'stats'}{'tagged'};
+				$p->{'stats'}{'tagged'}=$e->{'time'};
+				plus::change_hunted($p);
+			} elsif(plus::hunted($p)) {
+				chat::snark($p, 'The best defense is a good offense');
+			} else {
+				chat::whisper($p, 'This is tag, only kill the player who is it!');
+			}
 		}
 
 		if(List::Util::max(map(abs, @$e{'victimVelocityX', 'victimVelocityY'})) > 18) {
@@ -13181,7 +13282,8 @@ core protecting the flag.
 	'pingSummary'	=> sub {
 		my($e, $p)=@_;
 		my(%pings)=%{$e->{'pingByPlayer'}};
-		my($player);
+		my($now)=time();
+		my($player, $it);
 
 		foreach my $player_id (keys(%pings)) {
 			$player=player::lookup($player_id);
@@ -13192,6 +13294,29 @@ core protecting the flag.
 					records::help($player, 1);
 				} elsif($player->{'team'}>2) {
 					records::help($player, -1);
+				}
+			} elsif(map::type('tag')
+				&& plus::hunted($player)
+				&& $player->{'alive'}
+				&& $now%2
+			) {
+				$it=$e->{'time'} - $player->{'stats'}{'tagged'};
+
+				if($it<60000) {
+					chat::all($player->{'nickname'},
+						utils::usecs2mins($it));
+				} elsif($it<120000 && exists($player->{'stats'}{'pos'})) {
+					chat::allf('%s %s  (%s)', $player->{'nickname'},
+						utils::usecs2mins($it),
+						map::area($player->{'stats'}{'pos'}));
+				} elsif(exists($player->{'stats'}{'pos'})) {
+					chat::allf('%s %s  (%s: %s)', $player->{'nickname'},
+						utils::usecs2mins($it),
+						map::area($player->{'stats'}{'pos'}),
+						$player->{'stats'}{'pos'});
+				} else {
+					server::trigger('logPlanePositions', 'pingSummary',
+						$player, $it);
 				}
 			}
 		}
@@ -13205,6 +13330,33 @@ core protecting the flag.
 				chat::snark($player, $player->{'nickname'}, 'is laggy');
 				last;
 			}
+		}
+	},
+
+	'logPlanePositions:pingSummary'	=> sub {
+		my($e, $p, $player, $it)=@_;
+		my($pos)=$e->{'positionByPlayer'}{$player->{'player'}};
+
+		ui::slog('begin');
+		ui::slog(@_);
+		ui::slog($e);
+		ui::slog($player);
+		ui::slog($it);
+		ui::slog($player->{'player'});
+		ui::slog($e->{'positionByPlayer'});
+		ui::slog($pos);
+		ui::slog('end');
+
+		return if($pos eq '-1,-1');
+
+		if($it<60000) {
+			chat::all($player->{'nickname'}, utils::usecs2mins($it));
+		} elsif($it<120000) {
+			chat::allf('%s %s  (%s)', $player->{'nickname'},
+				utils::usecs2mins($it), map::area($pos));
+		} else {
+			chat::allf('%s %s  (%s: %s)', $player->{'nickname'},
+				utils::usecs2mins($it), map::area($pos), $pos);
 		}
 	},
 
@@ -13282,6 +13434,8 @@ core protecting the flag.
 		my(%stats)=%{$e->{'participantStatsByName'}};
 		my(%award)=%{$e->{'winnerByAward'}};
 		my($pls)=$e->{'participants'};
+		my($place)=0;
+		my(%it)=();
 		my($ratio)=[];
 		my($cps)=[];
 		my($saves)=[];
@@ -13328,10 +13482,11 @@ core protecting the flag.
 				plus::most('Savior Award: ', $saves, $pls);
 			}
 
-			if('key finder stats') {
+			if('key master stats') {
 				for(my $i=0; $i<@$pls; $i++) {
-					$player=player::lookup($pls->[$i]);
-					$keys->[$i]=$player->{'stats'}{'keys'} if($player);
+					if($player=player::lookup($pls->[$i])) {
+						$keys->[$i]=$player->{'stats'}{'keys'};
+					}
 				}
 				plus::most('Key Master: ', $keys, $pls);
 			}
@@ -13350,10 +13505,29 @@ core protecting the flag.
 
 		foreach my $p (player::list) {
 			$p->{'stats'}{'played'}+=$e->{'time'} - $p->{'spawn'};
+			if(plus::hunted($p)) {
+				$p->{'stats'}{'it'}+=$e->{'time'} - $p->{'stats'}{'tagged'};
+			}
 
 			rank::enter($p);
 
 			log::player($p);
+
+			if($p->{'stats'}{'it'}) {
+				$it{$p->{'nickname'}}=$p->{'stats'}{'it'};
+			}
+		}
+
+		if(map::type('tag') && %it) {
+			chat::all('Leader Board');
+			chat::all('-----------------------');
+			foreach my $name (sort({$it{$b} <=> $it{$a}} keys(%it))) {
+				last if(++$place>5);
+
+				chat::allf('%s : %-8s  %s', utils::nth($place),
+					utils::usecs2mins($it{$name}), $name);
+			}
+			chat::all('-----------------------');
 		}
 
 		if(map::mode('ball', 'tbd', 'tdm', 'ffa')) {

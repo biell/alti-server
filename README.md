@@ -96,6 +96,22 @@ If everyone agrees that a specific player should be the prey, a vote can
 be called against the `/prey` command.  This can be used to override the
 default behavior of first to join a team is the prey.
 
+### Tag
+This game type only really works well on ffa maps.  In this type, it
+is the expectation of the Alti+ server that, similar to MDG, it is
+everyone against one player.  That player is "it". The difference is that
+the one player who is it changes each time they are killed.  By killing
+the player who is it, you become it.  The game continues this way until
+the timer runs out.  At the end of the round, players are ranked by how
+long they were it.  When a player is it, a counter is running until they
+die, this counter continues to accumulate throughout the game, with 1st
+place going to the most elusive (longest running as "it") player.
+
+The server will periodically (~10 seconds) remind the players who is it.
+If a player has been it for more than 60 seconds, the server will give
+hints to that player's location on the map.
+
+
 ### 1-Life Hit
 This game type, created by Stam, forces players into the same plane
 (by default Biplane with Heavy Cannon) with only a primary weapon, and
