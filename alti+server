@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.12';
+my($VERSION)='4.13';
 
 =head1 NAME
 
@@ -4342,7 +4342,8 @@ directly with it to manage the instance.
 
 	my($Cu, $Cs)=(0, 0);
 
-	our($Start)=time();
+	our($Start)=time()*1000;
+	our($Time)=0;
 
 	sub start {
 		my(@times);
@@ -4373,7 +4374,8 @@ directly with it to manage the instance.
 		$Server->autoflush(1);
 		$Streams->add($Server);
 
-		$Start=time();
+		$Start=time()*1000;
+		$Time=0;
 	}
 
 	sub save_log {
@@ -4551,7 +4553,7 @@ directly with it to manage the instance.
 		if(exists($ALTIPLUS{$command})) {
 			$event={
 				'port'		=> $config::Port,
-				'time'		=> (time()-$Start)*1000,
+				'time'		=> $Time+1,
 				'source'		=> '00000000-0000-0000-0000-000000000000',
 				'group'		=> 'server',
 				'admin'		=> 1,
@@ -6185,7 +6187,7 @@ they make the top 5.
 		}
 
 		if($opt{'delta'}) {
-			$time=($opt{'delta'} - $Start)/$config::Clock;
+			$time=($opt{'delta'} - $Start)/1000;
 			if(ref($opt{'player'})) {
 				chat::whisper($opt{'player'}, 'you',  ':', utils::secs2mins($time));
 			} else {
@@ -6195,7 +6197,6 @@ they make the top 5.
 	}
 
 	sub mark {
-		my($e)=@_;
 		my($i, $i2)=(1, 1);
 		my($records);
 		
@@ -6206,7 +6207,7 @@ they make the top 5.
 			$records=stash::get(map::name, 'records');
 		}
 
-		$Start=$e->{'time'};
+		$Start=$server::Time;
 
 		return unless(ref($records) eq 'ARRAY');
 
@@ -6266,7 +6267,6 @@ they make the top 5.
 	}
 
 	sub enter {
-		my($e)=@_;
 		my(@types)=split(m/\W+/, config::option('recordsTypes'));
 		my($assign)=map::team_number(stash::get('assignTeam', map::name, 'map'));
 		my($win)=ball::winner();
@@ -6285,12 +6285,12 @@ they make the top 5.
 		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
 
 		$save=0 if(map::mode('tbd', '1de', '1bd') && map::type('coop')
-				&& ($e->{'time'}-$Destroy) > 3000);
+				&& ($server::Time-$Destroy) > 3000);
 
 		$save=0 if(map::mode('ffa', 'tdm') && map::type('coop')
 				&& !plus::coop_timers());
 
-		$time=sprintf("%0.2f", ($e->{'time'} - $Start)/$config::Clock);
+		$time=sprintf("%0.2f", ($server::Time - $Start)/1000);
 
 		if(map::mode('tdm', '1dm', '1de', '1bd')) {
 			foreach my $player (keys(%Helpers)) {
@@ -7002,9 +7002,7 @@ server switches the map and the race begins.
 	}
 
 	sub mark {
-		my($e)=@_;
-
-		$Start=$e->{'time'};
+		$Start=$server::Time;
 	}
 
 	sub request_go {
@@ -7218,8 +7216,8 @@ server switches the map and the race begins.
 	}
 
 	sub checkpoint {
-		my($e, $p, $cp)=@_;
-		my($time)=($e->{'time'}-$Start)/$config::Clock;
+		my($p, $cp)=@_;
+		my($time)=($server::Time-$Start)/1000;
 
 		return unless($Race>1);
 
@@ -7244,7 +7242,7 @@ server switches the map and the race begins.
 		return unless($Race);
 
 		printf $Log "spawn,%.3f,%d,%d,%s\n",
-				($p->{'spawn'}-$Start)/$config::Clock,
+				($p->{'spawn'}-$Start)/1000,
 				@$p{'team','player','nickname'};
 	}
 
@@ -7373,9 +7371,7 @@ interface.
 	}
 
 	sub shoot {
-		my($e)=@_;
-
-		$Shot=$e->{'time'};
+		$Shot=$server::Time;
 
 		$Passer=$Carrier;
 
@@ -7429,7 +7425,7 @@ interface.
 	}
 
 	sub goal {
-		my($e, $p)=@_;
+		my($p)=@_;
 		my($airtime);
 
 		&update_score(map::side($p));
@@ -7438,7 +7434,7 @@ interface.
 		return unless(chat::laudy);
 
 		if(map::mode('ball')) {
-			$airtime=$e->{'time'}-$Shot;
+			$airtime=$server::Time-$Shot;
 
 			if(!$p->{'carrier'} && 3000<$airtime && $airtime<6000) {
 				chat::laud("Nice Shot $p->{'nickname'}!");
@@ -7942,10 +7938,9 @@ play though extended interfaces and server support.
 	}
 
 	sub capture_wait {
-		my($e)=@_;
 		my($wait)=$Captured+3000;
 
-		if($e->{'time'}<$wait) {
+		if($server::Time<$wait) {
 			return(1);
 		} else {
 			return(0);
@@ -8041,7 +8036,7 @@ play though extended interfaces and server support.
 			}
 
 			$p->{'stats'}{'checkpoint'}++;
-			race::checkpoint($e, $p, $cp);
+			race::checkpoint($p, $cp);
 
 			shift(@$p_stats);
 			$is_cp=1;
@@ -8380,6 +8375,14 @@ play though extended interfaces and server support.
 			return(1);
 		} elsif(map::type('tag')) {
 			chat::all('*', $p->{'nickname'}, 'is it *');
+
+			if($Hunted && exists($Hunted->{'stats'}{'tagged'})) {
+				$Hunted->{'stats'}{'it'}+=
+					$server::Time - $Hunted->{'stats'}{'tagged'};
+				delete($Hunted->{'stats'}{'tagged'});
+			}
+
+			$p->{'stats'}{'tagged'}=$server::Time;
 			$Hunted=$p;
 		} elsif(!$Hunted) {
 			chat::all('* Everyone against', $p->{'nickname'}, '*');
@@ -8404,6 +8407,18 @@ play though extended interfaces and server support.
 			chat::all('* Everyone against', $p->{'nickname'}, '*');
 			$Hunted=$p;
 		}
+	}
+
+	sub finish_hunted {
+		if(map::type('tag')) {
+			if($Hunted && exists($Hunted->{'stats'}{'tagged'})) {
+				$Hunted->{'stats'}{'it'}+=
+					$server::Time - $Hunted->{'stats'}{'tagged'};
+				delete($Hunted->{'stats'}{'tagged'});
+			}
+		}
+
+		$Hunted=undef;
 	}
 
 	sub prey {
@@ -9038,6 +9053,8 @@ sub event {
 	unless($config::Clock==1000) {
 		$event->{'time'}*=1000/$config::Clock;
 	}
+
+	$server::Time=$event->{'time'};
 
 	if($event->{'group'} eq 'server') {
 		$player=player::server;
@@ -12316,7 +12333,7 @@ core protecting the flag.
 		$time[0]-=1900;
 		$time[1]=$month{$time[1]};
 
-		$server::Start=POSIX::mktime(@time[5,4,3,2,1,0])+$time[6]/1000;
+		$server::Start=POSIX::mktime(@time[5,4,3,2,1,0])*1000+$time[6];
 	},
 
 	'serverPatches'	=> sub {	#LewisH server patch add-on
@@ -12642,7 +12659,7 @@ core protecting the flag.
 			$p->{'team'}=$e->{'team'};
 			plus::next_bot if(xx::enabled);
 			return;
-		} elsif(plus::capture_wait($e)) {
+		} elsif(plus::capture_wait) {
 			plus::bench($p);
 		} elsif(plus::enter($p)) {
 			$p->{'team'}=$e->{'team'};
@@ -12685,8 +12702,8 @@ core protecting the flag.
 			if(map::name eq config::lobby) {
 				server::send('changeMap', config::random_map);
 			} else {
-				records::mark($e) if(map::type(@records));
-				race::mark($e);
+				records::mark if(map::type(@records));
+				race::mark;
 
 				if($timers->{'start'}) {
 					xx::set_time($timers->{'start'});
@@ -12757,9 +12774,11 @@ core protecting the flag.
 		plus::plane_check($p); #Notify only, don't enforce until spawn
 	},
 
-	'#logPlanePositions'	=> sub {
+	'logPlanePositions'	=> sub {
 		my($e, $p)=@_;
 		my($pos)=$e->{'positionByPlayer'};
+
+		return if($e->{'type'} eq 'consoleCommandExecute');
 
 		if(xx::enabled && xx::config('logPositions')) {
 			foreach my $player (player::list) {
@@ -12786,7 +12805,7 @@ core protecting the flag.
 
 		records::help($p, 20);
 
-		ball::goal($e, $p);
+		ball::goal($p);
 
 		rank::score($p->{'team'}, 1);
 
@@ -12860,7 +12879,7 @@ core protecting the flag.
 		}
 
 		if($powerup eq 'Ball') {
-			ball::shoot($e);
+			ball::shoot;
 		} elsif($powerup eq 'Bomb') {
 			$p->{'carrier'}=0;
 			if($p->{'Bomb'}{'count'} > 8) {
@@ -13178,11 +13197,11 @@ core protecting the flag.
 			}
 		} elsif(map::type('tag')) {
 			if(plus::hunted($v)) {
-				$v->{'stats'}{'it'}+=$e->{'time'}-$v->{'stats'}{'tagged'};
-				$p->{'stats'}{'tagged'}=$e->{'time'};
 				plus::change_hunted($p);
 			} elsif(plus::hunted($p)) {
-				chat::snark($p, 'The best defense is a good offense');
+				if(chat::snarky) {
+					chat::snark($p, 'The best defense is a good offense');
+				}
 			} else {
 				chat::whisper($p, 'This is tag, only kill the player who is it!');
 			}
@@ -13417,7 +13436,7 @@ core protecting the flag.
 		} else {
 			plus::restart_clear;
 			queue::clear;
-			records::enter($e);
+			records::enter;
 			log::finish;
 		}
 	},
@@ -13496,11 +13515,12 @@ core protecting the flag.
 			}
 		}
 
+		plus::finish_hunted;
+
 		foreach my $p (player::list) {
 			$p->{'stats'}{'played'}+=$e->{'time'} - $p->{'spawn'};
-			if(plus::hunted($p)) {
-				$p->{'stats'}{'it'}+=$e->{'time'} - $p->{'stats'}{'tagged'};
-			}
+
+			$p->{'alive'}=0;
 
 			rank::enter($p);
 
@@ -13524,7 +13544,7 @@ core protecting the flag.
 		}
 
 		if(map::mode('ball', 'tbd', 'tdm', 'ffa')) {
-			queue::schedule { records::enter($e) } 2;
+			queue::schedule { records::enter; } 2;
 		}
 
 		queue::schedule { log::finish } 2;
@@ -13623,9 +13643,9 @@ core protecting the flag.
 		my($lag);
 
 		return if($e->{'changedMap'});
-		return if(($e->{'time'}-map::start)<10*$config::Clock);
+		return if(($e->{'time'}-map::start)<10000);
 
-		$lag=$e->{'duration'}/$config::Clock;
+		$lag=$e->{'duration'}/1000;
 		if($lag > config::option('hitchThreshold')) {
 			chat::all(sprintf('Server lag: %.2f seconds', $lag));
 		}
@@ -14109,7 +14129,7 @@ also only available from the console.
 
 		chat::whisper($s, $name, ':');
 		chat::whisper($s, '  joined:',
-			scalar(localtime($server::Start + $p->{'time'}/$config::Clock)));
+			scalar(localtime(($server::Start+$p->{'time'})/1000)));
 		chat::whisper($s, '  level ace:', $p->{'level'}, $p->{'aceRank'});
 		foreach my $key (@keys) {
 			chat::whisper($s, "  $key:", $p->{$key});
