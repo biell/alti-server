@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.13';
+my($VERSION)='4.14';
 
 =head1 NAME
 
@@ -1152,6 +1152,10 @@ L<perl(1)> should be used to ensure basic operation.
 			close(STDERR);
 			exec($Ping, '-c', 2, $host);
 		}
+	}
+
+	sub alpha {
+		return(unpack('C', pack('N', $_[0]))/255);
 	}
 
 	sub distance {
@@ -3428,13 +3432,14 @@ garunteed to keep the format correct.
 		my($change)=@_;
 		my($limit, $used)=map::timer();
 
-		return unless(&enabled);
+		return unless(&enabled());
 
 		if($change=~m/(-|\+)?(\d+):(\d+)$/) {
 			$change=$2*60+$3;
 			$change*=-1 if($1 eq '-');
 		}
 
+		ui::slog('setTime', 30 * List::Util::max(0, int($limit-$change)));
 		server::send('setTime', 30 * List::Util::max(0, int($limit-$change)));
 	}
 
@@ -4948,6 +4953,100 @@ types which alter the normal behavior.
 }
 
 
+{	package spawn;
+
+	my(@Chains)=();
+	my(@Size)=();
+
+	sub reset {
+		@Size=@_;
+	}
+
+	sub store {
+		my($chain)=@_;
+
+		return unless(@$chain>1);
+
+		for(my $i=0; $i<$#{$chain}; $i++) {
+			$chain->[$i][3]=utils::direction(
+					$chain->[$i+1][0]-$chain->[$i][0],
+					$chain->[$i+1][1]-$chain->[$i][1]
+				);
+		}
+
+		pop(@$chain);
+
+		push(@Chains, $chain);
+	}
+
+	sub add {
+		my($hull)=@_;
+		my($x, $y)=($hull->{'x'}, $hull->{'y'});
+		my($alpha)=1;
+		my(@point)=();
+		my(@first)=();
+		my($poly)=[];
+		local($_);
+
+		foreach my $elt (split(m/,/, $hull->{'texturedPoly'}{'hull'})) {
+			if($elt=~m/!([-0-9]+)/) {
+				$alpha=utils::alpha($1);
+			} elsif(@point) {
+				push(@point, $elt+$y);
+
+				if($point[0]>=0 && $point[0]<=$Size[0]
+				&& $point[1]>=0 && $point[1]<=$Size[1]) {
+					push(@$poly, [@point, $alpha]);
+				} else {
+					push(@$poly, [@point, 0]);
+				}
+
+				@first=@point unless(@first);
+				@point=();
+
+				if($poly->[-1][2]==0) {
+					&store($poly);
+					$poly=[];
+				}
+			} else {
+				push(@point, $elt+$x);
+			}
+		}
+
+		push(@$poly, [@first, 0]) unless(@$poly && $poly->[-1][2]==0);
+
+		&store($poly);
+	}
+
+	sub near {
+		my($e)=@_;
+		my($x)=$e->{'victimPositionX'};
+		my($y)=$e->{'victimPositionY'};
+		my($min)=99999999;
+		my($best)=undef;
+		my($dist);
+
+		foreach my $chain (@Chains) {
+			foreach my $point (@$chain) {
+				$dist=utils::distance($x, $y, @$point[0,1]);
+				$dist*=2-$point->[2];
+
+				if($dist<$min) {
+					$min=$dist;
+					$best=$point;
+				}
+			}
+		}
+
+		if($best) {
+			return(@$best[0,1,3]);
+		} else {
+			return(hull::safe_spawn($e));
+		}
+	}
+}
+
+
 {	package map;
 
 	my($Map)=undef;
@@ -5435,6 +5534,7 @@ types which alter the normal behavior.
 
 	sub new {
 		my($mapref)=@_;
+		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($obj);
 
 		$Map=$mapref;
@@ -5496,6 +5596,22 @@ types which alter the normal behavior.
 		if(ref($obj) eq 'ARRAY') {
 			foreach my $geometry (@$obj) {
 				hull::add($geometry);
+			}
+		}
+
+		spawn::reset(@{$Ds->{'views'}{'Spawn'}{'bounds'}}{'maxX', 'maxY'});
+		$obj=$Ds->{'views'}{'Spawn'}{'geometry'}[0]{'geometry'};
+		if(ref($obj) eq 'ARRAY') {
+			foreach my $geometry (@$obj) {
+				spawn::add($geometry);
+			}
+		}
+
+		if(exists($Ds->{'views'}{'Spawn'}{'bounds'}) && $spawn_mode eq 'map') {
+			if($Ds->{'views'}{'Spawn'}{'bounds'}{'maxX'} != $Ds->{'views'}{'Game'}{'bounds'}{'maxX'}
+			|| $Ds->{'views'}{'Spawn'}{'bounds'}{'maxY'} != $Ds->{'views'}{'Game'}{'bounds'}{'maxY'}
+			) {
+				ui::slog('!! The Spawn and Game layers are not the same size !!');
 			}
 		}
 	}
@@ -9273,6 +9389,7 @@ user interaction.
 A number of spawn possibilities are created by B<alti+server>.  Players
 can spawn normally as always.  However, the additional methods are also
 available:
+map (The map has a layer specifying spawn points, the closest one is used),
 died (players spawn where they last died),
 zone (players can manually choose the location where they spawn),
 near (players spawn at the nearest defined zone location to where they die),
@@ -11066,7 +11183,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'Change the behavior of how users spawn when they die, or pickup powerups');
 		chat::whisper($p, '/list spawnMode');
-		chat::whisper($p, '/set spawnMode <default|died|pickup|health|zone|near|after|portal>[,center|hmirror|vmirror]');
+		chat::whisper($p, '/set spawnMode <default|map|died|pickup|health|zone|near|after|portal>[,center|hmirror|vmirror]');
 		chat::whisper($p, '/unset spawnMode');
 	},
 
@@ -11108,6 +11225,9 @@ core protecting the flag.
 			chat::all("Player spawn returned to normal");
 			stash::delete('spawnMode', map::name, 'map');
 			stash::delete('spawnAngle', map::name, 'map');
+		} elsif($spawn=~m/map/i) {
+			chat::all("Players spawn using the map's Spawn layer");
+			stash::set('spawnMode', map::name, 'map', 'map');
 		} elsif($spawn=~m/die|crash/i) {
 			chat::all("Players spawn where died, use '/sz start' to spawn normal");
 			stash::set('spawnMode', map::name, 'map', 'died');
@@ -12961,7 +13081,7 @@ core protecting the flag.
 		return if(plus::key($e, $p));
 
 		if(plus::teleport($e, $p)) {
-			if($spawn_mode!~m/died|crash|powerup|health|portal/) {
+			if($spawn_mode!~m/map|died|crash|powerup|health|portal/) {
 				plus::clear_spawn($p);
 			}
 			return;
@@ -13167,7 +13287,9 @@ core protecting the flag.
 			plus::killed($v);
 			plus::check_spawn($v);
 
-			if($spawn_mode eq 'died' || $spawn_mode eq 'crash') {
+			if($spawn_mode eq 'map') {
+				plus::spawn_here($v, spawn::near($e));
+			} elsif($spawn_mode eq 'died' || $spawn_mode eq 'crash') {
 				if($is_crash) {
 					plus::spawn_here($v, hull::safe_spawn($e));
 				} else {
@@ -13203,7 +13325,11 @@ core protecting the flag.
 					chat::snark($p, 'The best defense is a good offense');
 				}
 			} else {
-				chat::whisper($p, 'This is tag, only kill the player who is it!');
+				if($p->{'stats'}{'wrong'}++ > 15) {
+					server::send('drop', $p->{'nickname'});
+				} else {
+					chat::whisper($p, 'Only kill the player who is it! (', $p->{'stats'}{'wrong'}, ')');
+				}
 			}
 		}
 

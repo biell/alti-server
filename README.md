@@ -120,6 +120,35 @@ TDM, 1DM, and FFA game modes.  Maps which start with either `tdm_1lf_`,
 `1dm_1lf_`, `ffa_1lf_`, or simply `1lf_` will be automatically configured
 for this type.
 
+## Making Alti+ Maps
+Alti+ maps are basically the same as any other map.  The important part
+is placing things like powerup in the correct location, so you can attach
+Alti+ functionality to them later, in your `plus.txt` file.
+
+When creating maps with paralax views and setting the `cameraScale`
+parameter, remember that you need to recalculate your geometry based on
+a screen size different from 1280x720.
+
+If you are planning on using `spawnMode map`, you will need to create
+a view in your map named exactly `Spawn`.  This name, including the
+capitalization must be kept exactly, as this the only view name
+that the alti+server looks at for spawn placements.  You can use any
+layer inside that view to place your spawn lines.  This is done by creating
+a new hull.  Each data point of the hull will be a spawn point, and the
+spawn angle will be directly pointed at the next data point.  If a player
+dies, the server will find the closest data point and spawn the player there.
+Any data points off the visible map boundary will not count, and will be
+automatically removed for you as possible spawn points.  You can add
+weight to a spawn point by changing the `alpha` portion of its color
+specification.  It doesn't matter what color a point is, but the alpha can
+be used to de-prioritize spawn points around curves, or for a variety of
+reasons.  If the alpha specification for a point is 0, then this point is
+not a valid spawn point, and will not be used.  Using this method, or moving
+location points off of the viewable map are the two methods you can easilly
+use to complete a hull on a course which is not a circuit.  Under most
+circumstances it is best to set these hulls to be not-visible.
+
+
 ## Map Integration
 Altitude maps end with a `.altx` extension.  These are simple archive files
 which contain all the necessary information for game play.  A tool is
@@ -358,9 +387,10 @@ manage Alti+ game maps.
     persist across server restarts. To set it back, you can
     `/unset planeScale` or `/set planeScale 100`.
 
-  * **/set spawnMode [died|crash|powerup|health|zone|near|after|portal|normal][,center|hmirror|vmirror]**<br>
+  * **/set spawnMode [map|died|crash|powerup|health|zone|near|after|portal|normal][,center|hmirror|vmirror]**<br>
     This specifies the type of respawning when a user dies, or requests
     to spawn. The type can be any of the following:
+    *map* (Use the hulls defined on a layer named `Spawn`),
     *died* (the location of last death),
     *crash* (same as death, but don't turn players around after crashing),
     *powerup* (the location of their last powerup of any kind -see zones),
