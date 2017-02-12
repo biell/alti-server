@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.14';
+my($VERSION)='4.15';
 
 =head1 NAME
 
@@ -4960,6 +4960,7 @@ types which alter the normal behavior.
 
 	sub reset {
 		@Size=@_;
+		@Chains=();
 	}
 
 	sub store {
