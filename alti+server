@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.16';
+my($VERSION)='4.17';
 
 =head1 NAME
 
@@ -6384,6 +6384,7 @@ they make the top 5.
 	}
 
 	sub enter {
+		my($e)=@_;
 		my(@types)=split(m/\W+/, config::option('recordsTypes'));
 		my($assign)=map::team_number(stash::get('assignTeam', map::name, 'map'));
 		my($win)=ball::winner();
@@ -6402,7 +6403,7 @@ they make the top 5.
 		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
 
 		$save=0 if(map::mode('tbd', '1de', '1bd') && map::type('coop')
-				&& ($server::Time-$Destroy) > 3000);
+				&& ($e->{'time'}-$Destroy) > 3000);
 
 		$save=0 if(map::mode('ffa', 'tdm') && map::type('coop')
 				&& !plus::coop_timers());
@@ -12910,6 +12911,7 @@ core protecting the flag.
 		if(xx::enabled && xx::config('logPositions')) {
 			foreach my $player (player::list) {
 				if(exists($pos->{$player->{'player'}})) {
+					$player->{'stats'}{'was'}=$player->{'stats'}{'pos'};
 					$player->{'stats'}{'pos'}=$pos->{$player->{'player'}};
 				}
 			}
@@ -13569,7 +13571,7 @@ core protecting the flag.
 		} else {
 			plus::restart_clear;
 			queue::clear;
-			records::enter;
+			records::enter($e);
 			log::finish;
 		}
 	},
@@ -13677,7 +13679,7 @@ core protecting the flag.
 		}
 
 		if(map::mode('ball', 'tbd', 'tdm', 'ffa')) {
-			queue::schedule { records::enter; } 2;
+			queue::schedule { records::enter($e); } 2;
 		}
 
 		queue::schedule { log::finish } 2;
