@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.15';
+my($VERSION)='4.16';
 
 =head1 NAME
 
@@ -8081,6 +8081,12 @@ play though extended interfaces and server support.
 			}
 		}
 		$Stats{'timers'}{$p->{'team'}}{$pickup}=1;
+
+		if($timers->{$pickup}==0) {
+			chat::all($p->{'nickname'}, 'found the prize!');
+		} else {
+			chat::all($p->{'nickname'}, 'found a timer powerup');
+		}
 	}
 
 	sub coop_timers {
