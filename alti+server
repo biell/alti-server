@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.17';
+my($VERSION)='4.18';
 
 =head1 NAME
 
@@ -7887,8 +7887,13 @@ play though extended interfaces and server support.
 	}
 
 	sub spawn_reset {
-		my($p)=@_;
+		my($p, %opt)=@_;
 		my($start)=stash::get('start', 'zones', $p->{'team'}, 'zones', map::name, 'map');
+		my($assign)=stash::get('assignTeam', map::name, 'map');
+
+		unless(exists($opt{'force'}) && $opt{'force'}) {
+			return if($assign && map::type('coop'));
+		}
 
 		if(ref($start) eq 'ARRAY') {
 			&spawn_here($p, @$start);
@@ -7906,7 +7911,7 @@ play though extended interfaces and server support.
 		if(@spawns) {
 			&spawn_here($p, @{$spawns[$random]});
 		} else {
-			&spawn_reset($p);
+			&spawn_reset($p, force => 1);
 		}
 	}
 
@@ -8083,7 +8088,7 @@ play though extended interfaces and server support.
 		}
 		$Stats{'timers'}{$p->{'team'}}{$pickup}=1;
 
-		if($timers->{$pickup}==0) {
+		if($timers->{$pickup}=~m/^\d+$/ && $timers->{$pickup}<5) {
 			chat::all($p->{'nickname'}, 'found the prize!');
 		} else {
 			chat::all($p->{'nickname'}, 'found a timer powerup');
@@ -12684,7 +12689,7 @@ core protecting the flag.
 				$p->{'team'}=$e->{'team'};
 				return;
 			} else {
-				plus::spawn_reset($p) unless(map::type('coop'));
+				plus::spawn_reset($p);
 
 				$p->{'team'}=$e->{'team'};
 
@@ -12940,7 +12945,7 @@ core protecting the flag.
 
 		if($spawn_mode && $spawn_mode!~m/default|normal|start/) {
 	 		foreach my $player (player::list) {
-				plus::spawn_reset($player);
+				plus::spawn_reset($player, force => 1);
 			}
 		}
 
