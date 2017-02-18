@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.18';
+my($VERSION)='4.19';
 
 =head1 NAME
 
@@ -3134,6 +3134,9 @@ garunteed to keep the format correct.
 						'custom_join'		=> {
 							'ignore_default'	=> json::false,
 						},
+						'bots'			=> {
+							'allow_join_tournament'	=> json::false,
+						},
 						'restrict_level'	=> {
 							'enabled'		=> json::false,
 							'min'		=> {
@@ -3205,6 +3208,7 @@ garunteed to keep the format correct.
 			'acl'			=> [@Permissions, 'commands'],
 			'clientCommand'	=> [@Global, 'client_commands'],
 			'joinIgnoreDefault'	=> [@Server, 'custom_join', 'ignore_default'],
+			'botTournament'	=> [@Server, 'bots', 'allow_join_tournament'],
 			'minAce'			=> [@Server, 'restrict_level', 'min', 'ace'],
 			'minLevel'		=> [@Server, 'restrict_level', 'min', 'level'],
 			'maxAce'			=> [@Server, 'restrict_level', 'min', 'ace'],
@@ -12571,15 +12575,15 @@ core protecting the flag.
 			$name=$p->{'nickname'};
 		}
 
-		if(map::type('tag') && plus::hunted($p)) {
-			plus::change_hunted(player::random);
-		}
-
 		records::help($p, -10);
 
 		race::del($p);
 		plus::leave($p);
 		player::remove($p);
+
+		if(map::type('tag') && plus::hunted($p)) {
+			plus::change_hunted(player::random);
+		}
 
 		return if($p->{'isBot'});
 
@@ -13232,7 +13236,7 @@ core protecting the flag.
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($assign)=stash::get('assignTeam', map::name, 'map');
 		my($is_crash)=0;
-		my($angle);
+		my($angle, $limit);
 
 		$is_crash=1 if($e->{'player'}==-1 && $e->{'source'} eq 'plane');
 
@@ -13318,6 +13322,31 @@ core protecting the flag.
 		}
 
 		return unless($p && $v);
+
+		if(map::type('tag')) {
+			if(plus::hunted($v)) {
+				if($is_crash || $p->{'isBot'}) {
+					plus::change_hunted(player::random);
+				} else {
+					plus::change_hunted($p);
+				}
+			} elsif(plus::hunted($p)) {
+				if(chat::snarky && !$is_crash) {
+					chat::snark($p, 'The best defense is a good offense');
+				}
+			} elsif($p->{'joined'} && !$p->{'isBot'} && !$v->{'isBot'}) {
+				$limit=int($config::Launcher{'roundTime'}{map::mode}/60);
+
+				$p->{'stats'}{'wrong'}++;
+				if($p->{'stats'}{'wrong'} >= $limit) {
+					server::send('drop', $p->{'nickname'});
+				} else {
+					chat::whisper($p, 'Only kill the player who is it! (',
+						$p->{'stats'}{'wrong'}, '/', $limit, ')');
+				}
+			}
+		}
+
 		return if($p->{'isBot'} || $v->{'isBot'});
 		return unless($e->{'source'} eq 'plane');
 
@@ -13329,20 +13358,6 @@ core protecting the flag.
 					'friendly fire';
 				} else {
 					plus::score($p);
-				}
-			}
-		} elsif(map::type('tag')) {
-			if(plus::hunted($v)) {
-				plus::change_hunted($p);
-			} elsif(plus::hunted($p)) {
-				if(chat::snarky) {
-					chat::snark($p, 'The best defense is a good offense');
-				}
-			} else {
-				if($p->{'stats'}{'wrong'}++ > 15) {
-					server::send('drop', $p->{'nickname'});
-				} else {
-					chat::whisper($p, 'Only kill the player who is it! (', $p->{'stats'}{'wrong'}, ')');
 				}
 			}
 		}
@@ -14507,6 +14522,11 @@ while(1) {
 				dlfmhs::remove($1);
 			} elsif($SOUT=~m/DLFMHS releasing file data for (.*)\.altx/) {
 				dlfmhs::release($1);
+			} elsif($SOUT=~m/\[Nickname Changed\] '(.*)' -> '(.*)'/) {
+				1; #put code here if xal's patch doesn't fix name change bug
+			} elsif($SOUT=~m/ERROR .* java.lang.NullPointerException/) {
+				1; #put code here if xal's patch doesn't fix name change bug
+				   #Need 2 of these after the Nickname Changed line.
 			} elsif($SOUT=~m/BindException: Address already in use/) {
 				ui::slog('Another instance is already running');
 
