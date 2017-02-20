@@ -1,0 +1,51 @@
+#Bring ball out on ball_half_court
+
+MAP 'ball_half_court';
+
+my($TEAM)=undef;
+my(@GOAL)=();
+
+HOOKS {
+	'mapChange'		=> sub {
+		$TEAM=undef;
+	},
+
+	'ballLost'		=> sub {
+		my($e)=@_;
+
+		if(($e->{'time'}-$GOAL[1]) < 2000) {
+			ball::rollback_score($GOAL[0]);
+			@GOAL=();
+		}
+
+		$TEAM=undef;
+	},
+
+	'goal'			=> sub {
+		my($e, $p)=@_;
+
+		$TEAM=undef;
+		@GOAL=($p->{'team'}, $e->{'time'});
+	},
+
+	'powerupPickup'	=> sub {
+		my($e, $p)=@_;
+		
+		return unless($e->{'powerup'} eq 'Ball');
+
+		if($TEAM) {
+			if($p->{'team'} != $TEAM) {
+				server::send('resetBallTeam', -1);
+				plus::spawn_here($p, 1235, 360, 'w');
+				$TEAM=undef;
+			}
+		} else {
+			$TEAM=$p->{'team'};
+
+			foreach my $player (player::list, player::bots) {
+				plus::spawn_reset($player);
+			}
+		}
+	},
+};
+
