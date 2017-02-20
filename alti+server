@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='4.19';
+my($VERSION)='4.21';
 
 =head1 NAME
 
@@ -3260,8 +3260,6 @@ garunteed to keep the format correct.
 	sub install {
 		my($xx);
 
-		return unless(config::option('xxEnabled'));
-
 		rename('game.jar', 'game.jar.orig') unless(-r 'game.jar.orig');
 
 		if(-l $SCRIPT) {
@@ -3270,11 +3268,16 @@ garunteed to keep the format correct.
 			$xx=Cwd::realpath(join('/', dirname($SCRIPT), 'game.jar'));
 		}
 
-		ui::slog('install', $SCRIPT, $xx);
-
 		if($xx && -r $xx) {
 			unlink('game.jar');
 			symlink($xx, 'game.jar');
+		}
+	}
+
+	sub uninstall {
+		if(-r 'game.jar.orig') {
+			unlink('game.jar');
+			rename('game.jar.orig', 'game.jar');
 		}
 	}
 
@@ -14035,6 +14038,12 @@ also only available from the console.
 				} elsif($value=~m/(\d+)k/i) {
 					$value=$1*1024;
 				}
+			} elsif($name eq 'xxEnabled') {
+				if($value) {
+					xx::install;
+				} else {
+					xx::uninstall;
+				}
 			}
 
 			if($name=~m/pass/i) {
@@ -14069,6 +14078,8 @@ also only available from the console.
 				xx::config_unset('minLevel');
 				xx::config_unset('levelRestrictions');
 				xx::config_reload;
+			} elsif($name eq 'xxEnabled') {
+				xx::uninstall;
 			}
 		} elsif($action eq 'add') {
 			unless(config::option_exists($name)) {
@@ -14622,8 +14633,6 @@ db::init;
 db::upgrade;
 
 stash::upgrade;
-
-xx::install;
 
 config::launcher;
 
