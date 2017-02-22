@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='4.21';
+my($VERSION)='4.24';
 
 =head1 NAME
 
@@ -3290,7 +3290,7 @@ garunteed to keep the format correct.
 	}
 
 	sub install {
-		my($xx);
+		my($xx)=undef;
 
 		rename('game.jar', 'game.jar.orig') unless(-r 'game.jar.orig');
 
@@ -3301,6 +3301,7 @@ garunteed to keep the format correct.
 		}
 
 		if($xx && -r $xx) {
+			ui::slog("Linking game.jar to $xx");
 			unlink('game.jar');
 			symlink($xx, 'game.jar');
 		}
