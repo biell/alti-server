@@ -1,0 +1,151 @@
+#dodgeball Alti+ script for game specific code
+#
+# Rules:
+#  Force a player to catch the ball within 1 second of throw to eliminate them
+#  Each player has 3 eliminations, after which they are benched
+#  First team to have all its players benched looses
+#  You have a 1.5 second grace after spawn wherein you cannot be eliminated
+#  On elimination, you have 1 second to pass the ball before you despawn
+#  Eliminated players cannot eliminate another player until next spawn
+#
+# Alti+ settings
+#  /add plane Loopy,Acid
+#  /add plane Bomber
+#  /add plane Biplane
+#  /set gravity 2
+
+MAP 'ball_dodgeball';
+
+my(%PLAYERS)=();
+my($LOCK)=0;
+my($TEAM)=undef;
+my($HOT)=0;
+my($SIZE)=100;
+
+sub eliminate {
+	my($p, $inc)=@_;
+	my($vid)=$p->{'vaporId'};
+	my($team)=$p->{'team'};
+	my($goals)=$config::Launcher{'goals'};
+	my(@left)=(player::list('left'), player::bots('left'));
+	my(@right)=(player::list('right'), player::bots('right'));
+	my($left, $right)=(0, 0);
+
+	$PLAYERS{$vid}+=$inc;
+
+	if($PLAYERS{$vid}>=10 && !$p->{'isBot'}) {
+		server::send('kick', $p->{'nickname'});
+	} elsif($PLAYERS{$vid}>=3) {
+		if(map::left($team)) {
+			plus::spawn_here($p, 100, 120, 0);
+		} else {
+			plus::spawn_here($p, 1180, 120, 180);
+		}
+	}
+
+	queue::schedule { plus::bench($p); } 1;
+	$TEAM=undef;
+
+	if(@left) {
+		foreach my $player (@left) {
+			$left++ if($PLAYERS{$player->{'vaporId'}}>=3);
+		}
+		$left*=$goals/@left;
+	} else {
+		$left=$goals;
+	}
+
+	if(@right) {
+		foreach my $player (@right) {
+			$right++ if($PLAYERS{$player->{'vaporId'}}>=3);
+		}
+		$right*=$goals/@right;
+	} else {
+		$right=$goals;
+	}
+
+	ball::set_score($right, $left);
+}
+
+sub expand {
+	if(player::count>0) {
+		$SIZE+=5;
+		server::send('testPlaneScale', $SIZE);
+
+		if($SIZE<=300) {
+			queue::schedule { &expand; } 40;
+		}
+	}
+}
+
+HOOKS {
+	'mapChange'		=> sub {
+		%PLAYERS=();
+		$LOCK=0;
+		$TEAM=undef;
+		$HOT=0;
+		$SIZE=100;
+
+		queue::schedule { &expand; } 90;
+	},
+
+	'spawn'			=> sub {
+		my($e, $p)=@_;
+
+		unless($LOCK) {
+			$LOCK=$e->{'time'}+5000;
+		}
+	},
+
+	'ballLost'		=> sub {
+		$TEAM=undef;
+	},
+
+	'powerupUse'		=> sub {
+		my($e, $p)=@_;
+
+		$HOT=$e->{'time'}+1000;
+	},
+
+	'powerupPickup'	=> sub {
+		my($e, $p)=@_;
+		my($team)=$p->{'team'};
+		my($safe)=$p->{'spawn'}+1500;
+		my($time)=$e->{'time'};
+
+		if($TEAM && $team!=$TEAM && $safe<$time && $time<=$HOT) {
+			&eliminate($p, 1);
+		}
+
+		$TEAM=$p->{'team'};
+	},
+
+	'kill'			=> sub {
+		my($e, $p)=@_;
+		my($v)=player::lookup($e->{'victim'});
+		my($x)=$e->{'victimPositionX'};
+
+		if(map::left($v->{'team'})) {
+			&eliminate($v, 1) if($x>642);
+		} else {
+			&eliminate($v, 1) if($x<638);
+		}
+
+		if($v->{'carrier'}) {
+			$TEAM=undef;
+		}
+	},
+
+	'teamChange:pre'	=> sub {
+		my($e, $p)=@_;
+		my($diff)=player::count('left') - player::count('right');
+
+		return if($diff<-1 && map::left($e->{'team'}));
+		return if($diff>1 && map::right($e->{'team'}));
+
+		if($LOCK && $LOCK<$e->{'time'}) {
+			&eliminate($p, 3);
+		}
+	},
+};
+

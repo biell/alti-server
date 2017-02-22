@@ -51,7 +51,7 @@ my(%OPTIONS)=(
 	debug		=> 0,			#Debug is on(1) or off(0)
 	awards		=> 1,			#Give out awards at the end of a round
 	javaHome		=> '',			#Change JAVA_HOME to point to your JDK
-	xxEnabled		=> 1,			#Enable xx server patch if available
+	xxEnabled		=> 0,			#Enable xx server patch
 	recordsTypes	=> 'coop,race,ruin',#Which map types to keep records on
 	saveLogTypes	=> 'coop',		#Save the logs for these game types
 	saveLogAlways  => undef,			#Always save logs, regardless of record
@@ -83,7 +83,8 @@ my(%OPTIONS)=(
 my(@MODES)=qw(1bd 1de 1dm ball ffa tbd tdm);
 my(@TYPES)=qw(coop flag mdg tag race ruin zone 1lh);
 
-my($ROLL_LOGS)=4 * 2**20;
+my($MB)=2**20;
+my($ROLL_LOGS)=4 * $MB;
 my($RADIANS)=3.1415926535/180;
 
 =head1 DESCRIPTION
@@ -1585,8 +1586,10 @@ pure-perl C<JSON::PP>, and this will be used if C<JSON::XS> is not found.
 	my($Json);
 
 	if($Json=eval('use JSON::XS; JSON::XS->new()')) {
+		$Json->relaxed(1); #in case of hand editing of json_stash.txt
 		ui::slog('using JSON::XS (good)');
 	} elsif($Json=eval('use JSON::PP; JSON::PP->new()')) {
+		$Json->relaxed(1); #in case of hand editing of json_stash.txt
 		ui::slog('using JSON::PP, consider installing JSON::XS (its faster)');
 	} else {
 		die('Could not find a JSON library, please install JSON::XS');
@@ -1738,6 +1741,7 @@ stash are automatically saved to disk.
 	use Storable;
 
 	my($Stashfile)="$INSTALL_ROOT/servers/json_stash.txt";
+	my($Stashdir)="$INSTALL_ROOT/servers/json_stash.bak";
 	my($Stashattic)="$INSTALL_ROOT/servers/json_attic.txt";
 	my($Stash)=undef;
 
@@ -1745,6 +1749,16 @@ stash are automatically saved to disk.
 		my($value);
 
 		$Stash=json::read_file($Stashfile) unless($Stash);
+
+		unless($Stash) {
+			ui::shutdown;
+			print "\n\n";
+			print "!!!!!!!!!!!!!!!!!!!!!!!!!\n";
+			print "! stash file is corrupt !\n";
+			print "!!!!!!!!!!!!!!!!!!!!!!!!!\n\n";
+			sleep(1);
+			exit(1);
+		}
 
 		$value=$Stash;
 		while(@_) {
@@ -1755,6 +1769,19 @@ stash are automatically saved to disk.
 	}
 
 	sub save {
+		my($bak);
+
+		unless(-f $bak) {
+			$bak=$Stashdir.'/'.POSIX::strftime("%Y%m%d", gmtime(time));
+
+			mkdir($Stashdir, 0755) unless(-d $Stashdir);
+			rename($Stashfile, $bak) unless(-f $bak);
+
+			foreach my $backup (<$Stashdir/*>) {
+				unlink($backup) if(-M $backup > 90);
+			}
+		}
+
 		json::write_file($Stash, $Stashfile);
 	}
 
@@ -2562,6 +2589,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($packet_space)=1450-240-20*$Maxp-$Reserve;
 		my($mapdir)=config::option('mapDir');
 
+		if(&option('xxEnabled')) {
+			$packet_space+=$MB;
+		}
+
 		ui::slog('Space reserved for maps:', $packet_space);
 
 		@Maps=sort(config::_map_sort <$INSTALL_ROOT/maps/$mapdir/*_*.altx>);
@@ -3126,6 +3157,7 @@ garunteed to keep the format correct.
 			$Global[0]					=> {
 				$Global[1]				=> {
 					'fix_commands_latency'	=> json::true,
+					'config_size_workaround'	=> json::true,
 					'ffa_allow_assign_team'	=> json::true,
 					'position_log_time'		=> 0,
 					'permissions'			=> {
@@ -5155,6 +5187,7 @@ types which alter the normal behavior.
 	my(%Turrets)=();
 	my(%Bases)=();
 	my(%Goals)=();
+	my(%Spawns)=();
 	my(@Choices)=();
 
 	our($Xmid, $Ymid)=(0, 0);
@@ -5530,23 +5563,16 @@ types which alter the normal behavior.
 
 	sub spawn_points {
 		my($p)=@_;
-		my($spawns)=$Ds->{'views'}{'Game'}{'spawnPoints'}[0]{'spawnPoints'};
 		my(@points)=();
 
-		return() unless(ref($spawns) eq 'ARRAY');
+		if($p && !map::mode('ffa')) {
+			push(@points, @{$Spawns{2}}) if(exists($Spawns{2}));
+			push(@points, @{$Spawns{$p->{'team'}}}) if(exists($Spawns{$p->{'team'}}));
 
-		foreach my $sp (@$spawns) {
-			if($p) {
-				#Team 2 is ALL teams.
-				if($sp->{'team'}==2 || $sp->{'team'}==$p->{'team'}) {
-					push(@points, [@$sp{'x','y','orientation'}]);
-				}
-			} else {
-				push(@points, [@$sp{'x','y','orientation'}]);
-			}
+			return(@points);
+		} else {
+			return(@{$Spawns{'all'}});
 		}
-
-		return(@points);
 	}
 
 	sub bases {
@@ -5660,6 +5686,7 @@ types which alter the normal behavior.
 		%Turrets=();
 		%Bases=();
 		%Goals=();
+		%Spawns=();
 
 		log::start(@$Map{'map', 'mode', 'type'});
 
@@ -5695,6 +5722,15 @@ types which alter the normal behavior.
 		if(ref($obj) eq 'ARRAY') {
 			foreach my $ba (@$obj) {
 				$Bases{"$ba->{'x'},$ba->{'y'}"}=$ba->{'team'};
+			}
+		}
+		$obj=$Ds->{'views'}{'Game'}{'spawnPoints'}[0]{'spawnPoints'};
+		if(ref($obj) eq 'ARRAY') {
+			foreach my $sp (@$obj) {
+				push(@{$Spawns{'all'}},
+						[@$sp{'x','y','orientation'}]);
+				push(@{$Spawns{$sp->{'team'}}},
+						[@$sp{'x','y','orientation'}]);
 			}
 		}
 
@@ -7940,21 +7976,24 @@ play though extended interfaces and server support.
 
 	sub spawns {
 		my($p)=@_;
+		my($team)=$p->{'team'};
 		my($zones)=undef;
 		my(@points)=();
+
+		$team=100 if($team>100);
 
 		if($p->{'isBot'}) {
 			$zones=stash::get('zones', 'bot', 'zones', map::name, 'map');
 		}
 
 		unless($zones) {
-			$zones=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
+			$zones=stash::get('zones', $team, 'zones', map::name, 'map');
 		}
 
 		if(ref($zones)) {
 			foreach my $name (keys(%$zones)) {
-				next unless($Stats{$p->{'team'}}{'zone'}{$name} // 1);
-				next unless($Stats{$p}{$p->{'team'}}{'zone'}{$name} // 1);
+				next unless($Stats{$team}{'zone'}{$name} // 1);
+				next unless($Stats{$p}{$team}{'zone'}{$name} // 1);
 				push(@points, $zones->{$name});
 			}
 		}
@@ -8037,6 +8076,7 @@ play though extended interfaces and server support.
 
 		if(@spawns) {
 			&spawn_here($p, @{$spawns[$random]});
+			$Reset{$p}=1;
 		} else {
 			&spawn_reset($p, force => 1);
 		}
@@ -8084,7 +8124,7 @@ play though extended interfaces and server support.
 		my($p, $x, $y)=@_;
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
-		my($near, $delta, $try)=(undef, 2**20, 0);
+		my($near, $delta, $try)=(undef, $MB, 0);
 
 		if($spawn_mode eq 'near' && ref($zones) eq 'HASH' && %$zones) {
 			foreach my $zone (sort(keys(%$zones))) {
@@ -8635,9 +8675,20 @@ play though extended interfaces and server support.
 		if($Hunted==$p) {
 			return(1);
 		} elsif(map::type('tag')) {
-			if(xx::enabled) {
-				plus::assign($Hunted, 'blue');
-				plus::assign($p, 'red');
+			if(map::mode('ffa')) {
+				if(xx::enabled) {
+					&assign($Hunted, 'blue');
+					&assign($p, 'red');
+					&spawn_random($p);
+				}
+			} elsif(map::right($map_team)) {
+				&assign($Hunted, 'right');
+				&assign($p, 'left');
+				&spawn_random($p);
+			} else {
+				&assign($Hunted, 'left');
+				&assign($p, 'right');
+				&spawn_random($p);
 			}
 			chat::all('*', $p->{'nickname'}, 'is it *');
 
@@ -8701,9 +8752,14 @@ play though extended interfaces and server support.
 
 	sub cower {
 		my($p)=@_;
+		my($map_team)=stash::get('assignTeam', map::name, 'map');
 
-		if(map::mode('ffa') && map::type('tag')) {
-			plus::assign($p, 'blue');
+		if(map::type('tag')) {
+			if(map::mode('ffa')) {
+				&assign($p, 'blue');
+			} else {
+				&assign($p, &map_team);
+			}
 		}
 		$Hunted=undef;
 	}
@@ -10986,6 +11042,11 @@ core protecting the flag.
 		my($team)=stash::get('assignTeam', map::name, 'map');
 		my($color);
 
+		if(!$team && map::mode('tdm') && map::type('tag')) {
+			$team=map::team_number('left');
+			stash::set('assignTeam', map::name, 'map', $team);
+		}
+
 		if(defined($team)) {
 			$color=map::team_color($team);
 			chat::all('assignTeam:', $team, "($color)");
@@ -11107,6 +11168,10 @@ core protecting the flag.
 				$planes->{"$plane,,,"}='+';
 			}
 			stash::set('planes', map::name, 'map', $planes) if(ref($planes));
+		}
+
+		if(@plane==1 && $plane[0]=~m|[/;]|) {
+			@plane=split(m|[/;]+|, $plane[0]);
 		}
 
 		if($plane[0]=~m/all|none/i) {
@@ -12844,11 +12909,29 @@ core protecting the flag.
 			$p->{'stats'}{'intro'}=1;
 		}
 
-		if(map::mode('ffa') && map::type('tag') && xx::enabled) {
-			if(plus::hunted($p)) {
-				plus::assign($p, 'red') unless($p->{'oteam'}==3);
+		if(map::type('tag')) {
+			if(map::mode('ffa')) {
+				if(xx::enabled) {
+					if(plus::hunted($p)) {
+						plus::assign($p, 'red') unless($p->{'oteam'}==3);
+					} else {
+						plus::assign($p, 'blue') unless($p->{'oteam'}==4);
+					}
+				}
 			} else {
-				plus::assign($p, 'blue') unless($p->{'oteam'}==4);
+				if(plus::hunted($p)) {
+					if(map::right($map_team)) {
+						plus::assign($p, 'left');
+					} else {
+						plus::assign($p, 'right');
+					}
+				} else {
+					if(map::right($map_team)) {
+						plus::assign($p, 'right');
+					} else {
+						plus::assign($p, 'left');
+					}
+				}
 			}
 		}
 
@@ -13649,28 +13732,28 @@ core protecting the flag.
 				} elsif($player->{'team'}>2) {
 					records::help($player, -1);
 				}
-			} elsif(map::type('tag')
-				&& plus::hunted($player)
-				&& $player->{'alive'}
-				&& $now%2
-			) {
+			} elsif(map::type('tag') && plus::hunted($player) && $now%2) {
 				$it=$e->{'time'} - $player->{'stats'}{'tagged'};
 
-				if($it<60000) {
-					chat::all($player->{'nickname'},
-						utils::usecs2mins($it));
-				} elsif($it<120000 && exists($player->{'stats'}{'pos'})) {
-					chat::allf('%s %s  (%s)', $player->{'nickname'},
-						utils::usecs2mins($it),
-						map::area($player->{'stats'}{'pos'}));
-				} elsif(exists($player->{'stats'}{'pos'})) {
-					chat::allf('%s %s  (%s: %s)', $player->{'nickname'},
-						utils::usecs2mins($it),
-						map::area($player->{'stats'}{'pos'}),
-						$player->{'stats'}{'pos'});
-				} else {
-					server::trigger('logPlanePositions', 'pingSummary',
-						$player, $it);
+				if($player->{'alive'}) {
+					if($it<60000) {
+						chat::all($player->{'nickname'},
+							utils::usecs2mins($it));
+					} elsif($it<120000 && exists($player->{'stats'}{'pos'})) {
+						chat::allf('%s %s  (%s)', $player->{'nickname'},
+							utils::usecs2mins($it),
+							map::area($player->{'stats'}{'pos'}));
+					} elsif(exists($player->{'stats'}{'pos'})) {
+						chat::allf('%s %s  (%s: %s)', $player->{'nickname'},
+							utils::usecs2mins($it),
+							map::area($player->{'stats'}{'pos'}),
+							$player->{'stats'}{'pos'});
+					} else {
+						server::trigger('logPlanePositions', 'pingSummary',
+							$player, $it);
+					}
+				} elsif($it>10000) {
+					plus::change_hunted(player::random);
 				}
 			}
 		}
@@ -14034,7 +14117,7 @@ also only available from the console.
 				if($value=~m/(\d+)g/i) {
 					$value=$1*(2**30);
 				} elsif($value=~m/(\d+)m/i) {
-					$value=$1*(2**20);
+					$value=$1*$MB;
 				} elsif($value=~m/(\d+)k/i) {
 					$value=$1*1024;
 				}
