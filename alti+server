@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.24';
+my($VERSION)='4.25';
 
 =head1 NAME
 
@@ -3290,15 +3290,9 @@ garunteed to keep the format correct.
 	}
 
 	sub install {
-		my($xx)=undef;
+		my($xx)=join('/', dirname(Cwd::realpath($SCRIPT)), 'game.jar');
 
 		rename('game.jar', 'game.jar.orig') unless(-r 'game.jar.orig');
-
-		if(-l $SCRIPT) {
-			$xx=Cwd::realpath(join('/', dirname(readlink($SCRIPT)), 'game.jar'));
-		} else {
-			$xx=Cwd::realpath(join('/', dirname($SCRIPT), 'game.jar'));
-		}
 
 		if($xx && -r $xx) {
 			ui::slog("Linking game.jar to $xx");
@@ -3309,6 +3303,7 @@ garunteed to keep the format correct.
 
 	sub uninstall {
 		if(-r 'game.jar.orig') {
+			ui::slog("Restoring game.jar from game.jar.orig");
 			unlink('game.jar');
 			rename('game.jar.orig', 'game.jar');
 		}
