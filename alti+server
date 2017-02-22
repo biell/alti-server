@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.25';
+my($VERSION)='4.26';
 
 =head1 NAME
 
@@ -2591,6 +2591,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 		if(&option('xxEnabled')) {
 			$packet_space+=$MB;
+			$Maplimit=1000;
 		}
 
 		ui::slog('Space reserved for maps:', $packet_space);
@@ -2615,8 +2616,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 		while(@Maps && compress::size_data(@Maps)>$packet_space) {
 			ui::slog('Excluding map due to packet size constraint:',
 				pop(@Maps));
+			$Maplimit--;
 		}
-		$Maplimit=@Maps;
 
 		@Maps=List::Util::shuffle(@Maps);
 
