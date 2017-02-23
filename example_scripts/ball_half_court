@@ -3,7 +3,7 @@
 MAP 'ball_half_court';
 
 my($TEAM)=undef;
-my(@GOAL)=();
+my($DEAD)=0;
 
 HOOKS {
 	'mapChange'		=> sub {
@@ -11,21 +11,15 @@ HOOKS {
 	},
 
 	'ballLost'		=> sub {
-		my($e)=@_;
-
-		if(($e->{'time'}-$GOAL[1]) < 2000) {
-			ball::rollback_score($GOAL[0]);
-			@GOAL=();
-		}
-
 		$TEAM=undef;
 	},
 
 	'goal'			=> sub {
 		my($e, $p)=@_;
 
+		ball::rollback_score($TEAM) if($e->{'time'}<$DEAD);
+
 		$TEAM=undef;
-		@GOAL=($p->{'team'}, $e->{'time'});
 	},
 
 	'powerupPickup'	=> sub {
@@ -37,15 +31,12 @@ HOOKS {
 			if($p->{'team'} != $TEAM) {
 				server::send('resetBallTeam', -1);
 				plus::spawn_here($p, 1235, 360, 'w');
-				$TEAM=undef;
-			}
-		} else {
-			$TEAM=$p->{'team'};
-
-			foreach my $player (player::list, player::bots) {
-				plus::spawn_reset($player);
+				plus::clear_spawn($p);
+				$DEAD=$e->{'time'}+3000;
 			}
 		}
+
+		$TEAM=$p->{'team'};
 	},
 };
 

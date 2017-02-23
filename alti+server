@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.26';
+my($VERSION)='4.27';
 
 =head1 NAME
 
@@ -2486,6 +2486,11 @@ has occured.  After too many infractions, the player is kicked by the server.
 				$Commands{$cmd->{'name'}}=undef;
 			}
 
+			if($cmd->{'descriptions'}) {
+				$cmd->{'argumentDescriptions'}=$cmd->{'descriptions'};
+				delete($cmd->{'descriptions'});
+			}
+
 			&_write_custom_commands($cmd);
 		}
 
@@ -2879,6 +2884,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	'timer'	=> {
 		'name'			=> 'timer',
 		'arguments'		=> ['string'],
+		'descriptions'		=> ['[+|-]#:##'],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
@@ -2932,7 +2938,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	'prey' => {
 		'name'			=> 'prey',
 		'arguments'		=> ['player'],
-		'voteThreshold'	=> 60,
+		'voteThreshold'	=> 65,
 		'enabled'			=> 0,
 	},
 
@@ -2987,7 +2993,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'raceGoals' => {
 		'name'			=> 'raceGoals',
-		'arguments'		=> ['string'],
+		'arguments'		=> ['int'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 0,
 	},
@@ -13041,6 +13047,7 @@ core protecting the flag.
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			plus::next_bot if(xx::enabled);
+			plus::check_spawn($p);
 			return;
 		} elsif(plus::capture_wait) {
 			plus::bench($p);
