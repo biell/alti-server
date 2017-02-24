@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.27';
+my($VERSION)='4.28';
 
 =head1 NAME
 
@@ -1045,6 +1045,14 @@ L<perl(1)> should be used to ensure basic operation.
 		return(sort(keys(%uniq)));
 	}
 
+	sub even {
+		my(@ary)=@_;
+
+		splice(@ary, int(rand(@ary)), 1) if(@ary%2);
+
+		return(@ary);
+	}
+
 	sub simplify {
 		local($_)=@_;
 
@@ -1587,6 +1595,7 @@ pure-perl C<JSON::PP>, and this will be used if C<JSON::XS> is not found.
 
 	if($Json=eval('use JSON::XS; JSON::XS->new()')) {
 		$Json->relaxed(1); #in case of hand editing of json_stash.txt
+		$Json->canonical(1); #output in-order for comparing
 		ui::slog('using JSON::XS (good)');
 	} elsif($Json=eval('use JSON::PP; JSON::PP->new()')) {
 		$Json->relaxed(1); #in case of hand editing of json_stash.txt
@@ -2279,11 +2288,13 @@ has occured.  After too many infractions, the player is kicked by the server.
 			return if($cmd->{'voteThreshold'}==100 && $cmd->{'name'} ne '!');
 
 			delete($cmd->{'argumentDescriptions'});
+
 			foreach my $arg (@{$cmd->{'arguments'}}) {
 				$arg='string' if(ref($arg));
 			}
 		} elsif(&option('configSize')=~m/small/i) {
 			delete($cmd->{'argumentDescriptions'});
+
 			foreach my $arg (@{$cmd->{'arguments'}}) {
 				$arg='string' if(ref($arg));
 			}
@@ -2438,6 +2449,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 		$Launcher{'goals'}=
 			POSIX::ceil($config->{'PlaneBallGameMode'}{'goalsPerRound'}/2);
 
+		$Launcher{'bots'}=$config->{'BotConfig'}{'botDifficulty'};
+
 		$Launcher{'warmup'}={
 			'1bd' => $config->{'ObjectiveGameMode'}{'warmupTimeSeconds'},
 			'1de' => $config->{'ObjectiveGameMode'}{'warmupTimeSeconds'},
@@ -2484,11 +2497,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 				$Commands{$cmd->{'name'}}=$cmd->{'arguments'};
 			} else {
 				$Commands{$cmd->{'name'}}=undef;
-			}
-
-			if($cmd->{'descriptions'}) {
-				$cmd->{'argumentDescriptions'}=$cmd->{'descriptions'};
-				delete($cmd->{'descriptions'});
 			}
 
 			&_write_custom_commands($cmd);
@@ -2884,7 +2892,6 @@ has occured.  After too many infractions, the player is kicked by the server.
 	'timer'	=> {
 		'name'			=> 'timer',
 		'arguments'		=> ['string'],
-		'descriptions'		=> ['[+|-]#:##'],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
@@ -2930,6 +2937,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	'rank' => {
 		'name'			=> 'rank',
 		'arguments'		=> ['string'],
+		'description'		=> ['<player>', '[game type]'],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
@@ -2993,7 +3001,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'raceGoals' => {
 		'name'			=> 'raceGoals',
-		'arguments'		=> ['int'],
+		'arguments'		=> ['string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 0,
 	},
@@ -5812,6 +5820,11 @@ is updated with them as the games progress.
 		my($p)=@_;
 		my($sas)=config::option('superAdmins');
 		my($mods)=config::option('moderators');
+		my(%bot_rating)=(
+			'EASY'	=> 10,
+			'MEDIUM'	=> 20,
+			'HARD'	=> 30,
+		);
 		my($db);
 
 		$p->{'joined'}=1;
@@ -5819,6 +5832,7 @@ is updated with them as the games progress.
 		$p->{'infractions'}=0;
 
 		if($p->{'nickname'}=~m/^Bot ([1-9]|[1-2][0-9])$/) {
+			$p->{'rating'}=$bot_rating{$config::Launcher{'bots'}};
 			$p->{'isBot'}=1;
 			push(@Bots, $p);
 		} else {
@@ -5866,6 +5880,8 @@ is updated with them as the games progress.
 		
 				db::aliases($p, $p->{'nickname'});
 			} else {
+				$p->{'id'}=$p->{'player'};
+				$p->{'name'}=undef;
 				$p->{'block'}=stash::get('block', $p->{'vaporId'}, 'player');
 			}
 		}
@@ -5939,6 +5955,19 @@ is updated with them as the games progress.
 		}
 	}
 
+	sub search {
+		my($search)=@_;
+		my(@players)=();
+
+		foreach my $re (qr(^$search$), qr(^$search), qr($search$)) {
+			if(@players=grep(m/$re/i, keys(%Pdb))) {
+				return(map($Pdb{$_}, @players));
+			}
+		}
+
+		return();
+	}
+
 	sub infraction {
 		my($p, $value)=@_;
 		my($count)=config::option('infractions');
@@ -5993,13 +6022,20 @@ is updated with them as the games progress.
 
 	sub list {
 		my($filter)=@_;
+		my(@players)=();
 
-		if(map::left($filter)) {
-			return(grep(map::left($_->{'team'}), @Players));
-		} elsif(map::right($filter)) {
-			return(grep(map::right($_->{'team'}), @Players));
-		} elsif(map::spec($filter)) {
-			return(grep(map::spec($_->{'team'}), @Players));
+		if($filter) {
+			if(map::left($filter)) {
+				push(@players, grep(map::left($_->{'team'}), @Players));
+			}
+			if(map::right($filter)) {
+				push(@players, grep(map::right($_->{'team'}), @Players));
+			}
+			if(map::spec($filter)) {
+				push(@players, grep(map::spec($_->{'team'}), @Players));
+			}
+
+			return(@players);
 		} else {
 			return(@Players);
 		}
@@ -6764,7 +6800,7 @@ These rankings can also be configured to select evenly matched teams.
 {	package rank;
 
 	my($Base)=600;
-	my(%Team); tie %Team, 'Tie::RefHash';
+	my(%Rating)=();
 
 	sub _quality_curve { # modified logistic curve
 		my($seconds)=@_;
@@ -6869,6 +6905,16 @@ These rankings can also be configured to select evenly matched teams.
 
 		return unless($search);
 
+		unless(db::enabled) {
+			foreach my $player (player::search($search)) {
+				chat::whisperf($p, '%s: rating=%d',
+					$player->{'nickname'},
+					$Rating{$player->{'vaporId'}},
+				);
+			}
+			return;
+		}
+
 		if($search=~m/^(\d+)(st|nd|rd|th)$/) {
 			$i=$1-1;
 
@@ -6910,11 +6956,11 @@ These rankings can also be configured to select evenly matched teams.
 				return;
 			}
 		}
-
 	}
 
 	sub enter {
 		my($p)=@_;
+		my($rating)=$Rating{$p->{'vaporId'}};
 		my($type)=map::type;
 		my($rate)=&rate($p);
 		my($scale)=&scale($p);
@@ -6938,24 +6984,43 @@ These rankings can also be configured to select evenly matched teams.
 		));
 
 		if($update) {
-			($p->{'rating'}, $diff)=db::rank($p, $type, $update);
+			if(db::enabled) {
+				($rating, $diff)=db::rank($p, $type, $update);
+			} elsif($update>0) {
+				$rating++;
+			} elsif($update<0) {
+				$rating--;
+			}
 
 			if(config::option('assignRank')) {
 				chat::whisperf($p, '%+d : rating=%d, diff=%+0.1f',
-					$update, $p->{'rating'}, $diff
+					$update, $rating, $diff
 				);
 			}
+
+			$Rating{$p->{'vaporId'}}=$rating;
 		}
 	}
 
-	sub join {
+	sub update {
 		my($p)=@_;
 		my($type)=map::type;
+		my($rating)=$Rating{$p->{'vaporId'}};
 		my($diff);
 
 		$type=map::mode if($type eq 'std');
 
-		($p->{'rating'}, $diff)=db::rank($p, $type);
+		if(db::enabled) {
+			($rating, $diff)=db::rank($p, $type);
+		} elsif(!$rating) {
+			if($p->{'aceLevel'}) {
+				$rating=50+$p->{'level'}/6+$p->{'aceLevel'};
+			} else {
+				$rating=$p->{'level'};
+			}
+		}
+
+		$Rating{$p->{'vaporId'}}=$rating;
 	}
 
 	sub score {
@@ -6978,136 +7043,65 @@ These rankings can also be configured to select evenly matched teams.
 	}
 
 	sub map_change {
-		%Team=();
-	}
+		my(@vapors)=List::Util::shuffle(keys(%Rating));
 
-	sub place {
-		my($team)=shift;
-		
-		foreach my $p (@_) {
-			$Team{$p}=$team;
+		while(256<@vapors) {
+			delete($Rating{$vapors[0]});
+			shift(@vapors);
+		}
+
+		foreach my $player (player::list) {
+			&update($player);
 		}
 	}
 
-	sub members {
-		my($team)=@_;
+	sub skew {
+		my($left, $right)=@_;
+		my($lscore, $rscore);
 
-		return(grep($Team{$_} eq $team, keys(%Team)));
+		$lscore=List::Util::sum(map($Rating{$_->{'vaporId'}}, @$left));
+		$rscore=List::Util::sum(map($Rating{$_->{'vaporId'}}, @$right));
+
+		return($lscore-$rscore);
 	}
 
-	sub rating {
-		my($team)=@_;
+	sub random_teams {
+		my(@players)=List::Util::shuffle(@_);
+		my($half)=int(@players/2);
+		my($left, $right);
 
-		return(List::Util::sum(map($_->{'rating'}, &members($team))));
-	}
+		$left=[splice(@players, 0, $half)];
+		$right=[splice(@players, 0, $half)];
 
-	sub ratesort {
-		return(sort({ $a->{'rating'} <=> $b->{'rating'} } @_));
-	}
-
-	sub swap {
-		my($a, $b)=@_;
-
-		@Team{$a,$b}=@Team{$b,$a};
-	}
-
-	sub assign {
-		my($p)=@_;
-		my(@left)=&ratesort(&members('left'));
-		my(@right)=&ratesort(&members('right'));
-		my($left)=&rating('left');
-		my($right)=&rating('right');
-		my($thresh)=400;
-		my(@try);
-		my($needed, $delta);
-
-		if(@left<@right) {
-			&place('left', $p);
-			$left+=$p->{'rating'};
-		} elsif(@left>@right) {
-			&place('right', $p);
-			$right+=$p->{'rating'};
-		} elsif($left<$right) {
-			&place('left', $p);
-			$left+=$p->{'rating'};
-		} else {
-			&place('right', $p);
-			$right+=$p->{'rating'};
-		}
-
-		if(@left>4) {	#Don't move best player if teams are big enough:
-			pop(@left);
-			pop(@right);
-		}
-		if(@left>4) {	#Don't move worst player if teams are big enough
-			shift(@left);
-			shift(@right);
-		}
-
-		$thresh*=1+abs(@left-@right);
-
-		$needed=($left-$right)/2;
-
-		$delta=$needed-($left[0]{'rating'}-$right[0]{'rating'});
-		@try=($left[0], $right[0], $delta);
-
-		if($needed < -$thresh || $thresh < $needed) {
-			foreach my $l (@left) {
-				foreach my $r (@right) {
-					$delta=$needed-($l->{'rating'}-$r->{'rating'});
-					if(abs($delta)<abs($try[2])) {
-						@try=($l, $r, $delta);
-					}
-				}
+		if(@players) {
+			if(utils::coin_toss) {
+				push(@$left, @players);
+			} else {
+				push(@$right, @players);
 			}
-
-			&swap(@try[0,1]);
 		}
+
+		return($left, $right);
 	}
 
 	sub teams {
-		my(@players)=&ratesort(@_);
-		my(@teams)=qw(left right);
-		my(@rate)=(0, 0);
-		my(@left, @right);
+		my(@players)=@_;
+		my(@best_team)=([@players], []);
+		my($best_skew)=0x7fff;
+		my(@this_team);
+		my($this_skew);
 
-		if(!@players) {
-			return([], []);
-		} elsif(@players==1) {
-			return(\@players, []);
-		} elsif(@players==2) {
-			return([$players[0]], [$players[1]]);
-		} elsif(@players>2) {
-			&place('left', utils::pluck(@players));
-			&place('right', utils::pluck(@players));
-		}
-		if(@players>4) {
-			&place('right', utils::pluck(@players));
-			&place('left', utils::pluck(@players));
-		}
+		for(my $i=0; $i<10; $i++) {
+			@this_team=&random_teams(@players);
+			$this_skew=abs(&skew(@this_team));
 
-		@rate=( &rating('left'), &rating('right') );
-
-		for(my $i=0; @players>1; $i=!$i) {
-			if($rate[$i]>$rate[!$i]) {
-				$rate[$i]+=$players[0]{'rating'};
-				&place($teams[$i], shift(@players));
-			} else {
-				$rate[$i]+=$players[-1]{'rating'};
-				&place($teams[$i], pop(@players));
+			if($this_skew<$best_skew) {
+				@best_team=@this_team;
+				$best_skew=$this_skew;
 			}
 		}
 
-		&assign(@players);
-
-		@left=&members('left');
-		@right=&members('right');
-
-		if(utils::coin_toss) {
-			return(\@left, \@right);
-		} else {
-			return(\@right, \@left);
-		}
+		return(@best_team);
 	}
 
 	sub team_check {
@@ -7133,7 +7127,6 @@ ensure players are assigned correctly.
 
 	my(@Left)=();
 	my(@Right)=();
-	my(%Participants)=();
 	my($On)=undef;
 
 	sub on {
@@ -7143,7 +7136,6 @@ ensure players are assigned correctly.
 	sub clear {
 		@Left=();
 		@Right=();
-		%Participants=();
 		$On=undef;
 	}
 
@@ -7160,11 +7152,6 @@ ensure players are assigned correctly.
 			push(@Right, $vaporid);
 		}
 
-		%Participants=();
-		foreach my $vaporid (@Left, @Right) {
-			$Participants{$vaporid}=1;
-		}
-
 		$On=1;
 	}
 
@@ -7172,7 +7159,6 @@ ensure players are assigned correctly.
 		my($p, $team)=@_;
 
 		return(undef) unless($On);
-		return(undef) unless($Participants{$p->{'vaporId'}});
 
 		if(map::left($team)) {
 			server::send('modifyTournament', $p->{'nickname'}, 0);
@@ -7185,6 +7171,39 @@ ensure players are assigned correctly.
 		return(1);
 	}
 	
+	sub end {
+		server::send('stopTournament') if(&on);
+	}
+
+	sub start_teams {
+		my($left, $right)=@_;
+
+		$On=1;
+
+		server::send('startTournament');
+
+		foreach my $player (@$left) {
+			&assign($player, 'left');
+		}
+		foreach my $player (@$right) {
+			&assign($player, 'right');
+		}
+	}
+
+	sub start_ranked {
+		my(@players)=utils::even(player::list('both'));
+		my($left, $right)=rank::teams(@players);
+		
+		&start_teams($left, $right);
+	}
+
+	sub start_random {
+		my(@players)=player::list('both');
+		my($left, $right)=rank::random_teams(@players);
+		
+		&start_teams($left, $right);
+	}
+
 }
 
 =head2 Race Tournaments
@@ -9182,14 +9201,14 @@ events which will be thrown by the server.  So, your file would look like:
           my($e, $p)=@_;
 
           chat::whisper($p, 'You beat the bots for the coveted player ID 0!')
-              if($p->{'id'}==0);
+              if($p->{'player'}==0);
       },
 
 	 'clientRemove:pre' => sub {
           my($e, $p)=@_;
 
           chat::all('player ID 0 is free, disconnect and reconnect to get it!')
-              if($p->{'id'}==0);
+              if($p->{'player'}==0);
 	 },
   };
 
@@ -9300,6 +9319,8 @@ will only be run on that map.
 			next unless(-r $file);
 			
 			$Name=basename($file);
+
+			delete($Script{$Name});
 
 			open($script, '<', $file);
 			if(eval(<$script>)) {
@@ -12741,7 +12762,7 @@ core protecting the flag.
 
 		return if($p->{'isBot'});
 
-		rank::join($p);
+		rank::update($p);
 
 		altbouncer::add($p);
 
@@ -13047,7 +13068,6 @@ core protecting the flag.
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			plus::next_bot if(xx::enabled);
-			plus::check_spawn($p);
 			return;
 		} elsif(plus::capture_wait) {
 			plus::bench($p);
@@ -13644,6 +13664,16 @@ core protecting the flag.
 					chat::snark($v, "$p->{'nickname'} must really like killing $v->{'nickname'}");
 				}
 			}
+		}
+	},
+
+	'turretEmp'		=> sub {
+		my($e, $p)=@_;
+
+		if(map::type('coop')) {
+			records::help($p, 2);
+		} else {
+			records::help($p, 1);
 		}
 	},
 

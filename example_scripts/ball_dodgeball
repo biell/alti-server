@@ -17,13 +17,13 @@
 MAP 'ball_dodgeball';
 
 my(%PLAYERS)=();
-my($LOCK)=0;
 my($TEAM)=undef;
 my($HOT)=0;
 my($SIZE)=100;
+my($OUT)=3;
 
 sub eliminate {
-	my($p, $inc)=@_;
+	my($e, $p, $inc)=@_;
 	my($vid)=$p->{'vaporId'};
 	my($team)=$p->{'team'};
 	my($goals)=$config::Launcher{'goals'};
@@ -31,16 +31,20 @@ sub eliminate {
 	my(@right)=(player::list('right'), player::bots('right'));
 	my($left, $right)=(0, 0);
 
+	return if($e->{'time'}<$p->{'timer'}{'eliminate'});
+	$p->{'timer'}{'eliminate'}=$e->{'time'}+2000;
+
 	$PLAYERS{$vid}+=$inc;
 
-	if($PLAYERS{$vid}>=10 && !$p->{'isBot'}) {
-		server::send('kick', $p->{'nickname'});
-	} elsif($PLAYERS{$vid}>=3) {
+	if($PLAYERS{$vid}>=$OUT) {
 		if(map::left($team)) {
 			plus::spawn_here($p, 100, 120, 0);
 		} else {
 			plus::spawn_here($p, 1180, 120, 180);
 		}
+		chat::all($p->{'nickname'}, ':', 'out');
+	} else {
+		chat::all($p->{'nickname'}, ':', $PLAYERS{$vid}, '/', $OUT);
 	}
 
 	queue::schedule { plus::bench($p); } 1;
@@ -48,7 +52,7 @@ sub eliminate {
 
 	if(@left) {
 		foreach my $player (@left) {
-			$left++ if($PLAYERS{$player->{'vaporId'}}>=3);
+			$left++ if($PLAYERS{$player->{'vaporId'}}>=$OUT);
 		}
 		$left*=$goals/@left;
 	} else {
@@ -57,7 +61,7 @@ sub eliminate {
 
 	if(@right) {
 		foreach my $player (@right) {
-			$right++ if($PLAYERS{$player->{'vaporId'}}>=3);
+			$right++ if($PLAYERS{$player->{'vaporId'}}>=$OUT);
 		}
 		$right*=$goals/@right;
 	} else {
@@ -81,20 +85,19 @@ sub expand {
 HOOKS {
 	'mapChange'		=> sub {
 		%PLAYERS=();
-		$LOCK=0;
 		$TEAM=undef;
 		$HOT=0;
 		$SIZE=100;
 
+		queue::schedule {
+			tourney::start_ranked if(player::count>1);
+		} $config::Launcher{'warmup'}{'ball'}-2;
+
 		queue::schedule { &expand; } 90;
 	},
 
-	'spawn'			=> sub {
-		my($e, $p)=@_;
-
-		unless($LOCK) {
-			$LOCK=$e->{'time'}+5000;
-		}
+	'mapChange:pre'	=> sub {
+		tourney::end;	#Before we switch to another map, end tournament
 	},
 
 	'ballLost'		=> sub {
@@ -104,7 +107,7 @@ HOOKS {
 	'powerupUse'		=> sub {
 		my($e, $p)=@_;
 
-		$HOT=$e->{'time'}+1000;
+		$HOT=$e->{'time'}+1010;
 	},
 
 	'powerupPickup'	=> sub {
@@ -114,7 +117,7 @@ HOOKS {
 		my($time)=$e->{'time'};
 
 		if($TEAM && $team!=$TEAM && $safe<$time && $time<=$HOT) {
-			&eliminate($p, 1);
+			&eliminate($e, $p, 1);
 		}
 
 		$TEAM=$p->{'team'};
@@ -126,25 +129,13 @@ HOOKS {
 		my($x)=$e->{'victimPositionX'};
 
 		if(map::left($v->{'team'})) {
-			&eliminate($v, 1) if($x>642);
+			&eliminate($e, $v, 1) if($x>642);
 		} else {
-			&eliminate($v, 1) if($x<638);
+			&eliminate($e, $v, 1) if($x<638);
 		}
 
 		if($v->{'carrier'}) {
 			$TEAM=undef;
-		}
-	},
-
-	'teamChange:pre'	=> sub {
-		my($e, $p)=@_;
-		my($diff)=player::count('left') - player::count('right');
-
-		return if($diff<-1 && map::left($e->{'team'}));
-		return if($diff>1 && map::right($e->{'team'}));
-
-		if($LOCK && $LOCK<$e->{'time'}) {
-			&eliminate($p, 3);
 		}
 	},
 };
