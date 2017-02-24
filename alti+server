@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.28';
+my($VERSION)='4.29';
 
 =head1 NAME
 
@@ -13068,6 +13068,7 @@ core protecting the flag.
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			plus::next_bot if(xx::enabled);
+			plus::check_spawn($p);
 			return;
 		} elsif(plus::capture_wait) {
 			plus::bench($p);
