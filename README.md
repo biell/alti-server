@@ -228,6 +228,9 @@ manage Alti+ game maps.
   * **/sz [zone]**<br>
     This is an alias for `/spawnZone`
 
+  * **/start**<br>
+    This is an aliwas for `/spawnZone start`
+
   * **/changePlane**<br>
     Change plane without having to die.  If you run `/changePlane`, then your
     plane will be removed from the map and you will have the opportunity to
@@ -281,6 +284,11 @@ manage Alti+ game maps.
     Send a private message to `player`. You do not have to be friends
     with `player` to do so, but they can disable messaging with the
     `/mesg No` command. Abusers will be banned.
+
+  * **/vote modify ?? ??**<br>
+    This command is used to modify add-on scripts.  Any add-on script
+    may watch for this command and do whatever it needs to with the
+    arguments.
 
 ### Extended Commands for Admins and Map makers
 
@@ -1085,6 +1093,21 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     the Altitude server.  This parameber can be changed before running
     `/restartServer` to change the JVM used for subsequent server starts.
 
+  * **notifyMethod <file|pushbullet>**<br>
+    Specify if notifications should go to a file only, or to both
+    a file and pushbullet.  The Alti+ server has two priorities of
+    messages: *info* and *warn*.  Messages of type info only ever
+    go to a file in the server directory named `notify.txt`.  This
+    file looks just like the Altitude `log.txt` file.
+    Messgae of type *warn* can also be sent to a pushbullet channel.
+
+  * **notifyTag <channel>**<br>
+    The name of the pushbullet channel tag to send messages.
+
+  * **notifyToken <token>**<br>
+    The security token necessary for the application to send pushbullet
+    messages.
+
   * **secretCode [password]**<br>
     Altitude servers can be configured using the `server_configurator` program
     to require a passcode to join the server.  This setting allows you to
@@ -1365,6 +1388,8 @@ loading and unloading of script modules.  And, it is an easy way to change
 the behaviour of the server.  This is helpful for setting up league events
 and could be used for a map which required tight integration with the server
 code.  See the `example_scripts` directory on github for examples.
+
+A special command `/vote modify` is available to tune scripts
 
 ## Snarky Server
 The server can be configured to emit snarky comments from time to time by

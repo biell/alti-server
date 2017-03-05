@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.29';
+my($VERSION)='4.30';
 
 =head1 NAME
 
@@ -61,6 +61,9 @@ my(%OPTIONS)=(
 								# normal: all commands and help
 								# small: all commands, but no help
 								# tiny: only required, admin merged
+	notifyMethod	=> 'file',		#Notification: file or pushbullet
+	notifyTag		=> undef,			#Notification tag to send to
+	notifyToken	=> undef,			#Notification security token (if req'd)
 	superAdmin	=> 'admin',		#Super Admin command access:
 	                                   # admin: all admins are super admins
 								# console: cmds typed at console only
@@ -792,12 +795,24 @@ list.
 			$str=~s/^"//;
 			if(ref($args[$arg]) eq 'ARRAY') {
 				@Clist=grep(m|^\Q$str|i, @{$args[$arg]});
+				unless(@Clist) {
+					@Clist=grep(m|\Q$str|i, @{$args[$arg]});
+				}
 			} elsif($args[$arg] eq 'map') {
 				@Clist=grep(m|^\Q$str|i, config::maps());
+				unless(@Clist) {
+					@Clist=grep(m|\Q$str|i, config::maps());
+				}
 			} elsif($args[$arg] eq 'player') {
 				@Clist=grep(m|^\Q$str|i, player::values('nickname'));
+				unless(@Clist) {
+					@Clist=grep(m|\Q$str|i, player::values('nickname'));
+				}
 			} elsif($args[$arg] eq 'vaporId') {
 				@Clist=grep(m|^\Q$str|i, player::values('vaporId'));
+				unless(@Clist) {
+					@Clist=grep(m|-\Q$str|i, player::values('vaporId'));
+				}
 			} else {
 				return('/'.join(' ', @cmd, $str).'  ');
 			}
@@ -815,7 +830,7 @@ list.
 			if(!@Clist) {
 				ui::flash();
 				return('/'.join(' ', @cmd, $str));
-			} elsif($str ne $prefix) {
+			} elsif(length($str) < length($prefix)) {
 				if($prefix=~m/\s/) {
 					$prefix=~s/^/"/;
 					$prefix=~s/$/"/ if(@Clist==1);
@@ -847,7 +862,7 @@ list.
 			if(!@Clist) {
 				ui::flash();
 				return('/'.$str);
-			} elsif($str ne $prefix) {
+			} elsif(length($str) < length($prefix)) {
 				@Clist=();
 				return('/'.$prefix);
 			} else {
@@ -2157,6 +2172,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	my($Reserve)=0;
 	my($Maplimit)=undef;
 
+	our($Name)='alti+';
 	our($Port)=0;
 	our($Ping)=500; #reset from launcher_config.xml
 	our($Maxp)=14;  #reset from launcher_config.xml
@@ -2440,11 +2456,14 @@ has occured.  After too many infractions, the player is kicked by the server.
 			$Admins{$admin->{'UUID'}}=1;
 		}
 
+		$Name=$config->{'serverName'};
 		$Port=$config->{'port'};
 		$Ping=$config->{'maxPing'};
 		$Maxp=$config->{'maxPlayerCount'}+1;
 
 		&reconcile_option($config, 'secretCode');
+
+		$config->{'BotConfig'}{'botDifficulty'};
 
 		$Launcher{'goals'}=
 			POSIX::ceil($config->{'PlaneBallGameMode'}{'goalsPerRound'}/2);
@@ -2716,7 +2735,12 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	sub commands {
 		my($re)=@_;
-		my(@commands)=grep(m|^\Q$re|i, keys(%Commands));
+		my(@commands);
+
+		@commands=grep(m|^\Q$re|i, keys(%Commands));
+		unless(@commands) {
+			@commands=grep(m|\Q$re|i, keys(%Commands));
+		}
 
 		if(wantarray) {
 			return(@commands);
@@ -2836,7 +2860,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'help' => {
 		'name'			=> 'help',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['modify', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2886,6 +2910,15 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'timer', 'zone', 'record'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
+		'restrict'		=> 'tiny',
+	},
+
+	'modify'	=> {
+		'name'			=> 'modify',
+		'arguments'		=> ['string'],
+		'description'		=> ['Script specific settings'],
+		'voteThreshold'	=> 60,
+		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
 	},
 
@@ -2962,6 +2995,13 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'arguments'		=> ['string'],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
+	},
+	'start' => {
+		'name'			=> 'start',
+		'arguments'		=> [],
+		'voteThreshold'	=> 0,
+		'enabled'			=> 0,
+		'restrict'		=> 'tiny',
 	},
 
 	'changePlane' => {
@@ -3079,6 +3119,128 @@ has occured.  After too many infractions, the player is kicked by the server.
 	},
 );
 
+
+=head2 Notifications
+
+B<alti+server> can notify you when the server crashes, or other events
+occur.  There are two methods currently supported:
+
+=over 8
+
+=item file
+
+=item pushbullet
+
+=back
+
+Some notifications are informational only, and will always get logged
+to a file.  If you are already logging to a file, these messages will
+appear here, and your parser may choose to ignore them.  They will
+be marked with a C<priority> field of C<info>.  Warnings can be
+sent to additional addresses, and the success of that method will also
+be added the log entries for C<priority> of C<warn> messages.
+
+=cut
+
+{	package notify;
+
+	use Sys::Hostname;
+
+	my($Curl)=utils::which('curl', 'good', '');
+	my($File)="$INSTALL_ROOT/servers/notify.txt";
+	my($File_o)="$INSTALL_ROOT/servers/notify_old.txt";
+	
+	sub file {
+		my($priority, $msg)=@_;
+		my($fh)=IO::Handle->new;
+		my($log)={
+			'port'	=> $config::Port || -1,
+			'server'	=> $config::Name,
+			'time'	=> $server::Time,
+			'date'	=> POSIX::strftime("%Y %b %d %T:000 %Z", gmtime(time)),
+			'type'	=> 'notify',
+			'priority'=> $priority,
+		};
+
+		foreach my $key (keys(%$msg)) {
+			$log->{$key}=$msg->{$key};
+		}
+
+		rename($File, $File_o) if(-s $File > $MB);
+
+		open($fh, '>>', $File);
+		print $fh json::encode($log), "\n";
+		close($fh);
+	}
+
+	sub pushbullet {
+		my($priority, $msg)=@_;
+		my($tag)=config::option('notifyTag');
+		my($token)=config::option('notifyToken');
+		my($push)=IO::Handle->new;
+		my($bullet)={
+			'channel_tag'	=> $tag,
+			'title'		=> $config::Name,
+			'body'		=> $msg->{'message'},
+			'type'		=> 'note',
+		};
+		my($response);
+		local($/)=undef;
+
+		open($push, '-|', $Curl, '-s',
+			'--header', "Access-Token: $token",
+			'--header', 'Content-Type: application/json',
+			'--data-binary', json::encode($bullet),
+			'--request', 'POST',
+			'https://api.pushbullet.com/v2/pushes',
+		);
+		$response=json::decode(<$push>);
+		close($push);
+
+		if($?) {
+			return(0);
+		} else {
+			return(1);
+		}
+	}
+
+	sub info {
+		my($msg)={};
+
+		if(@_==1) {
+			$msg->{'message'}=shift;
+		} else {
+			%$msg=@_;
+		}
+
+		&file('info', $msg);
+	}
+
+	sub warn {
+		my($method)=config::option('notifyMethod');
+		my($msg)={};
+
+		if(@_==1) {
+			$msg->{'message'}=shift;
+		} else {
+			%$msg=@_;
+		}
+
+		if($method=~m/file/i) {
+			&file('warn', $msg);
+		} elsif($method=~m/bull/i) {
+			$msg->{'pushbullet'}=&pushbullet('warn', $msg);
+			&file('warn', $msg);
+		} elsif($method) {
+			ui::slog('Invalid notification method:', $method);
+			&file('warn', $msg);
+			return(undef);
+		} else {
+			&file('warn', $msg);
+		}
+	}
+
+}
 
 =head2 Patched Server
 
@@ -4315,11 +4477,14 @@ them to the AltBouncer system.
 
 		if($?) {
 			ui::slog('ERROR : CURL EXIT STATUS:', $?>>8, $CURL_RV{$?>>8});
+			notify::warn("Altbouncer upload exited with non-zero status $?");
 		} elsif($rejected) {
 			ui::slog('WARN  : curl upload rejected by AltBouncer');
+			notify::warn('Altbouncer upload rejected by software');
 			&clear;
 		} else {
 			ui::slog('INFO  : curl upload to AltBouncer successful');
+			notify::info('Altbouncer upload success');
 			&clear;
 		}
 	}
@@ -4519,6 +4684,12 @@ directly with it to manage the instance.
 
 		$Start=time()*1000;
 		$Time=0;
+
+		notify::info(
+			'message'		=> 'Started',
+			'wrapperPid'	=> $$,
+			'launcherPid'	=> $Launcher_pid,
+		);
 	}
 
 	sub save_log {
@@ -4554,6 +4725,12 @@ directly with it to manage the instance.
 		$Tail_pid=open($Log, '-|:unix', 'tail', '--pid', $Server_pid, '-F', $Logfile);
 		$Log->autoflush(1);
 		$Streams->add($Log);
+
+		notify::info(
+			'message'		=> 'Reopen log',
+			'serverPid'	=> $Server_pid,
+			'tailPid'		=> $Tail_pid,
+		);
 	}
 
 	#This is Linux specific, but then again so is our tail.  Both will need
@@ -4637,8 +4814,20 @@ directly with it to manage the instance.
 		waitpid($Server_pid, 0);
 		waitpid($Tail_pid, 0);
 
+		notify::info(
+			'message'		=> 'Stopped',
+			'wrapperPid'	=> $$,
+			'launcherPid'	=> $Launcher_pid,
+			'serverPid'	=> $Server_pid,
+			'tailPid'		=> $Tail_pid,
+		);
+
 		$Server_pid=undef;
 		$Tail_pid=undef;
+	}
+
+	sub time {
+		return($Time);
 	}
 
 	sub uptime {
@@ -4716,7 +4905,9 @@ directly with it to manage the instance.
 				shift(@template);
 			}
 	
-			$HOOKS{$command}->($event, player::server());
+			if(ref($HOOKS{$command}) eq 'CODE') {
+				$HOOKS{$command}->($event, player::server());
+			}
 		} else {
 			foreach my $arg (@_) {
 				$command.=' ';
@@ -5980,6 +6171,7 @@ is updated with them as the games progress.
 					$CONSOLE{'server'}->('del', 'admins', $p->{'vaporId'});
 					server::send('restartServer');
 					chat::whisper($p, 'Now look what you made me do');
+					notify::warn("$p->{'nickname'} removed as admin");
 				} else {
 					chat::whisper($p, 'Some decorum, please', player::name($p));
 				}
@@ -6367,6 +6559,13 @@ debugging or to make funny comments.
 			ui::chat_log('debug', 'server', $msg);
 
 		}
+	}
+
+	sub debugf {
+		my($fmt)=shift;
+		my($msg)=sprintf($fmt, @_);
+
+		&debug($msg);
 	}
 
 	sub laud {
@@ -6790,6 +6989,84 @@ they make the top 5.
 
 }
 
+
+=head2 Data and Statistics
+
+B<alti+server> keeps a cache of data and statistics on things that
+players do and other things which happen on the server.  Based on these
+statistics, awards are sometimes granted to players.  The server's
+actions may also be impacted by this data.  This interface is used to
+store data which needs to live through things like client disconnects,
+but not server restarts.
+
+=cut
+
+{	package cache;
+
+	my($Cache)={
+		'server'	=> {},
+		'game'	=> {},
+		'player'	=> {},
+		'mtime'	=> {},
+	};
+
+
+	sub new_game {
+		$Cache->{'game'}={};
+
+		foreach my $vid (keys(%{$Cache->{'mtime'}})) {
+			if(server::time-$Cache->{'mtime'}{$vid} > 86400000) {
+				delete($Cache->{'mtime'}{$vid});
+				delete($Cache->{'player'}{$vid});
+			}
+		}
+	}
+
+	sub get {
+		my($value)=$Cache;
+
+		while(@_) {
+			$value=$value->{pop(@_)};
+		}
+
+		return($value);
+	}
+
+	sub set {
+		my($data)=pop(@_);
+		my($value)=$Cache;
+		my($next);
+
+		return(undef) unless($_[-1]=~m/server|game|player/);
+
+		while(@_>1) {
+			$next=pop(@_);
+			if(ref($next) eq 'HASH' && exists($next->{'vaporId'})) {
+				$next=$next->{'vaporId'};
+				$Cache->{'mtime'}{$next}=$server::Time;
+			}
+			$value->{$next}={} unless(exists($value->{$next}));
+			$value=$value->{$next};
+		}
+		$next=pop(@_);
+
+		if(ref($data)) {
+			$value->{$next}=$data;
+		} elsif($data=~m/^(\d+|\d+\.\d+)$/) {
+			$value->{$next}=$data*1;
+		} else {
+			$value->{$next}=$data;
+		}
+
+		return($data);
+	}
+
+	sub dump {
+		ui::slog(&get(@_));
+	}
+}
+
+
 =head2 Rankings
 
 B<alti+server> can be configured to rank players players similar to ladder.
@@ -7032,7 +7309,7 @@ These rankings can also be configured to select evenly matched teams.
 		#return unless(player::count>$minimum);
 
 		foreach my $player (player::list) {
-			next if(map::spec($player));
+			next if(map::spec($player->{'team'}));
 
 			if($player->{'team'}==$team) {
 				$player->{'stats'}{'differential'}+=$update;
@@ -7125,8 +7402,8 @@ ensure players are assigned correctly.
 
 {	package tourney;
 
-	my(@Left)=();
-	my(@Right)=();
+	my(%Left)=();
+	my(%Right)=();
 	my($On)=undef;
 
 	sub on {
@@ -7134,25 +7411,23 @@ ensure players are assigned correctly.
 	}
 
 	sub clear {
-		@Left=();
-		@Right=();
+		%Left=();
+		%Right=();
 		$On=undef;
 	}
 
 	sub members {
 		my($left, $right)=@_;
 
-		@Left=();
-		foreach my $vaporid (@$left) {
-			push(@Left, $vaporid);
+		%Left=();
+		foreach my $vid (@$left) {
+			$Left{$vid}=1;
 		}
 
-		@Right=();
-		foreach my $vaporid (@$right) {
-			push(@Right, $vaporid);
+		%Right=();
+		foreach my $vid (@$right) {
+			$Right{$vid}=1;
 		}
-
-		$On=1;
 	}
 
 	sub assign {
@@ -7175,12 +7450,20 @@ ensure players are assigned correctly.
 		server::send('stopTournament') if(&on);
 	}
 
+	sub bench_specs {
+		foreach my $p (player::list) {
+			unless($Left{$p->{'vaporId'}} || $Right{$p->{'vaporId'}}) {
+				&assign($p, 'spec');
+			}
+		}
+	}
+
 	sub start_teams {
 		my($left, $right)=@_;
 
-		$On=1;
-
 		server::send('startTournament');
+
+		$On=1 if(@$right && @$left);
 
 		foreach my $player (@$left) {
 			&assign($player, 'left');
@@ -7188,6 +7471,8 @@ ensure players are assigned correctly.
 		foreach my $player (@$right) {
 			&assign($player, 'right');
 		}
+
+		queue::schedule { &bench_specs; } 2;
 	}
 
 	sub start_ranked {
@@ -7203,7 +7488,6 @@ ensure players are assigned correctly.
 		
 		&start_teams($left, $right);
 	}
-
 }
 
 =head2 Race Tournaments
@@ -9327,6 +9611,7 @@ will only be run on that map.
 				ui::slog("Loaded script: $Name");
 			} else {
 				ui::slog("Failed to load script $Name:", $@);
+				sleep(1);
 			}
 			close($script);
 
@@ -9703,7 +9988,10 @@ core protecting the flag.
 		my($type)=@{$e->{'arguments'}};
 		my(@lookup);
 
-		if(exists($HOOKS{"help $type"})) {
+		if($type=~m/modify/i) {
+			$e->{'command'}='help modify';
+			script::post($e, $p);
+		} elsif(exists($HOOKS{"help $type"})) {
 			$HOOKS{"help $type"}->($e, $p);
 			if(config::option('configSize')=~m/small/i) {
 				chat::whisper($p, 'Admin commands use `/! cmd ...` syntax');
@@ -12570,7 +12858,13 @@ core protecting the flag.
 		my($nick)=@{$e->{'arguments'}};
 		my($prey)=player::lookup($nick);
 
-		plus::change_hunted($prey);
+		if(map::type('mdg', 'tag')) {
+			plus::change_hunted($prey);
+		} elsif($e->{'group'} eq 'vote') {
+			chat::all('prey only available in mdg and tag games');
+		} else {
+			chat::whisper($p, 'prey only available in mdg and tag games');
+		}
 	},
 
 	'spawnZone'	=> sub {
@@ -12614,6 +12908,14 @@ core protecting the flag.
 
 	'sz'			=> sub {
 		$HOOKS{'spawnZone'}->(@_);
+	},
+
+	'start'		=> sub {
+		my($e, $p)=@_;
+
+		$e->{'arguments'}=['start'];
+
+		$HOOKS{'spawnZone'}->($e, $p);
 	},
 
 	'logPlanePositions:spawnHere'	=> sub {
@@ -12872,8 +13174,9 @@ core protecting the flag.
 		}
 
 		if($p->{'isBot'}) {
+			$zones=stash::get('zones', 'bot', 'zones', map::name, 'map');
 			$p->{'team'}=$e->{'team'};
-			plus::spawn_random($p);
+			plus::spawn_random($p) if($zones);
 			return;
 		}
 
@@ -13517,6 +13820,7 @@ core protecting the flag.
 		my($v)=player::lookup($e->{'victim'});
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($zones)=stash::get('zones', map::name, 'map');
 		my($is_crash)=0;
 		my($angle, $limit);
 
@@ -13537,7 +13841,7 @@ core protecting the flag.
 			$v->{'alive'}=0;
 			ball::drop($v);
 
-			if($v->{'isBot'}) {
+			if($v->{'isBot'} && $zones && $zones->{'bot'}{'zones'}) {
 				plus::spawn_random($v);
 			}
 		}
@@ -13754,6 +14058,7 @@ core protecting the flag.
 	'pingSummary'	=> sub {
 		my($e, $p)=@_;
 		my(%pings)=%{$e->{'pingByPlayer'}};
+		my($count)=player::count;
 		my($now)=time();
 		my($player, $it);
 
@@ -13771,7 +14076,7 @@ core protecting the flag.
 				$it=$e->{'time'} - $player->{'stats'}{'tagged'};
 
 				if($player->{'alive'}) {
-					if($it<60000) {
+					if($it < (24000+$count*3000)) {
 						chat::all($player->{'nickname'},
 							utils::usecs2mins($it));
 					} elsif($it<120000 && exists($player->{'stats'}{'pos'})) {
@@ -13808,10 +14113,11 @@ core protecting the flag.
 	'logPlanePositions:pingSummary'	=> sub {
 		my($e, $p, $player, $it)=@_;
 		my($pos)=$e->{'positionByPlayer'}{$player->{'player'}};
+		my($count)=player::count;
 
 		return if($pos eq '-1,-1');
 
-		if($it<60000) {
+		if($it < (24000+$count*3000)) {
 			chat::all($player->{'nickname'}, utils::usecs2mins($it));
 		} elsif($it<120000) {
 			chat::allf('%s %s  (%s)', $player->{'nickname'},
@@ -14076,6 +14382,7 @@ core protecting the flag.
 	},
 
 	'updatePrepareRestart'	=> sub {
+		notify::warn('Altitude server update pushed');
 		sleep(5);
 		server::reopen_log;
 		player::init;
@@ -14098,6 +14405,10 @@ core protecting the flag.
 		$lag=$e->{'duration'}/1000;
 		if($lag > config::option('hitchThreshold')) {
 			chat::all(sprintf('Server lag: %.2f seconds', $lag));
+		}
+
+		if($lag > config::option('hitchThreshold')*2) {
+			notify::warn("Server lag: $lag seconds");
 		}
 	},
 );
@@ -14706,6 +15017,7 @@ also only available from the console.
 		ui::shutdown;
 		exit(0);
 	},
+
 );
 
 =head2 Errors and Signals
@@ -14841,6 +15153,7 @@ while(1) {
 					}
 				}
 
+				notify::warn("server crashed: $SOUT");
 
 				ui::save_log;
 				server::save_log;
@@ -14901,6 +15214,8 @@ while(1) {
 			ui::slog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
 
 			server::interrupt;
+
+			notify::warn('server is dead, restarting');
 
 			sleep(2);
 

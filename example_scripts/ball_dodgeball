@@ -4,7 +4,7 @@
 #  Force a player to catch the ball within 1 second of throw to eliminate them
 #  Each player has 3 eliminations, after which they are benched
 #  First team to have all its players benched looses
-#  You have a 1.5 second grace after spawn wherein you cannot be eliminated
+#  You have a ~ 1.5 second grace after spawn wherein you cannot be eliminated
 #  On elimination, you have 1 second to pass the ball before you despawn
 #  Eliminated players cannot eliminate another player until next spawn
 #
@@ -16,127 +16,325 @@
 
 MAP 'ball_dodgeball';
 
-my(%PLAYERS)=();
-my($TEAM)=undef;
-my($HOT)=0;
-my($SIZE)=100;
-my($OUT)=3;
+my(%DB)=();
 
-sub eliminate {
-	my($e, $p, $inc)=@_;
+sub set_spawn {
+	my($p)=@_;
 	my($vid)=$p->{'vaporId'};
-	my($team)=$p->{'team'};
-	my($goals)=$config::Launcher{'goals'};
-	my(@left)=(player::list('left'), player::bots('left'));
-	my(@right)=(player::list('right'), player::bots('right'));
-	my($left, $right)=(0, 0);
 
-	return if($e->{'time'}<$p->{'timer'}{'eliminate'});
-	$p->{'timer'}{'eliminate'}=$e->{'time'}+2000;
+	#chat::debugf('set_spawn %s: side(%s) isbot(%d) count(%d)',
+	#	$p->{'nickname'}, map::side($p), $p->{'isBot'}, $DB{'count'}{$vid});
 
-	$PLAYERS{$vid}+=$inc;
-
-	if($PLAYERS{$vid}>=$OUT) {
-		if(map::left($team)) {
+	if($p->{'isBot'} || $DB{'count'}{$vid}>=$DB{'outs'}) {
+		if(map::left($p->{'team'})) {
 			plus::spawn_here($p, 100, 120, 0);
-		} else {
+			plus::bench($p);
+		} elsif(map::right($p->{'team'})) {
 			plus::spawn_here($p, 1180, 120, 180);
+			plus::bench($p);
+		} else {
+			plus::spawn_here($p, 0, 0, 0);
 		}
-		chat::all($p->{'nickname'}, ':', 'out');
 	} else {
-		chat::all($p->{'nickname'}, ':', $PLAYERS{$vid}, '/', $OUT);
+		plus::spawn_here($p, 0, 0, 0);
 	}
-
-	queue::schedule { plus::bench($p); } 1;
-	$TEAM=undef;
-
-	if(@left) {
-		foreach my $player (@left) {
-			$left++ if($PLAYERS{$player->{'vaporId'}}>=$OUT);
-		}
-		$left*=$goals/@left;
-	} else {
-		$left=$goals;
-	}
-
-	if(@right) {
-		foreach my $player (@right) {
-			$right++ if($PLAYERS{$player->{'vaporId'}}>=$OUT);
-		}
-		$right*=$goals/@right;
-	} else {
-		$right=$goals;
-	}
-
-	ball::set_score($right, $left);
 }
 
-sub expand {
-	if(player::count>0) {
-		$SIZE+=5;
-		server::send('testPlaneScale', $SIZE);
+sub show_status {
+	my($vid)=@_;
 
-		if($SIZE<=300) {
-			queue::schedule { &expand; } 40;
+	if($DB{'count'}{$vid}>=$DB{'outs'}) {
+		chat::all($DB{'name'}{$vid}, ':', 'out');
+	} elsif($DB{'count'}{$vid}>0) {
+		chat::all($DB{'name'}{$vid}, ':', $DB{'count'}{$vid}, '/', $DB{'outs'});
+	}
+}
+
+sub eliminate {
+	my($p, $inc)=@_;
+	my($vid)=$p->{'vaporId'};
+	my($time)=server::time;
+
+	chat::debugf('eliminate %s: safe(%.1f) count(%d)',
+		$p->{'nickname'}, ($time-$DB{'safe'}{$vid})/1000, $DB{'count'}{$vid}+$inc);
+
+	return if($p->{'isBot'});
+	return if($time<$DB{'safe'}{$vid});
+
+	$DB{'count'}{$vid}+=$inc;
+	$DB{'safe'}{$vid}=$time+2000;
+	$DB{'timer'}{$vid}=$time+25000;
+
+	queue::schedule { plus::bench($p); } 1;
+
+	&set_spawn($p);
+
+	return if(map::spec($p));
+
+	&show_status($vid);
+}
+
+sub position_check {
+	my($p, $x)=@_;
+
+	if(
+		(map::left($p->{'team'})  && $x>642)  ||
+		(map::right($p->{'team'}) && $x<638)
+	) {
+		&eliminate($p, 1);
+		return(undef);
+	} else {
+		return(1);
+	}
+}
+
+sub grow {
+	if(player::count>0) {
+		$DB{'size'}+=5;
+		server::send('testPlaneScale', $DB{'size'});
+
+		if($DB{'size'}<300) {
+			queue::schedule { &grow; } 40;
 		}
 	}
 }
 
 HOOKS {
 	'mapChange'		=> sub {
-		%PLAYERS=();
-		$TEAM=undef;
-		$HOT=0;
-		$SIZE=100;
+		%DB=(
+			'hot'   => 0,
+			'outs'  => 3,
+			'size'  => 100,
+			'carry' => undef,
+			'count' => {},
+			'timer' => {},
+			'safe'  => {},
+			'team'  => {},
+			'name'  => {},
+		);
 
 		queue::schedule {
-			tourney::start_ranked if(player::count>1);
-		} $config::Launcher{'warmup'}{'ball'}-2;
+			foreach my $player (player::list('spec')) {
+				chat::whisper($player, 'Join now to play!');
+			}
+		} $config::Launcher{'warmup'}{'ball'}-5;
 
-		queue::schedule { &expand; } 90;
+		queue::schedule {
+			tourney::start_ranked if(player::count('both')>1);
+		} $config::Launcher{'warmup'}{'ball'}-1;
+
+		queue::schedule { &grow; } 90;
 	},
 
 	'mapChange:pre'	=> sub {
+		%DB=();
 		tourney::end;	#Before we switch to another map, end tournament
 	},
 
+	'help modify'		=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, "/vote modify outs #");
+	},
+
+	'modify'			=> sub {
+		my($e, $p)=@_;
+		my($param, $value)=split(m/\s+/, $e->{'arguments'}[0]);
+
+		if($param=~m/out/i && $value=~m/^\d+$/) {
+			if(1<=$value && $value<=20) {
+				foreach my $vid (keys(%{$DB{'count'}})) {
+					if($DB{'count'}{$vid}>=$DB{'outs'}) {
+						$DB{'count'}{$vid}=$value;
+					}
+				}
+				$DB{'outs'}=$value;
+			} else {
+				chat::all('/vote modify outs [1-20]');
+			}
+		}
+	},
+
+	'tournamentModified'	=> sub {
+		my($e)=@_;
+		my($left, $right)=(map::left, map::right);
+
+		$DB{'team'}={};
+		foreach my $vid (@{$e->{'team0'}}) {
+			$DB{'team'}{$vid}=$left;
+		}
+		foreach my $vid (@{$e->{'team1'}}) {
+			$DB{'team'}{$vid}=$right;
+		}
+	},
+
+	'teamChange'		=> sub {
+		my($e, $p)=@_;
+		my($vid)=$p->{'vaporId'};
+
+		chat::debugf('teamChange %s: side(%s) color(%s) tourney(%d)',
+			$p->{'nickname'}, map::side($p), map::team_color($p->{'team'}), tourney::on);
+
+		&set_spawn($p);
+
+		return if($p->{'isBot'});
+
+		unless(tourney::on) {
+			if(!$DB{'team'}{$vid} || !map::spec($p->{'team'})) {
+				$DB{'team'}{$vid}=$p->{'team'};
+			}
+		}
+
+		if($DB{'shoot'} == $p) {
+			$DB{'shoot'}=undef;
+			$DB{'carry'}=undef;
+		}
+
+		unless(exists($DB{'count'}{$vid})) {
+			$DB{'count'}{$vid}=0;
+			$DB{'name'}{$vid}=$p->{'nickname'};
+			$DB{'timer'}{$vid}=$e->{'time'}+25000;
+		}
+	},
+
+	'clientNicknameChange'	=> sub {
+		my($e, $p)=@_;
+
+		$DB{'name'}{$p->{'vaporId'}}=$e->{'newNickname'};
+	},
+
 	'ballLost'		=> sub {
-		$TEAM=undef;
+		$DB{'shoot'}=undef;
+		$DB{'carry'}=undef;
+	},
+
+	'spawn'			=> sub {
+		my($e, $p)=@_;
+		my($vid)=$p->{'vaporId'};
+
+		$DB{'safe'}{$vid}=$e->{'time'}+3000;
 	},
 
 	'powerupUse'		=> sub {
 		my($e, $p)=@_;
 
-		$HOT=$e->{'time'}+1010;
+		chat::debugf('powerupUse %s: side(%s) x(%s)', $p->{'nickname'},
+			map::side($p), ($e->{'positionX'}<640)?'<':'>');
+
+		if(&position_check($p, $e->{'positionX'})) {
+			$DB{'hot'}=$e->{'time'}+1020;
+			$DB{'shoot'}=$DB{'carry'};
+			$DB{'carry'}=undef;
+		} else {
+			$DB{'shoot'}=undef;
+			$DB{'carry'}=undef;
+		}
 	},
 
 	'powerupPickup'	=> sub {
 		my($e, $p)=@_;
-		my($team)=$p->{'team'};
-		my($safe)=$p->{'spawn'}+1500;
-		my($time)=$e->{'time'};
+		my($vid)=$p->{'vaporId'};
 
-		if($TEAM && $team!=$TEAM && $safe<$time && $time<=$HOT) {
-			&eliminate($e, $p, 1);
+		chat::debugf('powerupPickup %s: shoot(%s) catch(%s) out(%.1f)',
+			$p->{'nickname'}, map::side($DB{'shoot'}), map::side($p), ($e->{'time'}-$DB{'hot'})/1000);
+
+		if(
+			$DB{'shoot'}                          &&
+			$DB{'shoot'}{'team'} != $p->{'team'}  &&
+			$e->{'time'} < $DB{'hot'}
+		) {
+			$DB{'shoot'}=undef;
+			$DB{'carry'}=undef;
+			&eliminate($p, 1);
+
+			rank::score($DB{'shoot'}{'team'}, 1);
+			records::help($DB{'shoot'}, 1);
+			$DB{'shoot'}{'stats'}{'throwout'}++;
+		} else {
+			$DB{'shoot'}=undef;
+			$DB{'carry'}=$p;
 		}
-
-		$TEAM=$p->{'team'};
 	},
 
 	'kill'			=> sub {
 		my($e, $p)=@_;
 		my($v)=player::lookup($e->{'victim'});
-		my($x)=$e->{'victimPositionX'};
+		my($vid)=$v->{'vaporId'};
 
-		if(map::left($v->{'team'})) {
-			&eliminate($e, $v, 1) if($x>642);
-		} else {
-			&eliminate($e, $v, 1) if($x<638);
+		return if($p->{'isBot'});
+
+		&position_check($v, $e->{'victimPositionX'});
+
+		$DB{'safe'}{$vid}=$e->{'time'}+3000;
+		$DB{'timer'}{$vid}=$e->{'time'}+25000;
+
+		if($v == $DB{'carry'}) {
+			$DB{'carry'}=undef;
+			$DB{'shoot'}=undef;
+		}
+	},
+
+	'pingSummary'		=> sub {
+		my($e)=@_;
+		my($goals)=$config::Launcher{'goals'};
+		my($left_out, $left_in, $left_score)=(0, 0, 0);
+		my($right_out, $right_in, $right_score)=(0, 0, 0);
+		my($player);
+
+		foreach my $vid (keys(%{$DB{'team'}})) {
+			$player=player::lookup($vid);
+
+			if($player && $player->{'alive'}) {
+				plus::bench($player) if($DB{'count'}{$vid}>=$DB{'outs'});
+			} else {
+				if($e->{'time'}>$DB{'timer'}{$vid}) {
+					$DB{'timer'}{$vid}=$e->{'time'}+20000;
+					$DB{'count'}{$vid}++;
+
+					&show_status($vid) if($DB{'count'}{$vid}<=$DB{'outs'});
+				}
+			}
+
+			if(map::left($DB{'team'}{$vid})) {
+				if($DB{'count'}{$vid}>=$DB{'outs'}) {
+					$left_out++;
+				} else {
+					$left_in++;
+				}
+			} elsif(map::right($DB{'team'}{$vid})) {
+				if($DB{'count'}{$vid}>=$DB{'outs'}) {
+					$right_out++;
+				} else {
+					$right_in++;
+				}
+			}
 		}
 
-		if($v->{'carrier'}) {
-			$TEAM=undef;
+		if($right_out || $right_in) {
+			if($right_in) {
+				$left_score=$goals*$right_out/($right_out+$right_in);
+			} else {
+				$left_score=$goals;
+			}
 		}
+
+		if($left_out || $left_in) {
+			if($left_in) {
+				$right_score=$goals*$left_out/($left_out+$left_in);
+			} else {
+				$right_score=$goals;
+			}
+		}
+
+		if($left_score || $right_score) {
+			ball::set_score($left_score, $right_score);
+		}
+	},
+
+	'roundEnd'	=> sub {
+		my($e)=@_;
+
+		%DB=();
 	},
 };
 
