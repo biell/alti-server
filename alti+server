@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.30';
+my($VERSION)='4.31';
 
 =head1 NAME
 
@@ -61,9 +61,12 @@ my(%OPTIONS)=(
 								# normal: all commands and help
 								# small: all commands, but no help
 								# tiny: only required, admin merged
-	notifyMethod	=> 'file',		#Notification: file or pushbullet
-	notifyTag		=> undef,			#Notification tag to send to
-	notifyToken	=> undef,			#Notification security token (if req'd)
+	notifyMethod	=> 'file',		#Notification: file, email, pushbullet
+	notifyFrom	=> undef,			#Notification tag for pushbullet
+	notifyTo		=> undef,			#Notification tag for pushbullet
+	notifyServer	=> undef,			#Notification tag for pushbullet
+	notifyTag		=> undef,			#Notification tag for pushbullet
+	notifyAuth	=> undef,			#Notification security token (if req'd)
 	superAdmin	=> 'admin',		#Super Admin command access:
 	                                   # admin: all admins are super admins
 								# console: cmds typed at console only
@@ -1391,13 +1394,6 @@ L<perl(1)> should be used to ensure basic operation.
 		my($read)=IO::Handle->new;
 		my(@cmd);
 
-		if($string=~s/^{B64}//) {
-			$string=MIME::Base64::decode_base64($string);
-		} elsif($string=~s/^{xor}//) {
-			$string=MIME::Base64::decode_base64($string);
-			$string=~s/(.)/$1^'_'/ge;
-		}
-
 		1 while($string=~s/\$\{?(\w+)\}?/$ENV{"$1"}/);
 
 		if($string=~s/\s*\|\s*$//) {
@@ -2115,6 +2111,86 @@ to see if it looks like it will be sufficient.
 	}
 }
 
+
+=head2 Obfuscating data
+
+If b<alti+server> needs to store data which is sensitive, it will obfuscate
+it.  This isn't perfectly safe, and it isn't advisible to use any passwords
+which are otherwise important to you.  The server will attempt to find
+server specific data which rarely changes and use that to seed the data
+hiding algorithm so that it is difficult to decode from a backup.
+
+=cut
+
+{	package obfuscate;
+
+	use Digest::SHA;
+	use MIME::Base64;
+	use Sys::Hostname;
+
+	my($Ip)=utils::which('ip', 'good', 'host specific hiding not possible');
+	my($Pad)=Digest::SHA::sha512(
+		POSIX::uname(), stash::get('uuid', 'server'), &macaddrs()
+	);
+
+	sub macaddrs {
+		my(@addrs)=();
+		my($ip)=IO::Handle->new;
+
+		open($ip, '-|', $Ip, 'link', 'show', 'up');
+		while(<$ip>) {
+			if(m|^\s+link/\S+\s+([0-9a-f:]+[1-9a-f][0-9a-f:]+)|i) {
+				push(@addrs, $1);
+			}
+		}
+		close($ip);
+
+		return(@addrs);
+	}
+
+	sub xor {
+		my($string)=@_;
+		$string=~s/(.)/$1^'_'/ge;
+		$string=MIME::Base64::encode_base64($string);
+		chomp($string);
+		return('{xor}'.$string);
+	}
+
+	sub unxor {
+		my($string)=@_;
+
+		$string=~s/^{xor}//;
+		$string=MIME::Base64::decode_base64($string);
+		$string=~s/(.)/$1^'_'/ge;
+
+		return($string);
+	}
+
+	sub hide {
+		my($string)=@_;
+		my($len)=length($string);
+
+		$string^=$Pad;
+		$string=MIME::Base64::encode_base64(substr($string, 0, $len));
+		chomp($string);
+
+		return('{pad}'.$string);
+	}
+
+	sub unhide {
+		my($string)=@_;
+		my($len);
+
+		$string=~s/^{pad}//;
+		$string=MIME::Base64::decode_base64($string);
+		$len=length($string);
+		$string^=$Pad;
+
+		return(substr($string, 0, $len));
+	}
+}
+
+
 =head2 Configuration
 
 B<alti+server> gets it's configuration information from a
@@ -2198,6 +2274,14 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($key)=@_;
 		my($value)=stash::get($key, 'server') // $OPTIONS{$key};
 
+		if($value=~s/^{B64}//) {
+			$value=MIME::Base64::decode_base64($value);
+		} elsif($value=~s/^{xor}//) {
+			$value=obfuscate::unxor($value);
+		} elsif($value=~s/^{pad}//) {
+			$value=obfuscate::unhide($value);
+		}
+
 		if(ref($value)) {
 			return($value);
 		} elsif($value=~m/^(true|yes|t|y)$/i) {
@@ -2211,6 +2295,10 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	sub option_set {
 		my($name, $value)=@_;
+
+		if($name=~m/pass|secret|token|auth/i) {
+			$value=obfuscate::hide($value);
+		}
 
 		stash::set($name, 'server', $value);
 	}
@@ -3173,10 +3261,44 @@ be added the log entries for C<priority> of C<warn> messages.
 		close($fh);
 	}
 
+	sub email {
+		my($priority, $msg)=@_;
+		my($from)=config::option('notifyFrom');
+		my($to)=config::option('notifyTo');
+		my($server)=config::option('notifyServer');
+		my($pass)=config::option('notifyAuth');
+		my($email)=IO::Handle->new;
+
+		open($email, '|-', $Curl, '-s',
+			'--url', "smtps://$server", '--ssl-reqd',
+			'--mail-from', $from,
+			'--mail-rcpt', $to,
+			'--upload-file', '-',
+			'--user', "$from:$pass",
+		);
+
+		print $email "From: $from\n";
+		print $email "To: $to\n";
+		print $email "Subject: $config::Name\n\n";
+		print $email $msg->{'message'}, "\n\n";
+		foreach my $key (keys(%$msg)) {
+			next if($key eq 'message');
+			print $email "$key: $msg->{$key}\n";
+		}
+
+		close($email);
+
+		if($?) {
+			return(0);
+		} else {
+			return(1);
+		}
+	}
+
 	sub pushbullet {
 		my($priority, $msg)=@_;
 		my($tag)=config::option('notifyTag');
-		my($token)=config::option('notifyToken');
+		my($token)=config::option('notifyAuth');
 		my($push)=IO::Handle->new;
 		my($bullet)={
 			'channel_tag'	=> $tag,
@@ -3230,6 +3352,9 @@ be added the log entries for C<priority> of C<warn> messages.
 			&file('warn', $msg);
 		} elsif($method=~m/bull/i) {
 			$msg->{'pushbullet'}=&pushbullet('warn', $msg);
+			&file('warn', $msg);
+		} elsif($method=~m/mail/i) {
+			$msg->{'email'}=&email('warn', $msg);
 			&file('warn', $msg);
 		} elsif($method) {
 			ui::slog('Invalid notification method:', $method);
@@ -14473,12 +14598,6 @@ also only available from the console.
 				} else {
 					xx::uninstall;
 				}
-			}
-
-			if($name=~m/pass/i) {
-				$value=~s/(.)/$1^'_'/ge;
-				$value='{xor}'.encode_base64($value);
-				chomp($value);
 			}
 
 			config::option_set($name, $value);
