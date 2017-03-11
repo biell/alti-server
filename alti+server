@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.31';
+my($VERSION)='4.32';
 
 =head1 NAME
 
@@ -39,10 +39,11 @@ my(%OPTIONS)=(
 	chatFromColor	=> 'cyan',          # black, blue, cyan, green,
 	chatToColor	=> 'yellow',        # magenta, red, white, yellow
 	uiPrettyBoxes	=> 0,               #0='|','-'; 1=ACS/Unicode prettiness
-	db_type		=> 'SQLite',		#Or 'Pg' for postgres
-	db_name		=> 'sqlite.db',	#Or 'hostname' for postgres
-	db_user		=> '',			#Actual username for postgres
-	db_pass		=> '',			#Run through "utils::get_value"
+	askSalt		=> 0,			#Request a salt to unlock hidden data
+	dbType		=> 'SQLite',		#Or 'Pg' for postgres
+	dbName		=> 'sqlite.db',	#Or 'hostname' for postgres
+	dbUser		=> '',			#Actual username for postgres
+	dbPass		=> '',			#Run through "utils::get_value"
 	noviceLevel	=> undef,           #Level for Ace 0 to play
 	aceLevel		=> undef,           #Level for Ace 1-10 to play
 	snarkChance	=> 16,              #per player 1 in snarkChance, 0 disables
@@ -71,6 +72,7 @@ my(%OPTIONS)=(
 	                                   # admin: all admins are super admins
 								# console: cmds typed at console only
 								# list: vaporId from @superAdmins array:
+	roundTime		=> {},			#game round time limits
 	admins		=> join(';',
 			'00000000-0000-0000-0000-000000000000',
 		),
@@ -89,6 +91,7 @@ my(%OPTIONS)=(
 my(@MODES)=qw(1bd 1de 1dm ball ffa tbd tdm);
 my(@TYPES)=qw(coop flag mdg tag race ruin zone 1lh);
 
+my($OPTIONS_HIDE)='pass|secret|token|auth';
 my($MB)=2**20;
 my($ROLL_LOGS)=4 * $MB;
 my($RADIANS)=3.1415926535/180;
@@ -255,6 +258,12 @@ any game where resolving complaints is a possibility.
 		open($out, '>', "$Logdir/$Map/$Date/player.txt");
 		print $out Data::Dumper::Dumper([@Player]);
 		close($out);
+
+		notify::info(
+			'directory'	=> "$Logdir/$Map/$Date",
+			'map'		=> $Map,
+			'message'		=> 'game data logged',
+		);
 
 		$Date=POSIX::strftime("%Y%m%dT%H%M", gmtime(time));
 		@Stdout=();
@@ -539,9 +548,11 @@ delete($ENV{'COLUMNS'});
 		} else {
 			rename($Outfile, $Outfile_o) if(-s $Outfile > $ROLL_LOGS);
 
-			open($slog, '>>', $Outfile);
-			print $slog $entry, "\n";
-			close($slog);
+			unless($_[0] eq '|' && $entry=~m/^\| \w*($OPTIONS_HIDE)\w*: /i) {
+				open($slog, '>>', $Outfile);
+				print $slog $entry, "\n";
+				close($slog);
+			}
 
 			log::stdout($entry);
 
@@ -709,6 +720,7 @@ delete($ENV{'COLUMNS'});
 			return($input);
 		}
 	}
+
 }
 
 =head2 Input and Interaction
@@ -969,6 +981,38 @@ list.
 		&expand_clear if($key ne 'tab');
 
 		ui::update_input($Input, $Cursor);
+	}
+
+	sub readline {
+		my($key);
+
+		while($key=ui::keypress) {
+			if($key eq 'up' || $key eq 'down') {
+				1;
+			} elsif($key eq 'left') {
+				$Cursor-- if($Cursor>0);
+			} elsif($key eq 'right') {
+				$Cursor++ if($Cursor<length($Input));
+			} elsif($key eq 'bs') {
+				&remove_key(-1);
+			} elsif($key eq 'del') {
+				&remove_key(0);
+			} elsif($key eq 'clear') {
+				&overwrite_input('');
+			} elsif($key eq 'tab') {
+				&insert_key("\t");
+			} elsif($key eq 'enter') {
+				&overwrite_input('');
+			} elsif(!defined($key)) {
+				'skip';
+			} else {
+				&insert_key($key);
+			}
+
+			ui::update_input($Input, $Cursor);
+
+			return($Input) if($key eq 'enter');
+		}
 	}
 }
 
@@ -1995,6 +2039,21 @@ stash are automatically saved to disk.
 			$changes=1;
 		}
 		
+		$tmp={
+			'db_type' => 'dbType',
+			'db_name' => 'dbName',
+			'db_user' => 'dbUser',
+			'db_pass' => 'dbPass',
+		};
+		while(my($old, $new)=each( %$tmp )) {
+			if(exists($Stash->{$old})) {
+				$Stash->{$new}=$Stash->{$old};
+				delete($Stash->{$old});
+
+				$changes=1;
+			}
+		}
+
 		if($changes) {
 			&save;
 			ui::slog('Stash upgraded');
@@ -2118,20 +2177,23 @@ If b<alti+server> needs to store data which is sensitive, it will obfuscate
 it.  This isn't perfectly safe, and it isn't advisible to use any passwords
 which are otherwise important to you.  The server will attempt to find
 server specific data which rarely changes and use that to seed the data
-hiding algorithm so that it is difficult to decode from a backup.
+hiding algorithm so that it is difficult to decode from a backup.  If you
+need to be able to move your B<alti+server> installation around, to different
+servers, or to often reconfigure servers; then you can also specify seed
+the data hiding algorithm with a pre-defined salt.  This can be set by
+storing the salt in an environment variable named C<ALTITUDE_SALT>.  You
+should try to make this reasonbly long, I would recommend using a good
+portion of an 80 column terminal when setting this variable.
 
 =cut
 
 {	package obfuscate;
 
 	use Digest::SHA;
-	use MIME::Base64;
 	use Sys::Hostname;
 
 	my($Ip)=utils::which('ip', 'good', 'host specific hiding not possible');
-	my($Pad)=Digest::SHA::sha512(
-		POSIX::uname(), stash::get('uuid', 'server'), &macaddrs()
-	);
+	my($Seed)=undef;
 
 	sub macaddrs {
 		my(@addrs)=();
@@ -2146,6 +2208,19 @@ hiding algorithm so that it is difficult to decode from a backup.
 		close($ip);
 
 		return(@addrs);
+	}
+
+	sub seed {
+		$Seed=Digest::SHA->new(512)->add(stash::get('uuid', 'server'));
+
+		if(@_) {
+			$Seed->add(@_);
+		} elsif(exists($ENV{'ALTITUDE_SALT'})) {
+			$Seed->add($ENV{'ALTITUDE_SALT'});
+			$ENV{'ALTITUDE_SALT'}='';
+		} else {
+			$Seed->add($INSTALL_ROOT, hostname, &macaddrs);
+		}
 	}
 
 	sub xor {
@@ -2167,10 +2242,14 @@ hiding algorithm so that it is difficult to decode from a backup.
 	}
 
 	sub hide {
-		my($string)=@_;
+		my($key, $string)=@_;
 		my($len)=length($string);
 
-		$string^=$Pad;
+		return(undef) unless($Seed);
+
+		$len+=(20-$len%20);
+
+		$string^=$Seed->clone->add($key)->digest;
 		$string=MIME::Base64::encode_base64(substr($string, 0, $len));
 		chomp($string);
 
@@ -2178,15 +2257,19 @@ hiding algorithm so that it is difficult to decode from a backup.
 	}
 
 	sub unhide {
-		my($string)=@_;
-		my($len);
+		my($key, $string)=@_;
+		my($clear, $len);
+
+		return(undef) unless($Seed);
 
 		$string=~s/^{pad}//;
 		$string=MIME::Base64::decode_base64($string);
 		$len=length($string);
-		$string^=$Pad;
+		$string^=$Seed->clone->add($key)->digest;
 
-		return(substr($string, 0, $len));
+		$clear=substr($string, 0, $len);
+		$clear=~tr/\0//d;
+		return($clear);
 	}
 }
 
@@ -2279,7 +2362,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		} elsif($value=~s/^{xor}//) {
 			$value=obfuscate::unxor($value);
 		} elsif($value=~s/^{pad}//) {
-			$value=obfuscate::unhide($value);
+			$value=obfuscate::unhide($key, $value);
 		}
 
 		if(ref($value)) {
@@ -2296,8 +2379,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 	sub option_set {
 		my($name, $value)=@_;
 
-		if($name=~m/pass|secret|token|auth/i) {
-			$value=obfuscate::hide($value);
+		if($name=~m/$OPTIONS_HIDE/i) {
+			$value=obfuscate::hide($name, $value);
 		}
 
 		stash::set($name, 'server', $value);
@@ -2424,6 +2507,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($admins)=config::option('admins');
 		my($rotation)=config::option('rotationRE');
 		my($update_maps)=config::option('updateMapList');
+		my($times)=config::option('roundTime');
+		my($xx)=&option('xxEnabled');
 		my($update_admins)=($admins=~m/[1-9a-f]/);
 		my(@xml);
 
@@ -2495,6 +2580,20 @@ has occured.  After too many infractions, the player is kicked by the server.
 					$adminlist=1;
 				}
 			}
+
+			if($xx && m/roundTimeSeconds/) {
+				if(
+					(m/ObjectiveGameMode/      && $times->{'1bd'})  ||
+					(m/ObjectiveGameMode/      && $times->{'1de'})  ||
+					(m/ObjectiveGameMode/      && $times->{'1dm'})  ||
+					(m/PlaneBallGameMode/      && $times->{'ball'}) ||
+					(m/FreeForAllGameMode/     && $times->{'ffa'})  ||
+					(m/BaseDestroyGameMode/    && $times->{'tbd'})  ||
+					(m/TeamDeathmatchGameMode/ && $times->{'tdm'})
+				) {
+					s/roundTimeSeconds="\d+"/roundTimeSeconds="3559"/;
+				}
+			}
 		}
 
 		rename($Conffile, "$Conffile.bak");
@@ -2519,6 +2618,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 	sub launcher {
 		my($server)=xml::decode($Conffile)->{'servers'};
 		my($jdk)=&option('javaHome');
+		my($times)=&option('roundTime');
+		my($xx)=&option('xxEnabled');
 		my($fh)=IO::Handle->new;
 		my(@filter)=();
 		my($config);
@@ -2568,15 +2669,27 @@ has occured.  After too many infractions, the player is kicked by the server.
 			'tdm' => $config->{'TeamDeathmatchGameMode'}{'warmupTimeSeconds'},
 		};
 
-		$Launcher{'roundTime'}={
-			'1bd' => $config->{'ObjectiveGameMode'}{'roundTimeSeconds'},
-			'1de' => $config->{'ObjectiveGameMode'}{'roundTimeSeconds'},
-			'1dm' => $config->{'ObjectiveGameMode'}{'roundTimeSeconds'},
-			'ball' => $config->{'PlaneBallGameMode'}{'roundTimeSeconds'},
-			'ffa' => $config->{'FreeForAllGameMode'}{'roundTimeSeconds'},
-			'tbd' => $config->{'BaseDestroyGameMode'}{'roundTimeSeconds'},
-			'tdm' => $config->{'TeamDeathmatchGameMode'}{'roundTimeSeconds'},
-		};
+		if($xx) {
+			$Launcher{'roundTime'}={
+				'1bd' => $times->{'1bd'} // 0,
+				'1de' => $times->{'1de'} // 0,
+				'1dm' => $times->{'1dm'} // 0,
+				'ball' => $times->{'ball'} // 0,
+				'ffa' => $times->{'ffa'} // 420,
+				'tbd' => $times->{'tbd'} // 0,
+				'tdm' => $times->{'tdm'} // 420,
+			};
+		} else {
+			$Launcher{'roundTime'}={
+				'1bd' => $config->{'ObjectiveGameMode'}{'roundTimeSeconds'},
+				'1de' => $config->{'ObjectiveGameMode'}{'roundTimeSeconds'},
+				'1dm' => $config->{'ObjectiveGameMode'}{'roundTimeSeconds'},
+				'ball' => $config->{'PlaneBallGameMode'}{'roundTimeSeconds'},
+				'ffa' => $config->{'FreeForAllGameMode'}{'roundTimeSeconds'},
+				'tbd' => $config->{'BaseDestroyGameMode'}{'roundTimeSeconds'},
+				'tdm' => $config->{'TeamDeathmatchGameMode'}{'roundTimeSeconds'},
+			};
+		}
 
 		$Launcher{'score'}={
 			'ffa' => $config->{'FreeForAllGameMode'}{'scoreLimit'},
@@ -2948,7 +3061,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'help' => {
 		'name'			=> 'help',
-		'arguments'		=> [['modify', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['modify', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2963,7 +3076,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'list' => {
 		'name'			=> 'list',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2971,7 +3084,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'set' => {
 		'name'			=> 'set',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys', 'timer'], 'string'],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'intro', 'keys', 'timer'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -2979,7 +3092,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'unset' => {
 		'name'			=> 'unset',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'intro', 'keys', 'timer']],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'intro', 'keys', 'timer']],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3601,6 +3714,8 @@ garunteed to keep the format correct.
 			unlink('game.jar');
 			symlink($xx, 'game.jar');
 		}
+
+		config::option_set('roundTime', $config::Launcher{'roundTime'});
 	}
 
 	sub uninstall {
@@ -3920,11 +4035,11 @@ Supported databases are SQLite and PostgreSQL.
 	my($Type)=undef;
 
 	sub init {
-		if(config::option('db_type')=~m/Pg/i) {
+		if(config::option('dbType')=~m/Pg/i) {
 			@connect=(
-				'dbi:Pg:dbname='.config::option('db_name'),
-				config::option('db_user'),
-				utils::get_value(config::option('db_pass')),
+				'dbi:Pg:dbname='.config::option('dbName'),
+				config::option('dbUser'),
+				utils::get_value(config::option('dbPass')),
 				{'PrintError' => config::option('debug')}
 			);
 			if($Dbh=eval('use DBI; DBI->connect(@connect)')) {
@@ -3934,17 +4049,17 @@ Supported databases are SQLite and PostgreSQL.
 				ui::slog('No database libraries, falling back to stash-only mode');
 				$Type=undef;
 			}
-		} elsif(config::option('db_type')=~m/SQLite/i) {
-			if(config::option('db_name')=~m|/|) {
+		} elsif(config::option('dbType')=~m/SQLite/i) {
+			if(config::option('dbName')=~m|/|) {
 				@connect=(
-					'dbi:SQLite:dbname='.config::option('db_name'),
+					'dbi:SQLite:dbname='.config::option('dbName'),
 					'',
 					'',
 					{'PrintError' => config::option('debug')}
 				);
 			} else {
 				@connect=(
-					'dbi:SQLite:dbname='."$INSTALL_ROOT/servers/".config::option('db_name'),
+					'dbi:SQLite:dbname='."$INSTALL_ROOT/servers/".config::option('dbName'),
 					'',
 					'',
 					{'PrintError' => config::option('debug')}
@@ -4882,8 +4997,14 @@ directly with it to manage the instance.
 		if(@streams || time()<$hang) {
 			return(@streams);
 		} else {
-			ui::slog('Java server failure: HUNG');
-			return(0xDEAD);
+			&send('logServerStatus');
+
+			if(@streams=$Streams->can_read(5)) {
+				return(@streams);
+			} else {
+				ui::slog('Java server failure: HUNG');
+				return(0xDEAD);
+			}
 		}
 	}
 
@@ -5824,6 +5945,10 @@ types which alter the normal behavior.
 			$limit=$config::Launcher{'roundTime'}{&mode};
 		}
 
+		if(xx::enabled) {
+			$limit=3559;
+		}
+
 		if(wantarray) {
 			return($limit, $used);
 		} else {
@@ -6303,6 +6428,11 @@ is updated with them as the games progress.
 				return(int($p->{'infractions'}));
 			} else {
 				server::send('kick', $nick);
+				notify::info(
+					'nickname'	=> $nick,
+					'message'		=> 'kicked for infractions',
+					'infractions'	=> $p->{'infractions'},
+				);
 				return(int($p->{'infractions'}));
 			}
 		} else {
@@ -9189,7 +9319,7 @@ play though extended interfaces and server support.
 			if(map::mode('ffa')) {
 				&assign($p, 'blue');
 			} else {
-				&assign($p, &map_team);
+				&assign($p, $map_team);
 			}
 		}
 		$Hunted=undef;
@@ -11020,6 +11150,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my(@settings)=qw(
 			gameType
+			roundTime
 			maxPlayers
 			changePlane
 			score
@@ -11123,6 +11254,7 @@ core protecting the flag.
 		my(@records)=split(m/\W+/, config::option('recordsTypes'));
 		my(@settings)=qw(
 			gameType
+			roundTime
 			maxPlayers
 			changePlane
 			score
@@ -11985,7 +12117,7 @@ core protecting the flag.
 	'help gameType'	=> sub {
 		my($e, $p)=@_;
 
-		chat::whisper($p, 'These are Alti+ game times, which are extentions to the mode');
+		chat::whisper($p, 'These are Alti+ game types, which are extentions to the mode');
 		chat::whisper($p, '/list gameType');
 		chat::whisper($p, '/set gameType <mapname|std|coop|race|ruin|flag|zone|mdg|1lh>');
 		chat::whisper($p, '/unset gameType');
@@ -12031,6 +12163,82 @@ core protecting the flag.
 			chat::all('gameType:', map::set_type(map::name));
 		} else {
 			chat::whisper($p, 'gameType not set');
+		}
+	},
+
+	'help roundTime'	=> sub {
+		my($e, $p)=@_;
+
+		if(xx::enabled) {
+			chat::whisper($p, 'Change the round time for this map');
+			chat::whisper($p, '/list roundTime');
+			chat::whisper($p, '/set roundTime #');
+			chat::whisper($p, '/unset roundTime');
+		} else {
+			chat::whisper($p, 'roundTime not supported without xx extensions');
+		}
+	},
+
+	'list roundTime'	=> sub {
+		my($e, $p)=@_;
+		my($map_time)=stash::get('roundTime', map::name, 'map');
+		my($times)=config::option('roundTime');
+		my($mode, $type)=(map::mode, map::type);
+
+		if(xx::enabled) {
+			if($map_time) {
+				chat::whisper($p, 'roundTime:', utils::timer($map_time));
+			} elsif($times->{$type}) {
+				chat::whisper($p, 'roundTime:', utils::timer($times->{$type}));
+			} elsif($times->{$mode}) {
+				chat::whisper($p, 'roundTime:', utils::timer($times->{$mode}));
+			} elsif($config::Launcher{'roundTime'}{$mode}) {
+				chat::whisper($p, 'roundTime:', utils::timer($config::Launcher{'roundTime'}{$mode}));
+			}
+		} else {
+			chat::whisper($p, 'roundTime:',
+				$config::Launcher{'roundTime'}{map::mode});
+		}
+	},
+
+	'enable roundTime'	=> sub {
+		my($e, $p)=@_;
+		my($map_time)=stash::get('roundTime', map::name, 'map');
+		my($times)=config::option('roundTime');
+		my($mode, $type)=(map::mode, map::type);
+		my($warmup)=$config::Launcher{'warmup'}{$mode};
+
+		return unless(xx::enabled);
+
+		if($map_time) {
+			xx::set_time($map_time+$warmup);
+			chat::all('roundTime:', utils::timer($map_time));
+		} elsif($times->{$type}) {
+			xx::set_time($times->{$type}+$warmup);
+			chat::all('roundTime:', utils::timer($times->{$type}));
+		} elsif($times->{$mode}) {
+			xx::set_time($times->{$mode}+$warmup);
+			chat::all('roundTime:', utils::timer($times->{$mode}));
+		} elsif($config::Launcher{'roundTime'}{$mode}) {
+			xx::set_time($config::Launcher{'roundTime'}{$mode}+$warmup);
+			chat::all('roundTime:', utils::timer($config::Launcher{'roundTime'}{$mode}));
+		}
+	},
+
+	'set roundTime'		=> sub {
+		my($e, $p, $time)=@_;
+
+		stash::set('roundTime', map::name, 'map', $time);
+		chat::all('roundTime:', utils::timer($time));
+	},
+
+	'unset roundTime'		=> sub {
+		my($e, $p)=@_;
+
+		if(stash::delete('roundTime', map::name, 'map')) {
+			chat::whisper($p, 'Restoring roundTime to server defaults');
+		} else {
+			chat::whisper($p, 'roundTime not set');
 		}
 	},
 
@@ -13378,9 +13586,9 @@ core protecting the flag.
 						plus::assign($p, 'right');
 					}
 				} else {
-					if(map::right($map_team)) {
+					if(map::right($map_team) && map::left($p->{'team'})) {
 						plus::assign($p, 'right');
-					} else {
+					} elsif(map::right($p->{'team'})) {
 						plus::assign($p, 'left');
 					}
 				}
@@ -14557,6 +14765,7 @@ also only available from the console.
 		my($action, $name, @args)=@_;
 		my($value)=join(' ', @args);
 		my($s)=player::server;
+		my($typere)=join('|', @MODES, @TYPES);
 		my($lookup);
 		my($current);
 
@@ -14571,6 +14780,11 @@ also only available from the console.
 				chat::whisper($s, 'Could not find a vaporID for', $name);
 				return;
 			}
+		}
+
+		if($name eq 'roundTime' && !xx::enabled) {
+			chat::whisper($s, 'roundTime support exists only with xx extensions');
+			return;
 		}
 
 		if($action eq 'list') {
@@ -14592,6 +14806,14 @@ also only available from the console.
 				} elsif($value=~m/(\d+)k/i) {
 					$value=$1*1024;
 				}
+			} elsif($name eq 'roundTime') {
+				$value=config::option('roundTime') || {};
+				if(@args==2 && $args[0]=~m/^($typere)$/i) {
+					$value->{lc($args[0])}=$args[1];
+				} else {
+					chat::whisper($s, 'Syntax: /server set roundTime <mode|type> <#>');
+					$value=undef;
+				}
 			} elsif($name eq 'xxEnabled') {
 				if($value) {
 					xx::install;
@@ -14600,7 +14822,7 @@ also only available from the console.
 				}
 			}
 
-			config::option_set($name, $value);
+			config::option_set($name, $value) if(defined($value));
 
 			ui::setup_screen if($name=~m/^ui|Color$/i);
 			if($name=~m/secretCode/) {
@@ -14614,8 +14836,20 @@ also only available from the console.
 				}
 			}
 		} elsif($action eq 'unset') {
-			config::option_del($name);
-			chat::whisper($s, $name, 'restored to default');
+			if($name eq 'roundTime' && $value) {
+				$current=config::option('roundTime');
+				delete($current->{$value});
+				if(%$current) {
+					stash::set('roundTime', 'server', $current);
+					chat::whisper($s, '$name($value) restored to default');
+				} else {
+					config::option_del('roundTime');
+					chat::whisper($s, $name, 'restored to default');
+				}
+			} else {
+				config::option_del($name);
+				chat::whisper($s, $name, 'restored to default');
+			}
 
 			ui::setup_screen if($name=~m/^ui|Color$/i);
 
@@ -14662,8 +14896,22 @@ also only available from the console.
 		}
 
 		$current=config::option($name);
-		foreach my $entry (split(m/;/, $current)) {
-			chat::whisper($s, "$name:", $entry);
+		if(ref($current) eq 'HASH') {
+			if($args[0]) {
+				chat::whisper($s, "$name($args[0]):", $current->{$args[0]});
+			} else {
+				chat::whisper($s, "$name:", 
+					map("$_=$current->{$_}", sort(keys(%$current)))
+				);
+			}
+		} elsif(ref($current) eq 'ARRAY') {
+			foreach my $entry (@$current) {
+				chat::whisper($s, "$name:", $entry);
+			}
+		} else {
+			foreach my $entry (split(m/;/, $current)) {
+				chat::whisper($s, "$name:", $entry);
+			}
 		}
 	},
 
@@ -15177,6 +15425,13 @@ knowledge of ports, players, log files, standard output, etc.
 my($REQ, $SOUT, $TRIGGER, @EVENT);
 
 ui::setup_screen;
+
+if(config::option('askSalt')) {
+	ui::display('input', '', 'Please enter salt string to unhide passwords:');
+	obfuscate::seed(input::readline);
+} else {
+	obfuscate::seed;
+}
 
 db::init;
 db::upgrade;

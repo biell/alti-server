@@ -440,6 +440,11 @@ manage Alti+ game maps.
     If that cannot be done properly, the game type can be set via this
     mechanism.
 
+  * **/set roundTime [#]**<br>
+    Set the round time for this map in seconds.  This value must be less than
+    an hour, and only works if the server is configured to time maps
+    of this mode.
+
   * **/set intro [text ...]**<br>
     Store text to be displayed at the loading of a map, and to new players
     when they join.  This is intended to help players figure out what to
@@ -908,6 +913,15 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     be checked.  If the size is above ulSizeLimit, then the
     map file will be promptly deleted.
 
+  * **roundTime [type|mode] [#]**<br>
+    Set the default round time for maps of this `type` or `mode`.  First,
+    `alti+server` will check to see if a map specific `roundTime` is set.
+    If not, it will check to see if there is a game `type` specific time
+    set.  Next, it will check to see if there is a `mode` default value.
+    If all of this fails, it will go to the default values. Any `mode`
+    or `type` can be used, including `coop`, `tag`, `race`, `ball`,
+    `tbd`, ...
+
   * **altBouncer [0|1]**<br>
     Add support for sending data on users who join the server to the
     AltBouncer (http://tec27.com/altbouncer/) site.  Setting this to
@@ -955,6 +969,34 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     and just the standard ASCII '-' and '|' characters.  Setting
     this to `1` will tell Curses to draw attractive boxes on the
     terminal screen.
+
+  * **askSalt [0|1]**<br>
+    When `alti+server` stores a password, it hides it by combining
+    the password or other authentication data with a pad.  The pad
+    is, by default, generated using system data which doesn't
+    usually change.  Users can use the environment variable
+    `ALTITUDE_SALT` to manually set the seed for this pad.  Another,
+    almost secure, method is to provide the salt manually on startup.
+    With this option set to 1, the server will pause and wait for
+    input before continuing.
+ 
+  * **dbType [SQLite|Pg]**<br>
+    Specify the type of database to use.  By default sqlite3 will
+    be used if it is available.  Only sqlite3 and postgres are
+    supported.
+
+  * **dbName [filename|dbname]**<br>
+    For sqlite3, this is the name of the file to save the database
+    to, and it defaults to sqlite.db.  Otherwise, it is the database
+    name to connect to.
+
+  * **dbUser [login name]**<br>
+    The login name, if necessary, when connecting to a postgres
+    database.
+
+  * **dbPass [password]**<br>
+    The password, if necessary, when connecting to a postgres
+    database.
 
   * **noviceLevel [#]**<br>
     Require the novice users (Ace 0) attain at least this level
@@ -1093,20 +1135,36 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     the Altitude server.  This parameber can be changed before running
     `/restartServer` to change the JVM used for subsequent server starts.
 
-  * **notifyMethod <file|pushbullet>**<br>
+  * **notifyMethod <file|email|pushbullet>**<br>
     Specify if notifications should go to a file only, or to both
     a file and pushbullet.  The Alti+ server has two priorities of
     messages: *info* and *warn*.  Messages of type info only ever
     go to a file in the server directory named `notify.txt`.  This
     file looks just like the Altitude `log.txt` file.
-    Messgae of type *warn* can also be sent to a pushbullet channel.
+    Messgae of type *warn* can also be sent to an email or pushbullet channel.
 
   * **notifyTag <channel>**<br>
     The name of the pushbullet channel tag to send messages.
 
-  * **notifyToken <token>**<br>
-    The security token necessary for the application to send pushbullet
-    messages.
+  * **notifyAuth <string>**<br>
+    The login password or security token necessary for the application to
+    send messages via a remote service.  If you are sending information
+    via email, please don't use your primary email account.  It is easy
+    to create a new email account, and use that for this purpose.  This
+    allows you to store the account's password in `alti+server` without
+    opening your primary account's password to risk.
+
+  * **notifyFrom <email address>**<br>
+    When using a `notifyMethod` of `email`, use this as both the `From:`
+    field address, and as the username to login to the mail server.
+ 
+  * **notifyTo <email address>**<br>
+    Specify the recipient address of emails, presumably this is an email
+    you have easy access to.
+
+  * **notifyServer <host:port>**<br>
+    Specify the hostname and port which accepts SSL connections, this is
+    usually 465.
 
   * **secretCode [password]**<br>
     Altitude servers can be configured using the `server_configurator` program
