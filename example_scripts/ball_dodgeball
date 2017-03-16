@@ -13,6 +13,7 @@
 #  /add plane Bomber
 #  /add plane Biplane
 #  /set gravity 2
+#  /set botCount 0
 
 MAP 'ball_dodgeball';
 

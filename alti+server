@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.33';
+my($VERSION)='4.34';
 
 =head1 NAME
 
@@ -5983,6 +5983,29 @@ types which alter the normal behavior.
 		return($p->{'team'} == &team_number($team));
 	}
 
+	sub round_time {
+		my($map_time)=stash::get('roundTime', map::name, 'map');
+		my($times)=config::option('roundTime');
+		my($type_time)=$times->{&type};
+		my($mode_time)=$times->{&mode};
+
+		if(xx::enabled) {
+			if($map_time) {
+				return($map_time);
+			} elsif($type_time) {
+				return($type_time);
+			} elsif($mode_time) {
+				return($mode_time);
+			}
+		}
+
+		if(&mode('ball', 'ffa', 'tbd', 'tdm')) {
+			return($config::Launcher{'roundTime'}{&mode});
+		} else {
+			return($Ds->{'levelModeConfig'}{'objectiveGameTimeSeconds'});
+		}
+	}
+
 	sub timer {
 		my($limit)=$Ds->{'levelModeConfig'}{'objectiveGameTimeSeconds'};
 		my($used)=time()-$Start;
@@ -7411,7 +7434,7 @@ These rankings can also be configured to select evenly matched teams.
 		}
 
 		if($config::Launcher{'roundTime'}{$mode}) {
-			$duration=$config::Launcher{'roundTime'}{$mode};
+			$duration=map::round_time;
 		} elsif(map::mode('ball') && map::bases) {
 			$duration=$Base*$goal_ratio + $Base/2;
 		} elsif(map::mode('ball')) {
@@ -12258,47 +12281,20 @@ core protecting the flag.
 
 	'list roundTime'	=> sub {
 		my($e, $p)=@_;
-		my($map_time)=stash::get('roundTime', map::name, 'map');
-		my($times)=config::option('roundTime');
-		my($mode, $type)=(map::mode, map::type);
 
-		if(xx::enabled) {
-			if($map_time) {
-				chat::whisper($p, 'roundTime:', utils::timer($map_time));
-			} elsif($times->{$type}) {
-				chat::whisper($p, 'roundTime:', utils::timer($times->{$type}));
-			} elsif($times->{$mode}) {
-				chat::whisper($p, 'roundTime:', utils::timer($times->{$mode}));
-			} elsif($config::Launcher{'roundTime'}{$mode}) {
-				chat::whisper($p, 'roundTime:', utils::timer($config::Launcher{'roundTime'}{$mode}));
-			}
-		} else {
-			chat::whisper($p, 'roundTime:',
-				$config::Launcher{'roundTime'}{map::mode});
-		}
+		chat::whisper($p, 'roundTime:', map::round_time);
 	},
 
 	'enable roundTime'	=> sub {
 		my($e, $p)=@_;
-		my($map_time)=stash::get('roundTime', map::name, 'map');
-		my($times)=config::option('roundTime');
-		my($mode, $type)=(map::mode, map::type);
-		my($warmup)=$config::Launcher{'warmup'}{$mode};
+		my($round_time)=map::round_time;
+		my($warmup)=$config::Launcher{'warmup'}{map::mode};
 
 		return unless(xx::enabled);
 
-		if($map_time) {
-			xx::set_time($map_time+$warmup);
-			chat::all('roundTime:', utils::timer($map_time));
-		} elsif($times->{$type}) {
-			xx::set_time($times->{$type}+$warmup);
-			chat::all('roundTime:', utils::timer($times->{$type}));
-		} elsif($times->{$mode}) {
-			xx::set_time($times->{$mode}+$warmup);
-			chat::all('roundTime:', utils::timer($times->{$mode}));
-		} elsif($config::Launcher{'roundTime'}{$mode}) {
-			xx::set_time($config::Launcher{'roundTime'}{$mode}+$warmup);
-			chat::all('roundTime:', utils::timer($config::Launcher{'roundTime'}{$mode}));
+		if($round_time) {
+			xx::set_time($round_time+$warmup);
+			chat::all('roundTime:', utils::timer($round_time));
 		}
 	},
 
@@ -14406,13 +14402,27 @@ core protecting the flag.
 					chat::snark($p, 'The best defense is a good offense');
 				}
 			} elsif($p->{'joined'} && !$p->{'isBot'} && !$v->{'isBot'}) {
-				$limit=int($config::Launcher{'roundTime'}{map::mode}/60);
+				$limit=int(map::round_time()/60);
 
 				$p->{'stats'}{'wrong'}++;
 				if($p->{'stats'}{'wrong'} >= $limit) {
 					server::send('drop', $p->{'nickname'});
 				} else {
 					chat::whisper($p, 'Only kill the player who is it! (',
+						$p->{'stats'}{'wrong'}, '/', $limit, ')');
+				}
+			}
+		}
+
+		if(map::type('coop') && map::mode('ffa', 'tdm')) {
+			if($p->{'joined'} && !$v->{'isBot'}) {
+				$limit=int(map::round_time()/60);
+
+				$p->{'stats'}{'wrong'}++;
+				if($p->{'stats'}{'wrong'} >= $limit) {
+					server::send('drop', $p->{'nickname'});
+				} else {
+					chat::whisper($p, "Don't kill your teammates! (",
 						$p->{'stats'}{'wrong'}, '/', $limit, ')');
 				}
 			}

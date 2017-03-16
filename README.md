@@ -445,6 +445,9 @@ manage Alti+ game maps.
     an hour, and only works if the server is configured to time maps
     of this mode.
 
+  * **/set botCount [#]**<br>
+    Set the number of bots which should be available on this map.
+
   * **/set intro [text ...]**<br>
     Store text to be displayed at the loading of a map, and to new players
     when they join.  This is intended to help players figure out what to
@@ -921,6 +924,9 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     If all of this fails, it will go to the default values. Any `mode`
     or `type` can be used, including `coop`, `tag`, `race`, `ball`,
     `tbd`, ...
+
+  * **botCount [#]**<br>
+    Set the number of bots, by default, ther server should configure.
 
   * **altBouncer [0|1]**<br>
     Add support for sending data on users who join the server to the
