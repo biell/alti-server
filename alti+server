@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.34';
+my($VERSION)='4.35';
 
 =head1 NAME
 
@@ -2626,6 +2626,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 					(m/TeamDeathmatchGameMode/ && $times->{'tdm'})
 				) {
 					s/roundTimeSeconds="\d+"/roundTimeSeconds="3559"/;
+					$Launcher{'roundTime'}{'server'}=3559;
 				}
 			}
 		}
@@ -5983,6 +5984,10 @@ types which alter the normal behavior.
 		return($p->{'team'} == &team_number($team));
 	}
 
+	sub elapsed {
+		return(($server::Time-$Map->{'time'})/1000);
+	}
+
 	sub round_time {
 		my($map_time)=stash::get('roundTime', map::name, 'map');
 		my($times)=config::option('roundTime');
@@ -6007,15 +6012,11 @@ types which alter the normal behavior.
 	}
 
 	sub timer {
-		my($limit)=$Ds->{'levelModeConfig'}{'objectiveGameTimeSeconds'};
+		my($limit)=&round_time;
 		my($used)=time()-$Start;
 
-		if(&mode('ball', 'ffa', 'tbd', 'tdm')) {
-			$limit=$config::Launcher{'roundTime'}{&mode};
-		}
-
-		if(xx::enabled) {
-			$limit=3559;
+		if(xx::enabled && $config::Launcher{'roundTime'}{'server'}) {
+			$limit=$config::Launcher{'roundTime'}{'server'};
 		}
 
 		if(wantarray) {
@@ -12293,7 +12294,7 @@ core protecting the flag.
 		return unless(xx::enabled);
 
 		if($round_time) {
-			xx::set_time($round_time+$warmup);
+			xx::set_time($round_time+$warmup-map::elapsed);
 			chat::all('roundTime:', utils::timer($round_time));
 		}
 	},
