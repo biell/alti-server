@@ -1234,10 +1234,22 @@ option `xxEnabled` to a false value.
 Use the console-only `/xx list`, `/xx set`, `/xx unset`,
 `/xx add`, and `/xx del` commands to modify the below values.
 
-  * **logPostions [#]**<br>
+  * **logPositions [#]**<br>
     Specify a floating point number which signifies the number
     of seconds apart to automatically log a `logPlanePositions`
     event.  The default is 0, which means not to log automatically.
+
+  * **voteCooldown [#]**<br>
+    The default time between votes is 90 seconds, you can change it
+    to # seconds.  If #<=3600, then the time is interpreted as
+    seconds.  If #>3600, then the time is interpreted as milliseconds.
+    This attribute only affects after a successful vote.
+
+  * **voteFailCooldown [#]**<br>
+    The default time between failed votes is 300 seconds, you can change it
+    to # seconds.  If #<=3600, then the time is interpreted as
+    seconds.  If #>3600, then the time is interpreted as milliseconds.
+    This attribute only affects after an unsuccessful vote.
 
   * **extendPermisisons [true|false]**<br>
     Tell the patched server code to enable it's extensions to the

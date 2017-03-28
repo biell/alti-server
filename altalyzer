@@ -1,0 +1,127 @@
+#!/usr/bin/perl
+
+use JSON::XS;
+
+my(%MAP)=();
+
+my(@KEYS)=qw(
+	port time type command arguments group source sourceName*
+	ip player nickname vaporId team victim victimName* victimPositionX
+	victimPositionY victimVelocityX victimVelocityY multi streak
+	powerup positionX positionY playerVelX playerVelY velocityX velocityY
+	assister secondaryAssister
+	target xp exactXp
+	map mode leftTeam rightTeam
+	message blocked server
+	plane perkGreen perkGreen perkBlue skin level aceRank
+	newNickname oldNickname
+	date leaving reason
+	pingByPlayer positionByPlayer
+	participants
+);
+my(@STATS)=(
+	'Assists', 'Ball Possession Time', 'Crashes',
+	'Damage Dealt to Enemy Buildings', 'Damage Dealt', 'Damage Received',
+	'Deaths', 'Experience', 'Goals Assisted', 'Goals Scored',
+	'Kill Streak', 'Kills', 'Multikill', 'Longest Life',
+);
+my(@AWARDS)=(
+	'Award Best Kill Streak', 'Award Longest Life',
+	'Award Most Helpful', 'Award Most Deadly', 'Award Best Multikill'
+);
+
+sub protect {
+	my($data)=@_;
+
+	if(ref($data)=~m/HASH|ARRAY/) {
+		$data=encode_json($data);
+	}
+
+	if($data=~m/^[\w.+-]+$/) {
+		return($data);
+	} else {
+		$data=~s/"/""/g;
+		return('"'.$data.'"');
+	}
+}
+
+sub log_event {
+	my($e)=decode_json($_[0]);
+
+	if($e->{'type'} eq 'clientAdd') {
+		$MAP->{$e->{'player'}}{'vaporId'}=$e->{'vaporId'};
+		$MAP->{$e->{'player'}}{'nickname'}=$e->{'nickname'};
+		$MAP->{$e->{'vaporId'}}{'nickname'}=$e->{'nickname'};
+	} elsif($e->{'type'} eq 'clientRemove') {
+		delete($MAP->{$e->{'player'}});
+		delete($MAP->{$e->{'vaporId'}});
+	}
+
+	if(exists($e->{'player'})) {
+		$e->{'vaporId'}=$MAP->{$e->{'player'}}{'vaporId'};
+		$e->{'nickname'}=$MAP->{$e->{'player'}}{'nickname'};
+	}
+
+	if(exists($e->{'victim'})) {
+		$e->{'victimName*'}=$MAP->{$e->{'victim'}}{'nickname'};
+	}
+
+	if(exists($e->{'source'})) {
+		if($e->{'source'}=~m/^[0-]+$/) {
+			$e->{'sourceName*'}='server';
+		} else {
+			$e->{'sourceName*'}=$MAP->{$e->{'vaporId'}}{'nickname'};
+		}
+	}
+
+	if(exists($e->{'participantStatsByName'})) {
+		foreach my $key (@STATS) {
+			$e->{$key}=$e->{'participantStatsByName'}{$key};
+		}
+		foreach my $key (@AWARDS) {
+			$key=~m/Award (.*)$/;
+			$e->{$key}=$MAP->{$e->{'winnerByAward'}{$1}}{'nickname'} ||
+				$e->{'winnerByAward'}{$1};
+		}
+	} elsif(exists($e->{'stats'})) {
+		foreach my $key (@STATS) {
+			$e->{$key}=$e->{'stats'}{$key};
+		}
+	} elsif(exists($e->{'pingByPlayer'})) {
+		foreach my $player (keys(%{$e->{'pingByPlayer'}})) {
+			if($MAP->{$player}{'nickname'}) {
+				$e->{'pingByPlayer'}{$MAP->{$player}{'nickname'}}=
+					$e->{'pingByPlayer'}{$player};
+				delete($e->{'pingByPlayer'}{$player});
+			}
+		}
+	} elsif(exists($e->{'positionByPlayer'})) {
+		foreach my $player (keys(%{$e->{'positionByPlayer'}})) {
+			if($MAP->{$player}{'nickname'}) {
+				$e->{'positionByPlayer'}{$MAP->{$player}{'nickname'}}=
+					$e->{'positionByPlayer'}{$player};
+				delete($e->{'positionByPlayer'}{$player});
+			}
+		}
+	}
+
+	if(exists($e->{'participants'})) {
+		for(my $i=0; $i<@{$e->{'participants'}}; $i++) {
+			if($MAP->{$e->{'participants'}[$i]}{'nickname'}) {
+				$e->{'participants'}[$i]=
+					$MAP->{$e->{'participants'}[$i]}{'nickname'};
+			}
+		}
+	}
+
+	$e->{'time'}/=1000;
+
+	return(map(&protect($e->{$_}), @KEYS, @STATS, @AWARDS));
+}
+
+print join(',', @KEYS, map(&protect($_), @STATS, @AWARDS)), "\n";
+
+while(<>) {
+	chomp;
+	print join(',', &log_event($_)), "\n";
+}

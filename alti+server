@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.35';
+my($VERSION)='4.36';
 
 =head1 NAME
 
@@ -57,6 +57,7 @@ my(%OPTIONS)=(
 	saveLogTypes	=> 'coop',		#Save the logs for these game types
 	saveLogAlways  => undef,			#Always save logs, regardless of record
 	saveLogRecord	=> 5,			#Restrict save logs to top 5 placements
+	powerSave		=> 1,			#0 to Disable power saving features
 	rotationRE	=> 'tbd|ball|tdm',  #Which maps go into rotation
 	configSize	=> 'normal',		#How helpful are extended commands:
 								# normal: all commands and help
@@ -1787,7 +1788,7 @@ pure-perl C<JSON::PP>, and this will be used if C<JSON::XS> is not found.
 }
 
 
-=head2 State
+=head2 Server Settings and State
 
 B<alti+server> keeps state from one invocation to another.  It stores
 user preferences for certain extensions, and map preferences.  These are
@@ -2114,6 +2115,128 @@ stash are automatically saved to disk.
 	}
 
 }
+
+=head2 Game, player, etc. memory for storage and statistics
+
+C<alti+server> keeps information on games, players, and the state of the
+server for reuse throughout the games.  This is done in a way that, for
+example, player information won't be lost during a disconnect/reconnect.
+This methodology is similar to the stash, but differes in that it is not
+kept across server restarts.
+
+=cut
+
+{	package mem;
+
+	{ package delete; }	#Populated below
+	{ package vacuum; }	#Populated below
+
+	my($Mem)={
+		'game'	=> {},
+		'player'	=> {},
+		'server'	=> {},
+	};
+	my(%Player)=();
+
+	sub log {
+		ui::slog('Memory:', json::encode($Mem));
+	}
+
+	sub delete () { delete:: }
+	sub vacuum () { vacuum:: }
+
+	sub find {
+		my($hash)=$Mem;
+		my($key)=undef;
+
+		while(@_) {
+			$key=pop(@_);
+			if(!$key) {
+				return({'none' => undef}, 'none');
+			} elsif(ref($key) eq 'HASH') {
+				if(exists($key->{'vaporId'})) {
+					$Player{$key->{'vaporId'}}{'name'}=$key->{'nickname'};
+					$Player{$key->{'vaporId'}}{'last'}=time();
+					$key=$key->{'vaporId'};
+				} elsif(exists($key->{'map'})) {
+					$key=$key->{'map'};
+				}
+			}
+
+			if(@_) {
+				$hash->{$key}={} unless(exists($hash->{$key}));
+				$hash=$hash->{$key};
+			}
+		}
+
+		return($hash, $key);
+	}
+
+	sub game : lvalue {
+		my($hash, $key)=&find(splice(@_, 1), 'game');
+		return($hash->{$key});
+	}
+	sub delete::game {
+		my($hash, $key)=&find(splice(@_, 1), 'game');
+		delete($hash->{$key});
+	}
+	sub vacuum::game {
+		$Mem->{'game'}={};
+	}
+
+	sub player : lvalue {
+		my($hash, $key)=&find(splice(@_, 1), 'player');
+		return($hash->{$key});
+	}
+	sub delete::player {
+		my($hash, $key)=&find(splice(@_, 1), 'player');
+		delete($hash->{$key});
+	}
+	sub vacuum::player {
+		my($now)=time();
+		my(@trees, $cur);
+
+		foreach my $vid (keys(%Player)) {
+			next if($now-$Player{$vid}{'last'} < 86400);
+
+			@trees=($Mem);
+
+			while(@trees) {
+				$cur=pop(@trees);
+
+				foreach my $child (keys(%$cur)) {
+					if($child eq $vid) {
+						delete($cur->{$child});
+					} elsif(ref($cur->{$child}) eq 'HASH') {
+						push(@trees, $cur->{$child});
+					}
+				}
+			}
+
+			delete($Player{$vid});
+		}
+	}
+
+	sub server : lvalue {
+		my($hash, $key)=&find(splice(@_, 1), 'server');
+		return($hash->{$key});
+	}
+	sub delete::server {
+		my($hash, $key)=&find(splice(@_, 1), 'server');
+		delete($hash->{$key});
+	}
+	sub vacuum::server {
+		$Mem->{'server'}={};
+	}
+
+	sub new_round {
+		&log;
+		vacuum->game;
+		vacuum->player;
+		&log;
+	}
+}
+
 
 =head2 Alti+ overhead
 
@@ -2544,9 +2667,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 		$config{'secretCode'}//=&option('secretCode');
 
-		$config{'minLevel'}//=List::Util::min(
-						&option('noviceLevel'),
-						&option('aceLevel'));
+		$config{'minLevel'}=&option('noviceLevel');
 
 		foreach my $key (keys(%config)) {
 			delete($config{$key}) unless(defined($config{$key}));
@@ -3151,7 +3272,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 	'modify'	=> {
 		'name'			=> 'modify',
 		'arguments'		=> ['string'],
-		'description'		=> ['Script specific settings'],
+		'description'		=> ['Change game settings'],
 		'voteThreshold'	=> 60,
 		'enabled'			=> 0,
 		'restrict'		=> 'tiny',
@@ -3613,6 +3734,8 @@ garunteed to keep the format correct.
 						'ffa_allow_assign_team'	=> json::true,
 						'auto_stop_tournament'	=> json::true,
 						'position_log_time'		=> 0,
+						'vote_cooldown'		=> 90000,
+						'vote_fail_cooldown'	=> 300000,
 						'permissions'			=> {
 							'enabled'			=> json::true,
 							'fallback'		=> json::true,
@@ -3693,6 +3816,8 @@ garunteed to keep the format correct.
 			'fastCommandtxt'	=> [@Global, 'fix_commands_latency'],
 			'clientCommand'	=> [@Global, 'client_commands'],
 			'logPositions'		=> [@Server, 'position_log_time'],
+			'voteCooldown'		=> [@Server, 'vote_cooldown'],
+			'voteFailCooldown'	=> [@Server, 'vote_fail_cooldown'],
 			'autoStopTournament'=> [@Server, 'auto_stop_tournament'],
 			'extendPermissions'	=> [@Server, 'permissions', 'enabled'],
 			'aclFallback'		=> [@Server, 'permissions', 'fallback'],
@@ -4056,6 +4181,33 @@ garunteed to keep the format correct.
 		$skin =$Setup{'skin'}{$skin}		unless(utils::is_int($skin));
 
 		server::send('botPlaneSetup', 0, $plane, $red, $green, $blue, $skin);
+	}
+
+	sub configure_bots {
+		my($level, $count)=@_;
+		my(@bots)=player::bots();
+
+		return unless(&enabled);
+
+		if($level=~m/easy/i) {
+			$level=0;
+		} elsif($level=~m/hard/) {
+			$level=2;
+		} elsif($level=~m/expert/) {
+			$level=3;
+		} else {
+			$level=1;
+		}
+
+		if(@bots < $count) {
+			for(my $i=@bots; $i<$count; $i++) {
+				server::send('addBot', $level);
+			}
+		} elsif(@bots > $count) {
+			for(my $i=$count; $i<@bots; $i++) {
+				server::send('removeBot');
+			}
+		}
 	}
 
 }
@@ -4937,6 +5089,8 @@ directly with it to manage the instance.
 	my($Streams)=IO::Select->new(\*STDIN);
 	my($Launcher_pid, $Server_pid, $Tail_pid);
 
+	my($Prio_process)=0;  #This is always correct on Linux
+
 	my($Cu, $Cs)=(0, 0);
 
 	our($Start)=time()*1000;
@@ -4971,6 +5125,9 @@ directly with it to manage the instance.
 
 		$Start=time()*1000;
 		$Time=0;
+
+		mem->vacuum->server;
+		mem->vacuum->game;
 
 		notify::info(
 			'message'		=> 'Started',
@@ -5248,6 +5405,32 @@ directly with it to manage the instance.
 		}
 	}
 
+	sub power_save {
+		return unless(config::option('powerSave'));
+
+		#setpriority($Prio_process, $Server_pid, 10);
+
+		if(xx::enabled) {
+			xx::configure_bots('EASY', 0);
+		}
+
+		ui::slog('INFO  : Enter power save mode');
+	}
+
+	sub power_normal {
+		my($count)=plus::bot_count();
+		my($level)=$config::Launcher{'bots'}{'level'};
+
+		return unless(config::option('powerSave'));
+
+		#setpriority($Prio_process, $Server_pid, 0);
+
+		if(xx::enabled) {
+			xx::configure_bots($level, $count);
+		}
+
+		ui::slog('INFO  : Exit power save mode, normal power restored');
+	}
 }
 
 
@@ -6341,7 +6524,6 @@ is updated with them as the games progress.
 
 		$p->{'joined'}=1;
 		$p->{'alive'}=0;
-		$p->{'infractions'}=0;
 
 		if($p->{'nickname'}=~m/^Bot ([1-9]|[1-2][0-9])$/) {
 			$p->{'rating'}=$bot_rating{$config::Launcher{'bots'}{'level'}};
@@ -6492,10 +6674,10 @@ is updated with them as the games progress.
 		my($count)=config::option('infractions');
 		my($nick)=$p->{'nickname'};
 
-		$p->{'infractions'}+=$value;
-		if($p->{'infractions'}>$count) {
+		mem->player('infractions', $p)+=$value;
+		if(mem->player('infractions', $p) > $count) {
 			if($p->{'admin'}) {
-				if($p->{'infractions'}>$count*2) {
+				if(mem->player('infractions', $p) > $count*2) {
 					$CONSOLE{'server'}->('del', 'admins', $p->{'vaporId'});
 					server::send('restartServer');
 					chat::whisper($p, 'Now look what you made me do');
@@ -6503,28 +6685,36 @@ is updated with them as the games progress.
 				} else {
 					chat::whisper($p, 'Some decorum, please', player::name($p));
 				}
-				return(int($p->{'infractions'}));
+				mem->player('infractions', $p)/=4;
+				return(int(mem->player('infractions', $p)));
 			} else {
 				server::send('kick', $nick);
 				notify::info(
 					'nickname'	=> $nick,
 					'message'		=> 'kicked for infractions',
-					'infractions'	=> $p->{'infractions'},
+					'infractions'	=> mem->player('infractions', $p),
 				);
-				return(int($p->{'infractions'}));
+				mem->player('infractions', $p)/=2;
+				return(int(mem->player('infractions', $p)));
 			}
 		} else {
-			return(int($p->{'infractions'}));
+			return(int(mem->player('infractions', $p)));
 		}
 	}
 
 	sub forgive {
 		my($p)=@_;
+		
+		if(mem->player('infractions', $p) > 1) {
+			mem->player('infractions', $p)--;
+		} else {
+			mem->player('infractions', $p)=0;
+		}
 
-		if($p->{'infractions'}>1) {
-			$p->{'infractions'}--;
-		} elsif($p->{'infractions'}>0) {
-			$p->{'infractions'}=0;
+		if(mem->player('yelling', $p) > 4) {
+			mem->player('yelling', $p)-=4;
+		} else {
+			mem->player('yelling', $p)=0;
 		}
 	}
 
@@ -8410,6 +8600,7 @@ play though extended interfaces and server support.
 
 	sub round {
 		ball::new;		#Can ball have multiple rounds?
+		mem->new_round;	#Setup stats and info table for new round
 		#$Hunted=undef;	#Should hunted change per round?
 
 		if(map::type('ruin')) {
@@ -8504,25 +8695,19 @@ play though extended interfaces and server support.
 	sub next_bot {
 		my(@keys);
 
+		return unless(xx::enabled);
+
 		if(%Bots) {
 			@keys=keys(%Bots);
 		} elsif(%Planes) {
 			@keys=keys(%Planes);
-		} else {
-			return;
-		}
-
-		xx::setup_bot(split(m/,/, utils::pluck(@keys))) if(xx::enabled);
-	}
-
-	sub any_bot {
-		return unless(xx::enabled);
-
-		if(map::type('coop')) {
+		} elsif(map::type('coop')) {
 			xx::setup_bot(qw(Biplane Recoilless Flexi Turbo No));
 		} else {
 			server::send('botPlaneRandom', 0);
 		}
+
+		xx::setup_bot(split(m/,/, utils::pluck(@keys))) if(xx::enabled);
 	}
 
 	sub build_planes {
@@ -8582,9 +8767,63 @@ play though extended interfaces and server support.
 		}
 	}
 
-	sub plane_check {
+	sub plane_restrictions {
 		my($p)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
+		my($time)=time();
+
+		if($p) {
+			return if($p->{'stats'}{'plane_notice'}>$time);
+
+			$p->{'stats'}{'plane_notice'}=$time+8;
+		} else {
+			foreach my $player (player::list) {
+				$player->{'stats'}{'plane_notice'}=$time+9;
+			}
+		}
+
+		if(%Planes) {
+			if(exists($Stats{'planes'})) {
+				if($p) {
+					chat::whisper($p, 'Allowed planes:', $Stats{'planes'});
+				} else {
+					chat::all('Allowed planes:', $Stats{'planes'});
+				}
+			}
+
+			if($planes) {
+				if($p) {
+					chat::whisper($p, 'planes:', join(', ',
+						map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
+					));
+				} else {
+					chat::all('planes:', join(', ',
+						map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
+					));
+				}
+			}
+		} else {
+			if($p) {
+				chat::whisper($p, 'planes: all');
+			} else {
+				chat::all('planes: all');
+			}
+		}
+	}
+
+	sub bot_restrictions {
+		my($p)=@_;
+		my($bots)=stash::get('bots', map::name, 'map');
+
+		if($bots) {
+			chat::whisper($p, 'Bot restricitons:', join(', ',
+				map($bots->{$_}.utils::simplify($_), sort(keys(%$bots)))
+			));
+		}
+	}
+
+	sub plane_check {
+		my($p)=@_;
 		my($setup)=join(',', @$p{'plane','perkRed', 'perkGreen','perkBlue'});
 
 		return(1) unless(%Planes);
@@ -8592,11 +8831,55 @@ play though extended interfaces and server support.
 		if(exists($Planes{$setup})) {
 			return(1);
 		} else {
-			chat::whisper($p, 'Plane restricitons:', join(', ',
-				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
-			));
+			&plane_restrictions($p);
 			return(0);
 		}
+	}
+
+	sub modify_planes {
+		my(@planes)=();
+		my($re);
+
+		if($_[0]=~m/def|reset|orig|stand|norm|all/i) {
+			&build_planes;
+			chat::all('Plane restrictions restored to default.');
+			return(1);
+		}
+
+		foreach my $plane (map(split(m/\W+/), @_)) {
+			$plane=utils::plane($plane);
+
+			if(utils::is_plane($plane)) {
+				push(@planes, $plane);
+			} else {
+				chat::all('Invalid plane name:', $plane);
+			}
+		}
+
+		return(undef) unless(@planes);
+
+		$re=join('|', @planes);
+
+		$Stats{'planes'}=$re;
+
+		unless(%Planes) {
+			%Planes=utils::all_setups;
+		}
+
+		foreach my $setup (keys(%Planes)) {
+			delete($Planes{$setup}) unless($setup=~m/^($re),/);
+		}
+
+		unless(%Planes) {
+			chat::all('Plane restriction resulted in empty set, restoring');
+			delete($Stats{'planes'});
+			&build_planes;
+			return(undef);
+		}
+
+		chat::all('Plane restrictions tightened:', @planes);
+
+		return(1);
 	}
 
 	sub restart_clear {
@@ -8880,7 +9163,7 @@ play though extended interfaces and server support.
 			rank::score($p->{'team'}, 1);
 
 			push(@players, player::list);
-			push(@players, player::bots) if(xx::enabled);
+			push(@players, player::bots()) if(xx::enabled);
 			foreach my $player (@players) {
 				$player->{'stats'}{'played'}+=$e->{'time'}-$player->{'spawn'};
 				&bench($player);
@@ -9489,8 +9772,6 @@ play though extended interfaces and server support.
 		&restart_clear;
 		&round;
 
-		&build_planes;
-
 		if(map::type('ruin')) {
 			foreach my $mine (0, 1) {
 				$Stats{$teams[$mine]}{'structure'}{'total'}=0;
@@ -10024,6 +10305,7 @@ will only be run on that map.
 
 }
 
+
 =head2 Normalized Hook Management
 
 The B<alti+server> makes supporting log hooks easier by normalizing the
@@ -10434,6 +10716,23 @@ core protecting the flag.
 			$HOOKS{"add $type"}->($e, $p, @args);
 		} else {
 			config::command_help($p, 'add');
+		}
+	},
+
+	'modify'		=> sub {
+		my($e, $p)=@_;
+		my(@args)=($e->{'arguments'}[0]=~m/(".*?"|".*$|[^\s,]+)/g);
+
+		if($args[0]=~m/^plane/i) {
+			shift(@args);
+
+			if(plus::modify_planes(@args)) {
+				foreach my $player (player::list) {
+					unless(plus::plane_check($player)) {
+						plus::bench($player);
+					}
+				}
+			}
 		}
 	},
 
@@ -11773,35 +12072,15 @@ core protecting the flag.
 
 	'list planes'	=> sub {
 		my($e, $p)=@_;
-		my($planes)=stash::get('planes', map::name, 'map');
-		my($bots)=stash::get('bots', map::name, 'map');
-		my($spec);
 
-		if(ref($planes) eq 'HASH') {
-			chat::whisper($p, 'planes:', join('; ',
-				map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
-			));
-		} elsif($e->{'command'} eq 'list') {
-			chat::whisper($p, 'planes: all');
-		}
-
-		if(ref($bots) eq 'HASH') {
-			chat::whisper($p, 'bots:', join('; ',
-				map($bots->{$_}.utils::simplify($_), sort(keys(%$bots)))
-			));
-		}
+		plus::plane_restrictions($p);
+		plus::bot_restrictions($p);
 	},
 
 	'enable planes'	=> sub {
 		my($e, $p)=@_;
 		my($planes)=stash::get('planes', map::name, 'map');
 		my($bots)=stash::get('bots', map::name, 'map');
-
-		unless(defined($planes)) {
-			chat::all('planes: all');
-			plus::any_bot;
-			return;
-		}
 
 		#convert to new format:
 		unless(ref($planes)) {
@@ -11812,9 +12091,9 @@ core protecting the flag.
 			stash::set('planes', map::name, 'map', $planes) if(ref($planes));
 		}
 
-		chat::all('planes:', join('; ',
-			map($planes->{$_}.utils::simplify($_), sort(keys(%$planes)))
-		));
+		plus::plane_restrictions;
+
+		plus::build_planes;
 
 		plus::next_bot;
 	},
@@ -11993,7 +12272,7 @@ core protecting the flag.
 			$r=$goals+$r if($r<0);
 			ball::update_score($l, $r);
 			ball::set_score($l, $r);
-		} elsif(map::mode('tdm')) {
+		} elsif(map::mode('tdm') && $scores && @$scores) {
 			chat::all('score:', @$scores);
 		} else {
 			ball::update_score(0, 0);
@@ -12294,7 +12573,7 @@ core protecting the flag.
 		return unless(xx::enabled);
 
 		if($round_time) {
-			xx::set_time($round_time+$warmup-map::elapsed);
+			xx::set_time($round_time+$warmup-map::elapsed-1);
 			chat::all('roundTime:', utils::timer($round_time));
 		}
 	},
@@ -12338,33 +12617,13 @@ core protecting the flag.
 
 	'enable botCount'	=> sub {
 		my($e, $p)=@_;
-		my($count)=plus::bot_count;
+		my($count)=player::count?plus::bot_count():0;
 		my($level)=$config::Launcher{'bots'}{'level'};
 
 		return unless(xx::enabled);
 
-		if($level=~m/easy/i) {
-			$level=0;
-		} elsif($level=~m/hard/) {
-			$level=2;
-		} elsif($level=~m/expert/) {
-			$level=3;
-		} else {
-			$level=1;
-		}
-
 		queue::schedule {
-			my(@bots)=player::bots;
-
-			if(@bots < $count) {
-				for(my $i=@bots; $i<$count; $i++) {
-					server::send('addBot', $level);
-				}
-			} elsif(@bots > $count) {
-				for(my $i=$count; $i<@bots; $i++) {
-					server::send('removeBot');
-				}
-			}
+			xx::configure_bots($level, $count);
 		} $config::Launcher{'warmup'}{map::mode}/2;
 
 		chat::all('botCount:', $count);
@@ -13496,6 +13755,8 @@ core protecting the flag.
 		$time[1]=$month{$time[1]};
 
 		$server::Start=POSIX::mktime(@time[5,4,3,2,1,0])*1000+$time[6];
+
+		server::power_save;
 	},
 
 	'serverPatches'	=> sub {	#LewisH server patch add-on
@@ -13575,6 +13836,8 @@ core protecting the flag.
 		}
 
 		race::block($p) if(race::on);
+
+		server::power_normal if(player::count==1);
 	},
 
 	'clientNicknameChange'	=> sub {
@@ -13593,6 +13856,7 @@ core protecting the flag.
 	'clientRemove'		=> sub {
 		my($e, $p)=@_;
 		my($reason)='';
+		my(%stats);
 		my($name);
 
 		if($p->{'name'} && $p->{'name'} ne $p->{'nickname'}) {
@@ -13629,6 +13893,16 @@ core protecting the flag.
 			ui::display('', '', "< $name $e->{'message'} ($reason)>");
 		} else {
 			ui::display('', '', "< $name $e->{'message'} >");
+		}
+
+		server::power_save if(player::count==0);
+
+		if(exists($e->{'stats'})) { #LewisH server patch add-on (xx patches)
+			%stats=%{$e->{'stats'}};
+
+			foreach my $stat (keys(%stats)) {
+				mem->game($p, $stat, 'stats')+=$stats{$stat};
+			}
 		}
 	},
 
@@ -13690,7 +13964,7 @@ core protecting the flag.
 		}
 
 		#Display the intro after users join (first teamChange to spec):
-		unless($p->{'stats'}{'intro'}) {
+		unless(mem->game($p, 'intro')) {
 			$intro=stash::get('intro', map::name, 'map');
 
 			queue::schedule { $HOOKS{'list planes'}->($e, $p); } 3;
@@ -13713,7 +13987,7 @@ core protecting the flag.
 				chat::whisper($p, '** 1 hit kills **');
 			}
 
-			$p->{'stats'}{'intro'}=1;
+			mem->game($p, 'intro')=1;
 		}
 
 		if(map::type('tag')) {
@@ -14403,14 +14677,15 @@ core protecting the flag.
 					chat::snark($p, 'The best defense is a good offense');
 				}
 			} elsif($p->{'joined'} && !$p->{'isBot'} && !$v->{'isBot'}) {
-				$limit=int(map::round_time()/60);
+				$limit=int(map::round_time()/120);
 
-				$p->{'stats'}{'wrong'}++;
-				if($p->{'stats'}{'wrong'} >= $limit) {
+				mem->game('wrong', $p)++;
+				if(mem->game('wrong', $p) >= $limit) {
 					server::send('drop', $p->{'nickname'});
+					mem->game('wrong', $p)/=2;
 				} else {
 					chat::whisper($p, 'Only kill the player who is it! (',
-						$p->{'stats'}{'wrong'}, '/', $limit, ')');
+						mem->game('wrong', $p), '/', $limit, ')');
 				}
 			}
 		}
@@ -14419,12 +14694,13 @@ core protecting the flag.
 			if($p->{'joined'} && !$v->{'isBot'}) {
 				$limit=int(map::round_time()/60);
 
-				$p->{'stats'}{'wrong'}++;
-				if($p->{'stats'}{'wrong'} >= $limit) {
+				mem->game('wrong', $p)++;
+				if(mem->game('wrong', $p) >= $limit) {
 					server::send('drop', $p->{'nickname'});
+					mem->game('wrong', $p)/=2;
 				} else {
 					chat::whisper($p, "Don't kill your teammates! (",
-						$p->{'stats'}{'wrong'}, '/', $limit, ')');
+						mem->game('wrong', $p), '/', $limit, ')');
 				}
 			}
 		}
@@ -14651,13 +14927,13 @@ core protecting the flag.
 		} elsif(config::yelling($e->{'message'}) && $bully_kick) {
 			player::infraction($p, 0.2);
 
-			$p->{'stats'}{'yelling'}++;
-			if($p->{'stats'}{'yelling'}%6 == 0) {
+			mem->player('yelling', $p)++;
+			if(mem->player('yelling', $p)%6 == 0) {
 				chat::whisper($p, 'stop yelling');
-			} elsif($p->{'stats'}{'yelling'}>20) {
+			} elsif(mem->player('yelling', $p) > 20) {
 				server::send('addChatBlock', $p->{'vaporId'}, 'AllChat',
 					'2', 'minute', 'stop yelling in chat');
-				$p->{'stats'}{'yelling'}/=2;
+				mem->player('yelling', $p)/=2;
 			}
 		}
 	},
@@ -14705,6 +14981,14 @@ core protecting the flag.
 		my($player, $n);
 
 		queue::clear;
+
+		for(my $i=0; $i<@$pls; $i++) {
+			$player=player::lookup($pls->[$i]);
+
+			foreach my $stat (keys(%stats)) {
+				mem->game($player, $stat, 'stats')+=$stats{$stat}[$i];
+			}
+		}
 
 		if(config::option('awards') && player::count>2) {
 			if($stats{'Crashes'} && List::Util::max(@{$stats{'Crashes'}})>8) {
@@ -15101,6 +15385,12 @@ also only available from the console.
 		} elsif($action eq 'set') {
 			if($name eq 'acl') {
 				xx::acl_set(@args);
+			} elsif($name=~m/vote.*Cooldown/) {
+				if($value<=3600) {
+					xx::config_set($name, $value*1000);
+				} else {
+					xx::config_set($name, $value);
+				}
 			} else {
 				if(defined(xx::config_set($name, $value))) {
 					xx::config_reload;
@@ -15703,6 +15993,8 @@ while(1) {
 				race::init;
 				ball::new;
 				plus::new;
+			} elsif($SOUT=~m/UPnP mappings/) {
+				$SOUT=~s/".+?" null:\d+ -> (TCP|UDP):\d+, //g;
 			} elsif($SOUT=~m/Failed to contact .+ via local UDP port/) {
 				queue::schedule {
 					utils::ping(config::option('updateServer'))

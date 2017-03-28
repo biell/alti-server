@@ -17,7 +17,7 @@ HOOKS {
 	'goal'			=> sub {
 		my($e, $p)=@_;
 
-		ball::rollback_score($TEAM) if($e->{'time'}<$DEAD);
+		ball::rollback_score($p->{'team'}) if($e->{'time'}<$DEAD);
 
 		$TEAM=undef;
 	},
@@ -32,7 +32,7 @@ HOOKS {
 				server::send('resetBallTeam', -1);
 				plus::spawn_here($p, 1235, 360, 'w');
 				plus::clear_spawn($p);
-				$DEAD=$e->{'time'}+3000;
+				$DEAD=$e->{'time'}+4000;
 			}
 		}
 
