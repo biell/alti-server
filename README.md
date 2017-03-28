@@ -18,6 +18,8 @@ Altitude game server wrapper to enable enhanced modes of game play.
 
   * **altx-tool**  Manipulate Altitude map archive files.
 
+  * **altalyzer**  A tool to convert log files to CSV for better analysis
+
 ## Alti+ game types
 
 ### Normal Games
