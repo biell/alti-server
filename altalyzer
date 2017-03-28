@@ -1,23 +1,50 @@
 #!/usr/bin/perl
 
+=head1 NAME
+
+altalyzer - Convert Altitude logs into a CSV file
+
+=cut
+
+use POSIX;
+use HTTP::Date;
 use JSON::XS;
 
+=head1 SYNOPSIS
+
+altalyzer <file1.txt> [file2.txt] [...] > file.csv
+
+=head1 DESCRIPTION
+
+B<altalyzer> converts the JSON format Altitude F<log.txt> file into
+a CSV file suitable for loading into a spreadsheet program.  JSON is
+an excellent format for sparse data sets like the altitude log file,
+but it is really hard to line up and compare values.  B<altalyzer>
+fixes this problem by blowing out a full, aligned table of all
+possible log values, leaving any missing values empty.  Each log
+entry is displayed with values in the same order, and aligned with
+the rest for easy comparrison.
+
+=cut
+
+my($START)=undef;
 my(%MAP)=();
 
 my(@KEYS)=qw(
-	port time type command arguments group source sourceName*
+	port date time type command arguments group source sourceName*
 	ip player nickname vaporId team victim victimName* victimPositionX
 	victimPositionY victimVelocityX victimVelocityY multi streak
 	powerup positionX positionY playerVelX playerVelY velocityX velocityY
 	assister secondaryAssister
 	target xp exactXp
-	map mode leftTeam rightTeam
+	map mode leftTeam rightTeam duration changedMap
 	message blocked server
 	plane perkGreen perkGreen perkBlue skin level aceRank
-	newNickname oldNickname
-	date leaving reason
+	newNickname oldNickname nicknames ips vaporIds tournamentInProgress
+	leaving reason
 	pingByPlayer positionByPlayer
-	participants
+	winningTeam timeSeconds result winners losers
+	team0 team1 participants
 );
 my(@STATS)=(
 	'Assists', 'Ball Possession Time', 'Crashes',
@@ -30,20 +57,62 @@ my(@AWARDS)=(
 	'Award Most Helpful', 'Award Most Deadly', 'Award Best Multikill'
 );
 
+sub save_date {
+	my($date)=@_;
+
+	$date=~s/^(\d+) (.*):(\d+) (\S+)$/$2 $4 $1/;
+	$START=str2time($date)+$3/1000;
+}
+
+sub fmt_date {
+	my($delta)=@_;
+	my($epoc, $ms)=split(m/\./, $START+$delta);
+
+	return(strftime("%Y/%m/%d %H:%M:%S:$ms", gmtime($epoc)));
+}
+
 sub protect {
 	my($data)=@_;
+	local($_);
 
-	if(ref($data)=~m/HASH|ARRAY/) {
+	if(ref($data) eq 'ARRAY') {
+		foreach(@$data) {
+			if(m/^([0-9a-f-]{36})$/ && exists($MAP->{$1}{'nickname'})) {
+				$_=$MAP->{$1}{'nickname'};
+			}
+		}
+		$data=encode_json($data);
+	} elsif(ref($data) eq 'HASH') {
 		$data=encode_json($data);
 	}
 
-	if($data=~m/^[\w.+-]+$/) {
-		return($data);
-	} else {
-		$data=~s/"/""/g;
+	$data=~s/"/""/g;
+	if($data=~m/,/) {
 		return('"'.$data.'"');
+	} else {
+		return($data);
 	}
 }
+
+=pod
+
+Each log entry line is displayed as a single row in the CSV output.  To
+make using this log easier, some columns are populated when they can
+be figured out.  For example, Altitude log entries normally only log
+the player ID number.  If the F<log.txt> entry contains a C<clientAdd>
+event for tht player ID number, then B<altalyzer> will also populate
+the C<vaporId> and C<nickname> fields.
+
+Log entries which have player ID numbers as values are also converted
+to use the player's nickname when possible.
+
+To make reading the file easier, the time is converted into seconds
+with the milliseconds noted after the decimal point.
+
+Some log entries which contain complex data structures are unrolled
+and those values are listed as if they were top-level log items.
+
+=cut
 
 sub log_event {
 	my($e)=decode_json($_[0]);
@@ -55,6 +124,16 @@ sub log_event {
 	} elsif($e->{'type'} eq 'clientRemove') {
 		delete($MAP->{$e->{'player'}});
 		delete($MAP->{$e->{'vaporId'}});
+	} elsif($e->{'type'} eq 'clientNicknameChange') {
+		$MAP->{$e->{'player'}}{'nickname'}=$e->{'nickname'};
+		$MAP->{$e->{'vaporId'}}{'nickname'}=$e->{'nickname'};
+	} elsif($e->{'type'} eq 'logServerStatus') {
+		$MAP={};
+		for(my $i=0; $i<@{$e->{'playerIds'}}; $i++) {
+			$MAP->{$e->{'playerIds'}[$i]}{'vaporId'}=$e->{'vaporIds'}[$i];
+			$MAP->{$e->{'playerIds'}[$i]}{'nickname'}=$e->{'nicknames'}[$i];
+			$MAP->{$e->{'vaporIds'}[$i]}{'nickname'}=$e->{'nicknames'}[$i];
+		}
 	}
 
 	if(exists($e->{'player'})) {
@@ -69,6 +148,8 @@ sub log_event {
 	if(exists($e->{'source'})) {
 		if($e->{'source'}=~m/^[0-]+$/) {
 			$e->{'sourceName*'}='server';
+		} elsif($e->{'source'} eq 'plane' && $e->{'player'}==-1) {
+			$e->{'source'}='crash';
 		} else {
 			$e->{'sourceName*'}=$MAP->{$e->{'vaporId'}}{'nickname'};
 		}
@@ -114,10 +195,29 @@ sub log_event {
 		}
 	}
 
+	if($e->{'type'} eq 'sessionStart') {
+		&save_date($e->{'date'});
+		$MAP={};
+	}
+
 	$e->{'time'}/=1000;
+	$e->{'date'}=&fmt_date($e->{'time'}) if($START);
 
 	return(map(&protect($e->{$_}), @KEYS, @STATS, @AWARDS));
 }
+
+=pod
+
+The recommended use of B<altalyzer> is to bring the output file up in
+a spreadsheet program.  Once up, you should freeze the first row, and
+turn the entire table into a filter table.  This will allow you to
+filter rows based on your spreadsheet's capabilities.  It helps remove
+the cruft from the file and really dig into what you are looking for.
+
+It is also often helpful to delete or hide the columns you don't need
+from the file so the values you do care about can fit on the screen.
+
+=cut
 
 print join(',', @KEYS, map(&protect($_), @STATS, @AWARDS)), "\n";
 
@@ -125,3 +225,42 @@ while(<>) {
 	chomp;
 	print join(',', &log_event($_)), "\n";
 }
+
+=head1 NOTES
+
+If you are feeding multiple files into B<altalyzer>, it is a good idea
+to place them on the command-line in chronological order.
+
+=head1 AUTHOR
+
+biell @ pobox . com 
+
+=head1 PUBLIC DOMAIN NOTICE
+
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org/>
+
+=cut
+

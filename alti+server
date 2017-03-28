@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.36';
+my($VERSION)='4.37';
 
 =head1 NAME
 
@@ -12573,7 +12573,7 @@ core protecting the flag.
 		return unless(xx::enabled);
 
 		if($round_time) {
-			xx::set_time($round_time+$warmup-map::elapsed-1);
+			xx::set_time($round_time+$warmup-map::elapsed()-1);
 			chat::all('roundTime:', utils::timer($round_time));
 		}
 	},
@@ -12617,7 +12617,7 @@ core protecting the flag.
 
 	'enable botCount'	=> sub {
 		my($e, $p)=@_;
-		my($count)=player::count?plus::bot_count():0;
+		my($count)=(player::count)?(plus::bot_count()):(0);
 		my($level)=$config::Launcher{'bots'}{'level'};
 
 		return unless(xx::enabled);
