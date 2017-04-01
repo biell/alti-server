@@ -83,6 +83,7 @@ sub position_check {
 		(map::right($p->{'team'}) && $x<638)
 	) {
 		&eliminate($p, 1);
+		chat::whisper($p, "Don't cross the line");
 		return(undef);
 	} else {
 		return(1);
@@ -132,13 +133,13 @@ HOOKS {
 		tourney::end;	#Before we switch to another map, end tournament
 	},
 
-	'help modify'		=> sub {
+	'help game'		=> sub {
 		my($e, $p)=@_;
 
-		chat::whisper($p, "/vote modify outs #");
+		chat::whisper($p, "/vote game outs #");
 	},
 
-	'modify'			=> sub {
+	'game'			=> sub {
 		my($e, $p)=@_;
 		my($param, $value)=split(m/\s+/, $e->{'arguments'}[0]);
 
@@ -150,8 +151,9 @@ HOOKS {
 					}
 				}
 				$DB{'outs'}=$value;
+				chat::all('outs set to', $value);
 			} else {
-				chat::all('/vote modify outs [1-20]');
+				chat::all('/vote game outs [1-20]');
 			}
 		}
 	},

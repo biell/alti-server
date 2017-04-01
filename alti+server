@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='4.37';
+my($VERSION)='4.39';
 
 =head1 NAME
 
@@ -2128,6 +2128,7 @@ kept across server restarts.
 
 {	package mem;
 
+	{ package exists; }	#Populated below
 	{ package delete; }	#Populated below
 	{ package vacuum; }	#Populated below
 
@@ -2142,8 +2143,35 @@ kept across server restarts.
 		ui::slog('Memory:', json::encode($Mem));
 	}
 
+	sub exists () { exists:: }
 	sub delete () { delete:: }
 	sub vacuum () { vacuum:: }
+
+	sub check {
+		my($value)=$Mem;
+		my($key)=undef;
+
+		while(@_) {
+			$key=pop(@_);
+			if(!$key) {
+				return(undef);
+			} elsif(ref($key) eq 'HASH') {
+				if(exists($key->{'vaporId'})) {
+					$key=$key->{'vaporId'};
+				} elsif(exists($key->{'map'})) {
+					$key=$key->{'map'};
+				}
+			}
+
+			if(exists($value->{$key})) {
+				$value=$value->{$key};
+			} else {
+				return(undef);
+			}
+		}
+
+		return(defined($value));
+	}
 
 	sub find {
 		my($hash)=$Mem;
@@ -2176,6 +2204,9 @@ kept across server restarts.
 		my($hash, $key)=&find(splice(@_, 1), 'game');
 		return($hash->{$key});
 	}
+	sub exists::game {
+		return(&check(splice(@_, 1), 'game'));
+	}
 	sub delete::game {
 		my($hash, $key)=&find(splice(@_, 1), 'game');
 		delete($hash->{$key});
@@ -2187,6 +2218,9 @@ kept across server restarts.
 	sub player : lvalue {
 		my($hash, $key)=&find(splice(@_, 1), 'player');
 		return($hash->{$key});
+	}
+	sub exists::player {
+		return(&check(splice(@_, 1), 'player'));
 	}
 	sub delete::player {
 		my($hash, $key)=&find(splice(@_, 1), 'player');
@@ -2220,6 +2254,9 @@ kept across server restarts.
 	sub server : lvalue {
 		my($hash, $key)=&find(splice(@_, 1), 'server');
 		return($hash->{$key});
+	}
+	sub exists::server {
+		return(&check(splice(@_, 1), 'server'));
 	}
 	sub delete::server {
 		my($hash, $key)=&find(splice(@_, 1), 'server');
@@ -3216,7 +3253,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'help' => {
 		'name'			=> 'help',
-		'arguments'		=> [['modify', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['game', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3269,8 +3306,8 @@ has occured.  After too many infractions, the player is kicked by the server.
 		'restrict'		=> 'tiny',
 	},
 
-	'modify'	=> {
-		'name'			=> 'modify',
+	'game'	=> {
+		'name'			=> 'game',
 		'arguments'		=> ['string'],
 		'description'		=> ['Change game settings'],
 		'voteThreshold'	=> 60,
@@ -4191,9 +4228,9 @@ garunteed to keep the format correct.
 
 		if($level=~m/easy/i) {
 			$level=0;
-		} elsif($level=~m/hard/) {
+		} elsif($level=~m/hard/i) {
 			$level=2;
-		} elsif($level=~m/expert/) {
+		} elsif($level=~m/expert/i) {
 			$level=3;
 		} else {
 			$level=1;
@@ -8627,19 +8664,19 @@ play though extended interfaces and server support.
 
 		if(map::mode('ball')) {
 			if($score[0] >= $goals) {
-				$Stats{'winner'}='left';
+				mem->game('winner')='left';
 				records::winner($p);
 			} elsif($score[1] >= $goals) {
-				$Stats{'winner'}='right';
+				mem->game('winner')='right';
 				records::winner($p);
 			}
 		} elsif(map::mode('tdm') && xx::enabled) {
 			if($win->[0] > 0 && $score[0] >= $win->[0]) {
-				$Stats{'winner'}='left';
+				mem->game('winner')='left';
 				records::winner($p);
 				xx::set_time(0);
 			} elsif($win->[1] > 0 && $score[1] >= $win->[1]) {
-				$Stats{'winner'}='right';
+				mem->game('winner')='right';
 				records::winner($p);
 				xx::set_time(0);
 			}
@@ -8647,7 +8684,7 @@ play though extended interfaces and server support.
 	}
 
 	sub game_over {
-		return($Stats{'winner'});
+		return(mem->exists->game('winner'));
 	}
 
 	sub angle {
@@ -8783,11 +8820,11 @@ play though extended interfaces and server support.
 		}
 
 		if(%Planes) {
-			if(exists($Stats{'planes'})) {
+			if(mem->exists->game('planes')) {
 				if($p) {
-					chat::whisper($p, 'Allowed planes:', $Stats{'planes'});
+					chat::whisper($p, 'Allowed planes:', mem->game('planes'));
 				} else {
-					chat::all('Allowed planes:', $Stats{'planes'});
+					chat::all('Allowed planes:', mem->game('planes'));
 				}
 			}
 
@@ -8860,7 +8897,7 @@ play though extended interfaces and server support.
 
 		$re=join('|', @planes);
 
-		$Stats{'planes'}=$re;
+		mem->game('planes')=$re;
 
 		unless(%Planes) {
 			%Planes=utils::all_setups;
@@ -8872,7 +8909,7 @@ play though extended interfaces and server support.
 
 		unless(%Planes) {
 			chat::all('Plane restriction resulted in empty set, restoring');
-			delete($Stats{'planes'});
+			mem->delete->game('planes');
 			&build_planes;
 			return(undef);
 		}
@@ -9197,12 +9234,12 @@ play though extended interfaces and server support.
 			records::help($p, 20);
 		}
 
-		unless(exists($Stats{'timers'}{$p->{'team'}})) {
+		unless(mem->exists->game($p->{'team'}, 'timers')) {
 			foreach my $timer (keys(%$timers)) {
-				$Stats{'timers'}{$p->{'team'}}{$timer}=0;
+				mem->game($timer, $p->{'team'}, 'timers')=0;
 			}
 		}
-		$Stats{'timers'}{$p->{'team'}}{$pickup}=1;
+		mem->game($pickup, $p->{'team'}, 'timers')=1;
 
 		if($timers->{$pickup}=~m/^\d+$/ && $timers->{$pickup}<5) {
 			chat::all($p->{'nickname'}, 'found the prize!');
@@ -9218,7 +9255,7 @@ play though extended interfaces and server support.
 
 		foreach my $team (keys(%$timers)) {
 			foreach my $timer (keys(%{$timers->{$team}})) {
-				$merge{$timer}|=$Stats{'timers'}{$team}{$timer};
+				$merge{$timer}|=mem->game($timer, $team, 'timers');
 			}
 		}
 
@@ -9309,15 +9346,15 @@ play though extended interfaces and server support.
 		my($progress);
 
 		if(map::mode('tbd') && map::type('std') && $e->{'target'} eq 'base') {
-			if($Stats{'base'}) {
-				if($e->{'time'}-$Stats{'base'} < 1500) {
+			if(mem->game('base')) {
+				if($e->{'time'} - mem->game('base') < 1500) {
 					queue::schedule {
 						chat::all('A STRANGE GAME');
 						chat::all('THE ONLY WINNING MOVE IS NOT TO PLAY');
 					} 1;
 				}
 			} else {
-				$Stats{'base'}=$e->{'time'};
+				mem->game('base')=$e->{'time'};
 			}
 		}
 
@@ -9530,12 +9567,12 @@ play though extended interfaces and server support.
 
 		return unless($other);
 
-		if($Stats{'diverters'}{$pickup}) {
+		if(mem->game($pickup, 'diverters')) {
 			chat::whisper($p, 'Wrong diverter');
 			&bench($p);
 		} else {
-			$Stats{'diverters'}{$pickup}=1;
-			$Stats{'diverters'}{$other}=0;
+			mem->game($pickup, 'diverters')=1;
+			mem->game($other, 'diverters')=0;
 		}
 	}
 
@@ -9584,19 +9621,19 @@ play though extended interfaces and server support.
 	sub playing {
 		my($p)=@_;
 
-		return($Stats{'players'}{'playing'}{$p});
+		return(mem->player($p, 'playing'));
 	}
 
 	sub leave {
 		my($p)=@_;
 
-		if($Stats{'players'}{'playing'}{$p}) {
+		if(mem->player($p, 'playing')) {
 			delete($Restart{$p});
 			queue::schedule { &restart_print; } 0;
 
-			delete($Stats{'players'}{'playing'}{$p});
-			if($Stats{'players'}{'count'}>0) {
-				$Stats{'players'}{'count'}--;
+			mem->delete->player($p, 'playing');
+			if(mem->game('players') > 0) {
+				mem->game('players')--;
 			}
 			return(1);
 		} else {
@@ -9714,14 +9751,14 @@ play though extended interfaces and server support.
 
 		if(!race::allowed($p)) {
 			return(0);
-		} elsif($Stats{'players'}{'playing'}{$p}) {  #Already entered
+		} elsif(mem->player($p, 'playing')) {  #Already entered
 			return(1);
-		} elsif($Stats{'players'}{'count'}<$max) {
+		} elsif(mem->game('players') < $max) {
 			queue::schedule { &restart_print; } 0;
 			&zone_init($p) if(stash::get('keys', map::name, 'map') & 1);
 
-			$Stats{'players'}{'playing'}{$p}=1;
-			$Stats{'players'}{'count'}++;
+			mem->player($p, 'playing')=1;
+			mem->game('players')++;
 			return(1);
 		} else {
 			return(0);
@@ -10625,8 +10662,9 @@ core protecting the flag.
 		my($type)=@{$e->{'arguments'}};
 		my(@lookup);
 
-		if($type=~m/modify/i) {
-			$e->{'command'}='help modify';
+		if($type=~m/^game$/i) {
+			$e->{'command'}='help game';
+			$HOOKS{'help game'}->($e, $p);
 			script::post($e, $p);
 		} elsif(exists($HOOKS{"help $type"})) {
 			$HOOKS{"help $type"}->($e, $p);
@@ -10719,7 +10757,13 @@ core protecting the flag.
 		}
 	},
 
-	'modify'		=> sub {
+	'help game'	=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, "/vote game planes <reset|plane1> [plane2] [...]");
+	},
+
+	'game'		=> sub {
 		my($e, $p)=@_;
 		my(@args)=($e->{'arguments'}[0]=~m/(".*?"|".*$|[^\s,]+)/g);
 

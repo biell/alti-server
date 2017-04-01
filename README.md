@@ -287,10 +287,10 @@ manage Alti+ game maps.
     with `player` to do so, but they can disable messaging with the
     `/mesg No` command. Abusers will be banned.
 
-  * **/vote modify ?? ??**<br>
+  * **/vote game ?? ??**<br>
     This command is used to modify add-on scripts.  Any add-on script
     may watch for this command and do whatever it needs to with the
-    arguments.
+    arguments. Run `/help game` for help on available settings.
 
 ### Extended Commands for Admins and Map makers
 
