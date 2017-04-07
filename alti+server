@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.40';
+my($VERSION)='4.41';
 
 =head1 NAME
 
@@ -9680,6 +9680,31 @@ play though extended interfaces and server support.
 		}
 	}
 
+	sub assign_hunted {
+		my($p)=@_;
+		my($map_team)=stash::get('assignTeam', map::name, 'map');
+
+		$Hunted=$p unless($Hunted);
+
+		if($p==$Hunted) {
+			if(map::mode('ffa')) {
+				&assign($p, 'red');
+			} elsif(map::left($map_team)) {
+				&assign($p, 'right');
+			} else {
+				&assign($p, 'left');
+			}
+		} else {
+			if(map::mode('ffa')) {
+				&assign($p, 'blue');
+			} elsif(map::left($map_team)) {
+				&assign($p, 'left');
+			} else {
+				&assign($p, 'right');
+			}
+		}
+	}
+
 	sub change_hunted {
 		my($p)=@_;
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
@@ -9715,9 +9740,9 @@ play though extended interfaces and server support.
 		} elsif(!$Hunted) {
 			chat::all('* Everyone against', $p->{'nickname'}, '*');
 			$Hunted=$p;
-			if(map::left($map_team) && map::left($p->{'team'})) {
+			if(map::left($map_team) && map::right($p->{'team'})) {
 				return(1);
-			} elsif(map::right($map_team) && map::right($p->{'team'})) {
+			} elsif(map::right($map_team) && map::left($p->{'team'})) {
 				return(1);
 			} elsif(map::left($map_team)) {
 				&assign($p, 'right');
@@ -14179,6 +14204,8 @@ core protecting the flag.
 			if(map::spec($p->{'team'})) {
 				plus::change_hunted(player::random);
 			}
+		} elsif(map::type('tag', 'mdg')) {
+			plus::assign_hunted($p);
 		} elsif(map::right($map_team) && map::left($p->{'team'})) {
 			plus::assign($p, 'right');
 			return;
