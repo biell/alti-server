@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.41';
+my($VERSION)='4.42';
 
 =head1 NAME
 
@@ -5074,6 +5074,7 @@ in the background, but only one backgrounded process may run at a time.
 		foreach my $id (sort(keys(%Queue))) {
 			if($Queue{$id}[0]<$now) {
 				if($Queue{$id}[1]) {
+					local *__ANON__="QUEUE::$id";
 					$Queue{$id}[2]->();
 
 					push(@tasks, $id);
@@ -5095,6 +5096,7 @@ in the background, but only one backgrounded process may run at a time.
 								db::reconnect('InactiveDestroy' => 1);
 							}
 
+							local *__ANON__="QUEUE::$id";
 							$Queue{$id}[2]->();
 
 							close($Pwrite);
@@ -5417,6 +5419,7 @@ directly with it to manage the instance.
 			}
 	
 			if(ref($HOOKS{$command}) eq 'CODE') {
+				local *__ANON__="HOOKS::$command";
 				$HOOKS{$command}->($event, player::server());
 			}
 		} else {
@@ -6740,6 +6743,7 @@ is updated with them as the games progress.
 		if(mem->player('infractions', $p) > $count) {
 			if($p->{'admin'}) {
 				if(mem->player('infractions', $p) > $count*2) {
+					local *__ANON__='CONSOLE::server';
 					$CONSOLE{'server'}->('del', 'admins', $p->{'vaporId'});
 					server::send('restartServer');
 					chat::whisper($p, 'Now look what you made me do');
@@ -8660,6 +8664,22 @@ play though extended interfaces and server support.
 	my($Active)=0;
 	my($Captured)=0;
 
+	sub pre_round {
+		my($map_team)=stash::get('assignTeam', map::name, 'map');
+		my($zones);
+
+		if($Hunted && map::type('mdg', 'tag')) {
+			if(map::right($map_team)) {
+				$zones=stash::get('zones', map::left, 'zones', map::name, 'map');
+			} else {
+				$zones=stash::get('zones', map::right, 'zones', map::name, 'map');
+			}
+			if(ref($zones) eq 'HASH' && %$zones) {
+				plus::spawn_random($Hunted);
+			}
+		}
+	}
+
 	sub round {
 		ball::new;		#Can ball have multiple rounds?
 		mem->new_round;	#Setup stats and info table for new round
@@ -9680,55 +9700,31 @@ play though extended interfaces and server support.
 		}
 	}
 
-	sub assign_hunted {
-		my($p)=@_;
-		my($map_team)=stash::get('assignTeam', map::name, 'map');
-
-		$Hunted=$p unless($Hunted);
-
-		if($p==$Hunted) {
-			if(map::mode('ffa')) {
-				&assign($p, 'red');
-			} elsif(map::left($map_team)) {
-				&assign($p, 'right');
-			} else {
-				&assign($p, 'left');
-			}
-		} else {
-			if(map::mode('ffa')) {
-				&assign($p, 'blue');
-			} elsif(map::left($map_team)) {
-				&assign($p, 'left');
-			} else {
-				&assign($p, 'right');
-			}
-		}
-	}
-
 	sub change_hunted {
 		my($p)=@_;
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
+
+		return unless($p);
+		return if(map::spec($p->{'team'}));
 
 		if($Hunted==$p) {
 			return(1);
 		} elsif(map::type('tag')) {
 			if(map::mode('ffa')) {
 				if(xx::enabled) {
-					&assign($Hunted, 'blue');
+					&assign($Hunted, 'blue') if($Hunted && $Hunted->{'joined'});
 					&assign($p, 'red');
 					&spawn_random($p);
 				}
 			} elsif(map::right($map_team)) {
-				&assign($Hunted, 'right');
+				&assign($Hunted, 'right') if($Hunted && $Hunted->{'joined'});
 				&assign($p, 'left');
 				&spawn_random($p);
 			} else {
-				&assign($Hunted, 'left');
+				&assign($Hunted, 'left') if($Hunted && $Hunted->{'joined'});
 				&assign($p, 'right');
 				&spawn_random($p);
 			}
-			chat::all('*', $p->{'nickname'}, 'is it *');
-
 			if($Hunted && exists($Hunted->{'stats'}{'tagged'})) {
 				$Hunted->{'stats'}{'it'}+=
 					$server::Time - $Hunted->{'stats'}{'tagged'};
@@ -9736,10 +9732,7 @@ play though extended interfaces and server support.
 			}
 
 			$p->{'stats'}{'tagged'}=$server::Time;
-			$Hunted=$p;
 		} elsif(!$Hunted) {
-			chat::all('* Everyone against', $p->{'nickname'}, '*');
-			$Hunted=$p;
 			if(map::left($map_team) && map::right($p->{'team'})) {
 				return(1);
 			} elsif(map::right($map_team) && map::left($p->{'team'})) {
@@ -9751,15 +9744,16 @@ play though extended interfaces and server support.
 			}
 		} else {
 			if(map::right($map_team)) {
-				&assign($Hunted, 'right');
+				&assign($Hunted, 'right') if($Hunted && $Hunted->{'joined'});
 				&assign($p, 'left');
 			} else {
-				&assign($Hunted, 'left');
+				&assign($Hunted, 'left') if($Hunted && $Hunted->{'joined'});
 				&assign($p, 'right');
 			}
-			chat::all('* Everyone against', $p->{'nickname'}, '*');
-			$Hunted=$p;
 		}
+
+		chat::all('*', $p->{'nickname'}, 'is it *');
+		$Hunted=$p;
 	}
 
 	sub finish_hunted {
@@ -9769,13 +9763,15 @@ play though extended interfaces and server support.
 					$server::Time - $Hunted->{'stats'}{'tagged'};
 				delete($Hunted->{'stats'}{'tagged'});
 			}
-		}
 
-		$Hunted=undef;
+			$Hunted=undef;
+		}
 	}
 
 	sub prey {
 		my($p)=@_;
+
+		return unless($p);
 
 		if($Hunted==$p) {
 			return(1);
@@ -9863,7 +9859,6 @@ play though extended interfaces and server support.
 		race::init;
 
 		&restart_clear;
-		&round;
 
 		if(map::type('ruin')) {
 			foreach my $mine (0, 1) {
@@ -10373,8 +10368,10 @@ will only be run on that map.
 			next unless(exists($Script{$script}{$command}));
 
 			if(ref($Script{$script}{$command}) eq 'CODE') {
+				local *__ANON__="SCRIPT::$script::$command";
 				$Script{$script}{$command}->($e, $p);
 			} elsif(ref($Script{$script}{$command}{$map}) eq 'CODE') {
+				local *__ANON__="SCRIPT::$script::$command::$map";
 				$Script{$script}{$command}{$map}->($e, $p);
 			}
 		}
@@ -10389,8 +10386,10 @@ will only be run on that map.
 			next unless(exists($Script{$script}{$command}));
 
 			if(ref($Script{$script}{$command}) eq 'CODE') {
+				local *__ANON__="SCRIPT::$script::$command";
 				$Script{$script}{$command}->($e, $p);
 			} elsif(ref($Script{$script}{$command}{$map}) eq 'CODE') {
+				local *__ANON__="SCRIPT::$script::$command::$map";
 				$Script{$script}{$command}{$map}->($e, $p);
 			}
 		}
@@ -10707,6 +10706,7 @@ core protecting the flag.
 		push(@{$e->{'arguments'}}, $args) if($args);
 
 		if(exists($HOOKS{$e->{'command'}})) {
+			local *__ANON__="HOOKS::$e->{'command'}";
 			$HOOKS{$e->{'command'}}->($e, $p);
 		} else {
 			chat::whisper($p, 'Invalid command:', $e->{'command'});
@@ -14114,7 +14114,7 @@ core protecting the flag.
 
 		if(map::type('tag')) {
 			if(map::mode('ffa')) {
-				if(xx::enabled) {
+				if(!map::spec($e->{'team'}) && xx::enabled) {
 					if(plus::hunted($p)) {
 						plus::assign($p, 'red') unless($p->{'oteam'}==3);
 					} else {
@@ -14197,15 +14197,13 @@ core protecting the flag.
 			}
 			if(map::right($map_team) && map::right($p->{'team'})) {
 				plus::assign($p, 'left');
-			} elsif(map::left($p->{'team'})) {
+			} elsif(map::left($map_team) && map::left($p->{'team'})) {
 				plus::assign($p, 'right');
 			}
-		} elsif(map::type('tag') && plus::hunted($p)) {
+		} elsif(map::type('tag') && plus::prey($p)) {
 			if(map::spec($p->{'team'})) {
 				plus::change_hunted(player::random);
 			}
-		} elsif(map::type('tag', 'mdg')) {
-			plus::assign_hunted($p);
 		} elsif(map::right($map_team) && map::left($p->{'team'})) {
 			plus::assign($p, 'right');
 			return;
@@ -14363,7 +14361,7 @@ core protecting the flag.
 			@$p{'aceRank','level'}=@$e{'aceRank','level'};
 		}
 
-		if(map::mode('ffa') && map::type('tag') && xx::enabled) {
+		if(map::mode('ffa') && map::type('tag') && !map::spec($e->{'team'}) && xx::enabled) {
 			if(plus::hunted($p)) {
 				plus::assign($p, 'red') unless($p->{'oteam'}==3);
 			} else {
@@ -15073,7 +15071,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 
 		map::teams($e->{'leftTeam'}, $e->{'rightTeam'});
-		plus::new;
+		plus::round;
 	},
 
 	'objectiveGameEnd' 		=> sub {
@@ -15089,6 +15087,8 @@ core protecting the flag.
 			records::enter($e);
 			log::finish;
 		}
+
+		queue::schedule { plus::pre_round } 1;
 	},
 
 	'roundEnd'	=> sub {
@@ -16046,10 +16046,12 @@ while(1) {
 			script::pre(@EVENT);
 			if($TRIGGER=server::triggers($REQ)) {
 				my($trigger)=shift(@$TRIGGER);
+				local *__ANON__="HOOKS::$trigger";
 				$HOOKS{$trigger}->(@EVENT, @$TRIGGER);
 			}
 
 			if(exists($HOOKS{$REQ->{'command'}})) {
+				local *__ANON__="HOOKS::$REQ->{'command'}";
 				$HOOKS{$REQ->{'command'}}->(@EVENT);
 			}
 			script::post(@EVENT);
