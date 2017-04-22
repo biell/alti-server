@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.42';
+my($VERSION)='4.43';
 
 =head1 NAME
 
@@ -9893,6 +9893,8 @@ play though extended interfaces and server support.
 		}
 
 		&zone_init() unless(stash::get('keys', map::name, 'map') & 1);
+
+		&round;
 	}
 		
 	sub assign_teams {
@@ -11776,6 +11778,8 @@ core protecting the flag.
 		plus::new;
 		plus::assign_teams;
 		rank::map_change;
+
+		queue::schedule { plus::pre_round } 1;
 
 		foreach my $player (player::list) {
 			if($p->{'stats'}{'spawns'}) {
@@ -14595,7 +14599,6 @@ core protecting the flag.
 				}
 			}
 		} elsif($spawn_mode eq 'health') {
-			chat::debug($spawn, $e->{'positionX'}, $e->{'positionY'});
 			if(map::powerup($e, 'Health') && (
 					!$spawn ||
 					$e->{'positionX'}!=$spawn->[0] ||
@@ -14605,7 +14608,6 @@ core protecting the flag.
 				server::trigger('logPlanePositions', 'powerup', $e, $p);
 			}
 		} elsif($spawn_mode eq 'powerup') {
-			chat::debug($spawn, $e->{'positionX'}, $e->{'positionY'});
 			if(map::powerup($e) && (
 					!$spawn ||
 					$e->{'positionX'}!=$spawn->[0] ||
