@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='4.43';
+my($VERSION)='4.47';
 
 =head1 NAME
 
@@ -10525,6 +10525,8 @@ sub event {
 		$player=player::server;
 	} elsif($event->{'source'} eq '00000000-0000-0000-0000-000000000000') {
 		$player=player::server;
+	} elsif($event->{'player'} == -1) {
+		$player=player::server;
 	} else {
 		$player=player::event_search($event);
 	}
@@ -15065,6 +15067,8 @@ core protecting the flag.
 
 	'structureDestroy'	=> sub {
 		my($e, $p)=@_;
+
+		return if($p->{'isBot'});
 
 		mem->game($e->{'target'}, $p)++;
 
