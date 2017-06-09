@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-#use strict;
+use strict;
 
 my($VERSION)='4.43';
 
@@ -2129,6 +2129,8 @@ kept across server restarts.
 
 {	package mem;
 
+	{ package alias; }	#Populated below
+	{ package keys; }	#Populated below
 	{ package exists; }	#Populated below
 	{ package delete; }	#Populated below
 	{ package vacuum; }	#Populated below
@@ -2144,6 +2146,8 @@ kept across server restarts.
 		ui::slog('Memory:', json::encode($Mem));
 	}
 
+	sub alias  () { alias::  }
+	sub keys   () { keys::   }
 	sub exists () { exists:: }
 	sub delete () { delete:: }
 	sub vacuum () { vacuum:: }
@@ -2180,7 +2184,8 @@ kept across server restarts.
 
 		while(@_) {
 			$key=pop(@_);
-			if(!$key) {
+
+			if(!defined($key)) {
 				return({'none' => undef}, 'none');
 			} elsif(ref($key) eq 'HASH') {
 				if(exists($key->{'vaporId'})) {
@@ -2198,12 +2203,24 @@ kept across server restarts.
 			}
 		}
 
-		return($hash, $key);
+		if(defined($key)) {
+			return($hash, $key);
+		} else {
+			return({'none' => undef}, 'none');
+		}
 	}
 
 	sub game : lvalue {
 		my($hash, $key)=&find(splice(@_, 1), 'game');
 		return($hash->{$key});
+	}
+	sub alias::game {
+		my($hash, $key)=&find(splice(@_, 1), 'game');
+		return(\$hash->{$key});
+	}
+	sub keys::game {
+		my($hash, $key)=&find(splice(@_, 1), 'game');
+		return(keys(%{$hash->{$key}}));
 	}
 	sub exists::game {
 		return(&check(splice(@_, 1), 'game'));
@@ -2219,6 +2236,14 @@ kept across server restarts.
 	sub player : lvalue {
 		my($hash, $key)=&find(splice(@_, 1), 'player');
 		return($hash->{$key});
+	}
+	sub alias::player {
+		my($hash, $key)=&find(splice(@_, 1), 'player');
+		return(\$hash->{$key});
+	}
+	sub keys::player {
+		my($hash, $key)=&find(splice(@_, 1), 'player');
+		return(keys(%{$hash->{$key}}));
 	}
 	sub exists::player {
 		return(&check(splice(@_, 1), 'player'));
@@ -2255,6 +2280,14 @@ kept across server restarts.
 	sub server : lvalue {
 		my($hash, $key)=&find(splice(@_, 1), 'server');
 		return($hash->{$key});
+	}
+	sub alias::server {
+		my($hash, $key)=&find(splice(@_, 1), 'server');
+		return(\$hash->{$key});
+	}
+	sub keys::server {
+		my($hash, $key)=&find(splice(@_, 1), 'server');
+		return(keys(%{$hash->{$key}}));
 	}
 	sub exists::server {
 		return(&check(splice(@_, 1), 'server'));
@@ -2676,6 +2709,13 @@ has occured.  After too many infractions, the player is kicked by the server.
 			foreach my $arg (@{$cmd->{'arguments'}}) {
 				$arg=[sort(@$arg)] if(ref($arg));
 			}
+		}
+
+		if(exists($cmd->{'description'})) {
+			unless(exists($cmd->{'argumentDescription'})) {
+				$cmd->{'argumentDescription'}=$cmd->{'description'};
+			}
+			delete($cmd->{'description'});
 		}
 
 		delete($cmd->{'enabled'});
@@ -3256,7 +3296,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'help' => {
 		'name'			=> 'help',
-		'arguments'		=> [['game', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['game', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'archive', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3264,7 +3304,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'upload' => {
 		'name'			=> 'upload',
-		'arguments'		=> [['official', 'alti+', 'altitudegame', 'ladder', 'tinyupload', 'url'], 'string'],
+		'arguments'		=> [['official', 'alti+', 'altitudegame', 'archive', 'ladder', 'tinyupload', 'url'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> config::option('allowUploads'),
 	},
@@ -3931,6 +3971,33 @@ garunteed to keep the format correct.
 	sub initialize_mods {
 		my($version)=@_;
 		my($config)=stash::get('xx');
+		my($perks)=[
+			'Full Random',
+			'Config Random',
+			'Tracker',
+			'Double Fire',
+			'Acid Bomb',
+			'Suppressor',
+			'Bombs',
+			'Flak Tailgun',
+			'Director',
+			'Thermobarics',
+			'Remote Mine',
+			'Dogfighter',
+			'Recoilless Gun',
+			'Heavy Cannon',
+			'Trickster',
+			'Laser',
+			'Time Anchor',
+			'Rubberized Hull',
+			'Heavy Armor',
+			'Repair Drone',
+			'Flexible Wings',
+			'Turbocharger',
+			'Ultracapacitor',
+			'Reverse Thrust',
+			'Ace Instincts',
+		];
 
 		unless(config::option('xxEnabled')) {
 			return;
@@ -4024,6 +4091,29 @@ garunteed to keep the format correct.
 			'allowSpectatorAllChat'	=> [
 				['true', 'false']
 			],
+			'allowSpawn'		=> [
+				'int'
+			],
+			'denySpawn'		=> [
+				'int',
+				'string',
+			],
+			'blockPerk'		=> [
+				$perks,
+				'string',
+			],
+			'unblockPerk'		=> [
+				$perks,
+			],
+			'allowPlayerPerk'	=> [
+				$perks,
+				'int',
+			],
+			'resetPlayerPerk'	=> [
+				$perks,
+				'int',
+			],
+			'resetPerks'		=> [],
 		);
 	}
 
@@ -4270,6 +4360,7 @@ garunteed to keep the format correct.
 			}
 		}
 	}
+
 
 }
 
@@ -4835,7 +4926,7 @@ Supported databases are SQLite and PostgreSQL.
 		if($value) {
 			$rating->{'rating'}+=int($value);
 			$rating->{'differential'}=sprintf("%.1f",
-				$rating->{'differential'}+$p->{'stats'}{'differential'});
+				$rating->{'differential'}+mem->game('differential', $p));
 
 			$rating->{'rating'}=1 if($rating->{'rating'}<1);
 
@@ -6435,7 +6526,7 @@ types which alter the normal behavior.
 
 	sub new {
 		my($mapref)=@_;
-		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
+		my($spawn_mode)=stash::get('spawnMode', $mapref->{'map'}, 'map');
 		my($obj);
 
 		$Map=$mapref;
@@ -6523,6 +6614,8 @@ types which alter the normal behavior.
 			|| $Ds->{'views'}{'Spawn'}{'bounds'}{'maxY'} != $Ds->{'views'}{'Game'}{'bounds'}{'maxY'}
 			) {
 				ui::slog('!! The Spawn and Game layers are not the same size !!');
+			} else {
+				ui::slog('Spawn layer loaded');
 			}
 		}
 	}
@@ -6645,6 +6738,9 @@ is updated with them as the games progress.
 			}
 		}
 
+		mem->player('name', $p)=$p->{'name'} || $p->{'nickname'};
+		mem->player('nickname', $p)=$p->{'nickname'};
+
 		$Pdb{$p->{'nickname'}}	=
 		$Pdb{$p->{'player'}}	=
 		$Pdb{$p->{'vaporId'}}	= $p;
@@ -6668,6 +6764,9 @@ is updated with them as the games progress.
 		delete($Pdb{$old});
 
 		$p->{'nickname'}=$new;
+
+		mem->player('name', $p)=$new unless($p->{'name'});
+		mem->player('nickname', $p)=$new;
 
 		db::insert('aliases',
 			{ 'vaporid' => $p->{'vaporId'}, 'nickname' => $new });
@@ -6928,12 +7027,15 @@ are pulled from ladder, and changes in ladder are reflected here.
 	my(@Head)=();
 	my($Data)={};
 	my($Index)=0;
+	my(@Count)=(0,0);
 	my($Mode);
 
 	sub _update_db {
 		my($data)=@_;
 		my($player, $other, $nickname, $update);
 		my($id);
+
+		$Count[0]++;
 
 		return unless($data->{'Vapor'} && $data->{'AKA'});
 
@@ -6964,6 +7066,8 @@ are pulled from ladder, and changes in ladder are reflected here.
 
 			ui::slog("Updated $data->{'Vapor'} ($nickname) to $data->{'AKA'}");
 		}
+
+		$Count[1]++;
 	}
 
 	sub _state {
@@ -7029,6 +7133,7 @@ are pulled from ladder, and changes in ladder are reflected here.
 		}
 
 		$In=0;
+		@Count=(0, 0);
 
 		$p->report_tags(qw(table tr th td));
 		$p->handler('start' => \&_state, 'event, tagname, attr');
@@ -7045,6 +7150,9 @@ are pulled from ladder, and changes in ladder are reflected here.
 		$p->eof;
 
 		db::commit;
+
+		chat::whisper(player::server, $Count[1], 'AKAs of', $Count[0],
+			'total players verified');
 	}
 
 }
@@ -7111,7 +7219,7 @@ debugging or to make funny comments.
 
 		if($p->{'isBot'}) {
 			ui::slog('|', $msg);
-		} else {
+		} elsif($p->{'joined'}) {
 			ui::chat_log($p->{'nickname'}, 'server', $msg);
 			server::send('serverWhisper', $p->{'nickname'}, $msg);
 		}
@@ -7386,17 +7494,22 @@ they make the top 5.
 			}
 		}
 
-		if($Winner && map::type('race')) {
-			if(map::spawn_points($Winner)>1) {
-				if(player::count() < $min_players) {
-					$save=0;
+		if(map::type('race')) {
+			if($Winner) {
+				if(map::spawn_points($Winner)>1) {
+					if(player::count() < $min_players) {
+						$save=0;
+					} else {
+						#push(@holder, map::team_color($Winner->{'team'}));
+						@nicks=&team($Winner->{'team'});
+						push(@holder, join(', ',
+								map(player::name($_), @nicks)));
+					}
 				} else {
-					#push(@holder, map::team_color($Winner->{'team'}));
-					@nicks=&team($Winner->{'team'});
-					push(@holder, join(', ', map(player::name($_), @nicks)));
+					push(@holder, player::name($Winner));
 				}
 			} else {
-				push(@holder, player::name($Winner));
+				$save=0;
 			}
 		} elsif(%Helpers && map::type('coop', 'ruin')) {
 			@nicks=sort({ $Helpers{$b} <=> $Helpers{$a} } keys(%Helpers));
@@ -7704,49 +7817,49 @@ These rankings can also be configured to select evenly matched teams.
 			$duration=$config::Launcher{'score'}{$mode}*15;
 		}
 
-		$quality=&_quality_curve($duration - $p->{'stats'}{'played'}/1000);
+		$quality=&_quality_curve($duration - mem->game('played', $p)/1000);
 
 		return($quality*$competition);
 	}
 
 	sub rate {
 		my($p)=@_;
-		my($stats)=$p->{'stats'};
-		my($minute)=$stats->{'played'}/60000;
+		my($minute)=mem->game('played', $p)/60000;
 		my($rate)=0;
 
 		return(0) unless($minute>1);
 
 		#Individual:
-		$rate+=$stats->{'base'};
-		$rate+=$stats->{'turret'}/3;
-		$rate+=$stats->{'capture'};
-		$rate+=$stats->{'goals'};
-		$rate+=$stats->{'assists'}/$minute;
-		$rate+=$stats->{'saves'}/$minute;
-		$rate+=$stats->{'interception'}/$minute;
-		$rate-=$stats->{'intercepted'}/$minute;
-		$rate-=$stats->{'crashes'}/$minute;
+		$rate+=mem->game('base', $p);
+		$rate+=mem->game('turret', $p)/3;
+		$rate+=mem->game('capture', $p);
+		$rate+=mem->game('goals', $p);
+		$rate+=mem->game('assists', $p)/$minute;
+		$rate+=mem->game('saves', $p)/$minute;
+		$rate+=mem->game('interception', $p)/$minute;
+		$rate-=mem->game('intercepted', $p)/$minute;
+		$rate-=mem->game('crashes', $p)/$minute;
+
 
 		if(map::mode('tbd')) {
-			$rate+=$stats->{'powerkill'}/$minute;
-			$rate+=$stats->{'kills'}/$minute;
-			$rate-=$stats->{'died'}/$minute;
-			$rate-=$stats->{'collateral'}/$minute;
-			$rate-=$stats->{'fumble'}/$minute/2;
+			$rate+=mem->game('powerkill', $p)/$minute;
+			$rate+=mem->game('kills', $p)/$minute;
+			$rate-=mem->game('died', $p)/$minute;
+			$rate-=mem->game('collateral', $p)/$minute;
+			$rate-=mem->game('fumble', $p)/$minute/2;
 		} elsif(map::mode('tdm', 'ffa')) {
-			$rate+=$stats->{'kills'}/$minute;
-			$rate-=$stats->{'collateral'}/$minute;
-			$rate-=$stats->{'died'}/$minute;
+			$rate+=mem->game('kills', $p)/$minute;
+			$rate-=mem->game('collateral', $p)/$minute;
+			$rate-=mem->game('died', $p)/$minute;
 		} elsif(map::mode('1bd', '1dm', '1de')) {
-			$rate+=$stats->{'powerkill'};
-			$rate+=$stats->{'kills'};
-			$rate-=$stats->{'collateral'}*2;
-			$rate-=$stats->{'died'}/3;
+			$rate+=mem->game('powerkill', $p);
+			$rate+=mem->game('kills', $p);
+			$rate-=mem->game('collateral', $p)*2;
+			$rate-=mem->game('died', $p)/3;
 		} elsif(map::mode('ball')) {
-			$rate+=$stats->{'powerkill'}/$minute;
-			$rate-=$stats->{'collateral'}/$minute;
-			$rate-=$stats->{'fumble'}/$minute;
+			$rate+=mem->game('powerkill', $p)/$minute;
+			$rate-=mem->game('collateral', $p)/$minute;
+			$rate-=mem->game('fumble', $p)/$minute;
 		}
 
 		#Maximum 5 point individual effort swing
@@ -7754,9 +7867,9 @@ These rankings can also be configured to select evenly matched teams.
 
 		#Team:
 		unless(map::type('coop', 'race')) {
-			if($stats->{'differential'}>0) {
+			if(mem->game('differential', $p)>0) {
 				$rate+=20;
-			} elsif($stats->{'differential'}<0) {
+			} elsif(mem->game('differential', $p)<0) {
 				$rate-=19;
 			}
 		}
@@ -7838,13 +7951,11 @@ These rankings can also be configured to select evenly matched teams.
 
 		ui::slog(sprintf(join("\n  ", 
 				"enter: name=%s, id=%d, type=%s, played=%d,",
-				"rate=%.2f, scale=%.2f, update=%.1f, diff=%.2f,",
-				"json=%s"
+				"rate=%.2f, scale=%.2f, update=%.1f, diff=%.2f,"
 			), (
 				$p->{'name'} || $p->{'nickname'},
-				$p->{'id'}, $type, $p->{'stats'}{'played'},
-				$rate, $scale, $update, $p->{'stats'}{'differential'},
-				json::encode($p->{'stats'}),
+				$p->{'id'}, $type, mem->game('played', $p),
+				$rate, $scale, $update, mem->game('differential', $p),
 			)
 
 		));
@@ -7901,9 +8012,9 @@ These rankings can also be configured to select evenly matched teams.
 			next if(map::spec($player->{'team'}));
 
 			if($player->{'team'}==$team) {
-				$player->{'stats'}{'differential'}+=$update;
+				mem->game('differential', $player)+=$update;
 			} else {
-				$player->{'stats'}{'differential'}-=$update;
+				mem->game('differential', $player)-=$update;
 			}
 		}
 	}
@@ -8379,7 +8490,7 @@ server switches the map and the race begins.
 		printf $Log "checkpoint,%.3f,%s,%d,%d,%s\n",
 				$time, $cp, @$p{'team','player','nickname'};
 
-		if($p->{'stats'}{'checkpoint'} >= $Goals) {
+		if(mem->game($p, 'checkpoint') >= $Goals) {
 			$Racers{$p}=$time;
 			plus::bench($p);
 			chat::whisper($p, 'You completed the race in:',
@@ -8566,12 +8677,14 @@ interface.
 						unless($Passer->{'isbot'});
 				}
 				push(@Relay, $p);
-				$Passer->{'stats'}{'pass'}++;
-				$Carrier->{'stats'}{'catch'}++;
+				mem->game('pass', $Passer)++;
+				mem->game('catch', $Carrier)++;
 			}
 		} else {
-			$Passer->{'stats'}{'intercepted'}++ if($Passer);
-			$Carrier->{'stats'}{'interception'}++;
+			if($Passer) {
+				mem->game('intercepted', $Passer)++;
+				mem->game('interception', $Carrier)++;
+			}
 			@Relay=();
 		}
 
@@ -8655,7 +8768,6 @@ play though extended interfaces and server support.
 
 {	package plus;
 
-	my(%Stats)=();
 	my(%Reset)=();
 	my(%Restart)=();
 	my(%Planes)=();
@@ -8681,14 +8793,26 @@ play though extended interfaces and server support.
 	}
 
 	sub round {
+		my(@teams)=map::teams;
+		my($assign)=stash::get('assignTeam', map::name, 'map');
+
 		ball::new;		#Can ball have multiple rounds?
 		mem->new_round;	#Setup stats and info table for new round
 		#$Hunted=undef;	#Should hunted change per round?
 
 		if(map::type('ruin')) {
-			foreach my $team (map::teams) {
-				$Stats{$team}{'structure'}{'remaining'}=
-					$Stats{$team}{'structure'}{'total'};
+			foreach my $t (0, 1) {
+				mem->game('total', $teams[$t], 'structure')=0;
+				mem->game('remaining', $teams[$t], 'structure')=0;
+
+				foreach my $structure (map::bases(), map::turrets()) {
+					if(($assign && $structure->{'team'}!=$teams[$t]) ||
+						($structure->{'team'}==$teams[!$t])
+					) {
+						mem->game('total', $teams[$t], 'structure')++;
+						mem->game('remaining', $teams[$t], 'structure')++;
+					}
+				}
 			}
 		}
 	}
@@ -8861,12 +8985,12 @@ play though extended interfaces and server support.
 		my($time)=time();
 
 		if($p) {
-			return if($p->{'stats'}{'plane_notice'}>$time);
+			return if(mem->game('plane_notice', $p)>$time);
 
-			$p->{'stats'}{'plane_notice'}=$time+8;
+			mem->game('plane_notice', $p)=$time+8;
 		} else {
 			foreach my $player (player::list) {
-				$player->{'stats'}{'plane_notice'}=$time+9;
+				mem->game('plane_notice', $player)=$time+9;
 			}
 		}
 
@@ -9024,8 +9148,8 @@ play though extended interfaces and server support.
 
 		if(ref($zones)) {
 			foreach my $name (keys(%$zones)) {
-				next unless($Stats{$team}{'zone'}{$name} // 1);
-				next unless($Stats{$p}{$team}{'zone'}{$name} // 1);
+				next unless(mem->game($name, $team, 'zones') // 1);
+				next unless(mem->game($name, $team, 'zones', $p) // 1);
 				push(@points, $zones->{$name});
 			}
 		}
@@ -9036,9 +9160,9 @@ play though extended interfaces and server support.
 	sub spawn_previous {
 		my($p)=@_;
 
-		if(exists($p->{'stats'}{'spawns'}) && @{$p->{'stats'}{'spawns'}}>1) {
-			pop(@{$p->{'stats'}{'spawns'}});
-			&spawn_here($p, @{$p->{'stats'}{'spawns'}[-1]});
+		if(mem->exists->game('spawns', $p) && @{mem->game('spawns', $p)}>1) {
+			pop(@{mem->game('spawns', $p)});
+			&spawn_here($p, @{mem->game('spawns', $p)->[-1]});
 		} else {
 			&spawn_reset($p);
 		}
@@ -9069,8 +9193,9 @@ play though extended interfaces and server support.
 			$spawn=[$x, $y, $angle];
 			server::send('overrideSpawnPoint', $p->{'nickname'}, @$spawn);
 
+			mem->game('spawn_point', $p)=$spawn;
 			$p->{'spawn_point'}=$spawn;
-			push(@{$p->{'stats'}{'spawns'}}, $spawn);
+			push(@{mem->game('spawns', $p)}, $spawn);
 		}
 	}
 
@@ -9098,7 +9223,7 @@ play though extended interfaces and server support.
 		} else {
 			&spawn_here($p, 0, 0, 0);
 		}
-		delete($p->{'stats'}{'spawns'});
+		mem->delete->game('spawns', $p);
 	}
 
 	sub spawn_random {
@@ -9253,12 +9378,12 @@ play though extended interfaces and server support.
 			push(@players, player::list);
 			push(@players, player::bots()) if(xx::enabled);
 			foreach my $player (@players) {
-				$player->{'stats'}{'played'}+=$e->{'time'}-$player->{'spawn'};
+				mem->game('played', $player)+=$e->{'time'}-$player->{'spawn'};
 				&bench($player);
 			}
 
 			chat::all($p->{'nickname'}, 'captured the flag!');
-			$p->{'stats'}{'capture'}++;
+			mem->game('capture', $p)++;
 			&score($p);
 			$Captured=$e->{'time'};
 		}
@@ -9325,7 +9450,7 @@ play though extended interfaces and server support.
 		my($cp)=$checkpoints && $checkpoints->{$pickup};
 		my(@powerups)=();
 		my($is_cp)=0;
-		my($t_stats, $p_stats);
+		our($t_stats, $p_stats);
 
 		return unless(defined($cp));
 		return unless(map::mode('ball', 'tdm'));
@@ -9336,30 +9461,30 @@ play though extended interfaces and server support.
 		}
 
 		#Initialize team stats:
-		unless($Stats{$p->{'team'}}{'cp'}) {
+		unless(mem->game($p->{'team'}, 'cp')) {
 			@powerups=utils::uniq(values(%$checkpoints));
 
 			for(my $i=0; $i<$count; $i++) {
-				$Stats{$p->{'team'}}{'cp'}[$i]=$powerups[$i%@powerups];
+				mem->game($p->{'team'}, 'cp')->[$i]=$powerups[$i%@powerups];
 			}
 		}
 
 		#Initialize player stats:
-		unless($p->{'stats'}{'cp'}) {
+		unless(mem->game($p, 'cp')) {
 			@powerups=utils::uniq(values(%$checkpoints));
 
 			for(my $i=0; $i<$count; $i++) {
-				$p->{'stats'}{'cp'}[$i]=$powerups[$i%@powerups];
+				mem->game($p, 'cp')->[$i]=$powerups[$i%@powerups];
 			}
 		}
 
-		$t_stats=$Stats{$p->{'team'}}{'cp'};
-		$p_stats=$p->{'stats'}{'cp'};
+		*t_stats=mem->alias->game($p->{'team'}, 'cp');
+		*p_stats=mem->alias->game($p, 'cp');
 
 		if($p_stats->[0] eq $cp) {
 			if($t_stats->[0] eq $cp && @$p_stats == @$t_stats) {
 				&score($p);
-				$p->{'stats'}{'first_cp'}++;
+				mem->game('first_cp', $p)++;
 				chat::all($p->{'nickname'}, ': checkpoint', $cp, 'for',
 					map::team_color($p->{'team'}));
 
@@ -9368,7 +9493,8 @@ play though extended interfaces and server support.
 				chat::whisper($p, $cp);
 			}
 
-			$p->{'stats'}{'checkpoint'}++;
+			mem->game($p, 'checkpoint')++;
+			records::help($p, 1);
 			race::checkpoint($p, $cp);
 
 			shift(@$p_stats);
@@ -9393,8 +9519,8 @@ play though extended interfaces and server support.
 
 	sub destroy {
 		my($e, $p)=@_;
-		my($structure)=$Stats{$p->{'team'}}{'structure'};
 		my($progress);
+		our($total, $remaining);
 
 		if(map::mode('tbd') && map::type('std') && $e->{'target'} eq 'base') {
 			if(mem->game('base')) {
@@ -9407,22 +9533,21 @@ play though extended interfaces and server support.
 			} else {
 				mem->game('base')=$e->{'time'};
 			}
-		}
+		} elsif(map::type('ruin')) {
+			*total=mem->alias->game('total', $p->{'team'}, 'structure');
+			*remaining=mem->alias->game('remaining', $p->{'team'}, 'structure');
 
-		return unless(map::type('ruin'));
-		return unless($structure->{'total'});
+			return unless($total);
 
-		$structure->{'remaining'}--;
+			$remaining--;
 
-		$progress=1-$structure->{'remaining'}/$structure->{'total'};
-			
-		ball::progress($p, $progress);
+			$progress=1-$remaining/$total;
 
-		if(	$structure->{'remaining'}>0 &&
-			$structure->{'remaining'}<=5 &&
-			$progress>0.85
-		) {
-			chat::team($p, $structure->{'remaining'}, 'remaining');
+			ball::progress($p, $progress);
+
+			if($remaining>0 && $remaining<=5 && $progress>0.85) {
+				chat::team($p, $remaining, 'remaining');
+			}
 		}
 	}
 
@@ -9435,8 +9560,8 @@ play though extended interfaces and server support.
 			return(1);
 		} else {
 			return(
-				$Stats{$p}{$team}{'door'}{$door}
-				||  $Stats{$team}{'door'}{$door}
+				mem->game($door, 'door', $team, $p) ||
+				mem->game($door, 'door', $team)
 			);
 		}
 	}
@@ -9446,8 +9571,8 @@ play though extended interfaces and server support.
 		my($team)=$p->{'team'};
 
 		return(
-			$Stats{$p}{$team}{'zone'}{$zone}
-			||  $Stats{$team}{'zone'}{$zone}
+			mem->game($zone, $team, 'zones', $p)
+			|| mem->game($zone, $team, 'zones')
 		);
 	}
 
@@ -9456,32 +9581,32 @@ play though extended interfaces and server support.
 		my($team)=$p->{'team'};
 
 		return(
-			$Stats{$p}{$team}{'key'}{$key}
-			||  $Stats{$team}{'key'}{$key}
+			mem->game($key, 'key', $team, $p) ||
+			mem->game($key, 'key', $team)
 		);
 	}
 
 	sub zone_init {
 		my($p)=@_;
 		my($zones)=stash::get('zones', map::name, 'map');
-		my($stats);
-
-		if($p) {
-			$stats=$Stats{$p};
-			return if(exists($stats->{map::left}{'zones'}));
-		} else {
-			$stats=\%Stats;
-		}
 
 		foreach my $team (keys(%$zones)) {
 			#Initialize all zones to open:
 			foreach my $name (keys(%{$zones->{$team}{'zones'}})) {
-				$stats->{$team}{'zone'}{$name}=1;
+				if($p) {
+					mem->game($name, $team, 'zones', $p)=1;
+				} else {
+					mem->game($name, $team, 'zones')=1;
+				}
 			}
 
 			#If a zone has a key, close it:
 			foreach my $name (values(%{$zones->{$team}{'keys'}})) {
-				$stats->{$team}{'zone'}{$name}=0;
+				if($p) {
+					mem->game($name, $team, 'zones', $p)=0;
+				} else {
+					mem->game($name, $team, 'zones')=0;
+				}
 			}
 		}
 	}
@@ -9530,10 +9655,10 @@ play though extended interfaces and server support.
 				} else {
 					chat::team($p, $p->{'nickname'}, "found key '$door->{'name'}{$pickup}' for '$door->{'keys'}{$pickup}'");
 					if($personal) {
-						$Stats{$p}{$p->{'team'}}{'key'}{$pickup}=1;
+						mem->game($pickup, 'key', $p->{'team'}, $p)=1;
 					} else {
-						$Stats{$p->{'team'}}{'key'}{$pickup}=1;
-						$p->{'stats'}{'keys'}++;
+						mem->game($pickup, 'key', $p->{'team'})=1;
+						mem->game('keys', $p)++;
 					}
 				}
 
@@ -9556,10 +9681,10 @@ play though extended interfaces and server support.
 					chat::whisper($p, 'Keys remaining:', @list);
 				} else {
 					if($personal) {
-						$Stats{$p}{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+						mem->game($door->{'keys'}{$pickup}, 'door', $p->{'team'}, $p)=1;
 						chat::whisper($p, 'Door unlocked:', $door->{'keys'}{$pickup});
 					} else {
-						$Stats{$p->{'team'}}{'door'}{$door->{'keys'}{$pickup}}=1;
+						mem->game($door->{'keys'}{$pickup}, 'door', $p->{'team'})=1;
 						chat::team($p, 'Door unlocked:', $door->{'keys'}{$pickup});
 					}
 				}
@@ -9576,10 +9701,10 @@ play though extended interfaces and server support.
 			} else {
 				chat::team($p, $p->{'nickname'}, 'found key',  $zone->{'name'}{$pickup}, 'for', $zone->{'keys'}{$pickup});
 				if($personal) {
-					$Stats{$p}{$p->{'team'}}{'key'}{$pickup}=1;
+					mem->game($pickup, 'key', $p->{'team'}, $p)=1;
 				} else {
-					$Stats{$p->{'team'}}{'key'}{$pickup}=1;
-					$p->{'stats'}{'keys'}++;
+					mem->game($pickup, 'key', $p->{'team'})=1;
+					mem->game('keys', $p)++;
 				}
 			}
 
@@ -9592,10 +9717,10 @@ play though extended interfaces and server support.
 			}
 
 			if($personal) {
-				$Stats{$p}{$p->{'team'}}{'zone'}{$zone->{'keys'}{$pickup}}=1;
+				mem->game($zone->{'keys'}{$pickup}, $p->{'team'}, 'zones', $p)=1;
 				chat::whisper($p, 'Zone unlocked:', $zone->{'keys'}{$pickup});
 			} else {
-				$Stats{$p->{'team'}}{'zone'}{$zone->{'keys'}{$pickup}}=1;
+				mem->game($zone->{'keys'}{$pickup}, $p->{'team'}, 'zones')=1;
 				chat::team($p, 'Zone unlocked:', $zone->{'keys'}{$pickup});
 			}
 		}
@@ -9645,27 +9770,19 @@ play though extended interfaces and server support.
 	}
 
 	sub most {
-		my($text, $stats, $players)=@_;
-		my($most)=0;
-		my($start)=0;
-		my($p);
+		my($text, $stats, $min)=@_;
+		my($most)=undef;
 
-		for(my $i=0; $i<@$players; $i++) {
-			$p=player::lookup($players->[$i]);
-			last unless($p->{'isBot'});
-			$start++;
-		}
+		return unless($text && $stats);
 
-		for(my $i=$start; $i<@$players; $i++) {
-			if($stats->[$i]>=$stats->[$most]) {
-				$p=player::lookup($players->[$i]);
-				$most=$i unless($p->{'isBot'});
+		foreach my $vid (keys(%$stats)) {
+			if(!$most || $stats->{$vid} > $stats->{$most}) {
+				$most=$vid;
 			}
 		}
 
-		if($stats->[$most]>0) {
-			$p=player::lookup($players->[$most]);
-			chat::all($text, $p->{'nickname'}) unless($p->{'isBot'});
+		if($most && $stats->{$most} >= $min) {
+			chat::all($text, mem->player('nickname', $most));
 		}
 	}
 
@@ -9725,13 +9842,13 @@ play though extended interfaces and server support.
 				&assign($p, 'right');
 				&spawn_random($p);
 			}
-			if($Hunted && exists($Hunted->{'stats'}{'tagged'})) {
-				$Hunted->{'stats'}{'it'}+=
-					$server::Time - $Hunted->{'stats'}{'tagged'};
-				delete($Hunted->{'stats'}{'tagged'});
+			if($Hunted && mem->exists->game('tagged', $Hunted)) {
+				mem->game('it', $Hunted)+=
+					$server::Time - mem->game('tagged', $Hunted);
+				mem->delete->game('tagged', $Hunted);
 			}
 
-			$p->{'stats'}{'tagged'}=$server::Time;
+			mem->game('tagged', $p)=$server::Time;
 		} elsif(!$Hunted) {
 			if(map::left($map_team) && map::right($p->{'team'})) {
 				return(1);
@@ -9758,10 +9875,10 @@ play though extended interfaces and server support.
 
 	sub finish_hunted {
 		if(map::type('tag')) {
-			if($Hunted && exists($Hunted->{'stats'}{'tagged'})) {
-				$Hunted->{'stats'}{'it'}+=
-					$server::Time - $Hunted->{'stats'}{'tagged'};
-				delete($Hunted->{'stats'}{'tagged'});
+			if($Hunted && mem->exists->game('tagged', $Hunted)) {
+				mem->game('it', $Hunted)+=
+					$server::Time - mem->game('tagged', $Hunted);
+				mem->delete->game('tagged', $Hunted);
 			}
 
 			$Hunted=undef;
@@ -9844,10 +9961,8 @@ play though extended interfaces and server support.
 	}
 
 	sub new {
-		my(@teams)=map::teams;
 		my($assign)=stash::get('assignTeam', map::name, 'map');
 
-		%Stats=();
 		%Reset=();
 		$Hunted=undef;
 		$Active=0;
@@ -9860,21 +9975,7 @@ play though extended interfaces and server support.
 
 		&restart_clear;
 
-		if(map::type('ruin')) {
-			foreach my $mine (0, 1) {
-				$Stats{$teams[$mine]}{'structure'}{'total'}=0;
-				$Stats{$teams[$mine]}{'structure'}{'remaining'}=0;
-
-				foreach my $structure (map::bases(), map::turrets()) {
-					if(($assign && $structure->{'team'}!=$teams[$mine]) ||
-						($structure->{'team'}==$teams[!$mine])
-					) {
-						$Stats{$teams[$mine]}{'structure'}{'total'}++;
-						$Stats{$teams[$mine]}{'structure'}{'remaining'}++;
-					}
-				}
-			}
-		} elsif(map::type('1lh')) {
+		if(map::type('1lh')) {
 			my($health)=stash::get('spawnHealth', map::name, 'map');
 			my($weapons)=stash::get('weapons', map::name, 'map');
 			my($planes)=stash::get('planes', map::name, 'map');
@@ -11396,6 +11497,62 @@ core protecting the flag.
 		}
 	},
 
+	'help archive'	=> sub {
+		my($e, $p)=@_;
+		chat::whisper($p, '/upload archive <map>');
+		chat::whisper($p, ' map: name of map');
+		chat::whisper($p, ' Upload maps FROM http://altimaps.glaciated.org/');
+	},
+
+	'upload archive'	=> sub {
+		my($e, $p, $name)=@_;
+		my($mapdir)=config::option('mapDir');
+		my($maps)="$INSTALL_ROOT/maps/$mapdir";
+		my($url)="http://altimaps.glaciated.org/%s.altx";
+		my($mapname, $file, $mapconfig);
+
+		$name=~s|^$mapdir/*|| if($mapdir);
+		$name=~s|\.altx$||;
+		$name=~s|\s+|_|g;
+
+		unless(file::name_ok($name)) {
+			chat::whisper($p, "map name $name does not follow standard");
+			return(0);
+		}
+
+		if($mapdir) {
+			$mapname="$mapdir/$name";
+		} else {
+			$mapname=$name;
+		}
+		$file="$maps/$mapname.altx";
+
+		file::download('-L', '-o', $file, sprintf($url, $name));
+
+		if(-s $file < 1024) {
+			unlink($file);
+			chat::whisper($p, "Could not find $name on maps.planeball.com");
+		} elsif(-s $file > config::option('ulSizeLimit')) {
+			unlink($file);
+			chat::whisper($p, "$mapname too big");
+		} elsif(file::type($file)!~m/LZMA compressed data/) {
+			unlink($file);
+			chat::whisper($p, "$mapname is not the right type");
+			chat::whisper($p, "maybe redirect failure, or a javascript enabled download");
+		} else {
+			if(config::new_maps($mapname)) {
+				chat::whisper($p,
+					"Map added to config, you must /restartServer");
+
+				if($mapconfig=stash::retrieve($mapname, 'map')) {
+					stash::set($mapname, 'map', $mapconfig);
+				}
+			}
+			stash::set('INIT', $mapname, 'map', 1);
+			chat::all("$mapname updated");
+		}
+	},
+
 	'help ladder'	=> sub {
 		my($e, $p)=@_;
 		chat::whisper($p, '/upload ladder <map>');
@@ -11782,10 +11939,10 @@ core protecting the flag.
 		queue::schedule { plus::pre_round } 1;
 
 		foreach my $player (player::list) {
-			if($p->{'stats'}{'spawns'}) {
+			if(mem->game('spawns', $p)) {
 				&spawn_here($player, 0, 0, 0);
 			}
-			$player->{'stats'}={};
+
 			$player->{'timer'}={};
 			$player->{'carrier'}=0;
 			$player->{'has'}=undef;
@@ -13923,7 +14080,6 @@ core protecting the flag.
 
 		return unless($e && $p);
 
-		$p->{'stats'}={};
 		$p->{'spawn'}=undef;
 		$p->{'spawn_point'}=[0, 0, 0];
 
@@ -14004,9 +14160,9 @@ core protecting the flag.
 		return if($p->{'isBot'});
 
 		if($p->{'spawn'}) {
-			$p->{'stats'}{'played'}+=$e->{'time'} - $p->{'spawn'};
+			mem->game('played', $p)+=$e->{'time'} - $p->{'spawn'};
 		} else {
-			$p->{'stats'}{'played'}+=0;
+			mem->game('played', $p)+=0;
 		}
 
 		rank::enter($p);
@@ -14029,6 +14185,14 @@ core protecting the flag.
 			foreach my $stat (keys(%stats)) {
 				mem->game($p, $stat, 'stats')+=$stats{$stat};
 			}
+
+			mem->game($p, 'Saves', 'stats')+=mem->game('saves', $p);
+			mem->game($p, 'Keys', 'stats')+=mem->game('keys', $p);
+			mem->game($p, 'Checkpoints', 'stats')+=mem->game('first_cp', $p);
+
+			mem->game($p, 'Ratio', 'stats')=
+				(mem->game($p, 'Kills', 'stats')//0) /
+				(mem->game($p, 'Deaths', 'stats')||0.9);
 		}
 	},
 
@@ -14243,7 +14407,7 @@ core protecting the flag.
 		}
 
 		$p->{'team'}=$e->{'team'};
-		$p->{'stats'}{'turret'}=0;
+		mem->game('turret', $p)=0;
 
 		@$p{'plane','perkRed','perkGreen','perkBlue','skin'}=
 			@$e{'plane','perkRed','perkGreen','perkBlue','skin'};
@@ -14281,7 +14445,7 @@ core protecting the flag.
 				plus::assign($p, 'right');
 			}
 		} elsif(map::type('tag') && plus::prey($p)) {
-			$p->{'stats'}{'tagged'}=$e->{'time'};
+			mem->game('tagged', $p)=$e->{'time'};
 		} elsif(map::right($map_team) && map::left($p->{'team'})) {
 			plus::assign($p, 'right');
 			return;
@@ -14307,6 +14471,8 @@ core protecting the flag.
 
 		$p->{'alive'}=1;
 		$p->{'spawn'}=$e->{'time'};
+
+		mem->game($p, 'active')=1;
 
 		race::spawn($p);
 
@@ -14385,8 +14551,8 @@ core protecting the flag.
 		if(xx::enabled && xx::config('logPositions')) {
 			foreach my $player (player::list) {
 				if(exists($pos->{$player->{'player'}})) {
-					$player->{'stats'}{'was'}=$player->{'stats'}{'pos'};
-					$player->{'stats'}{'pos'}=$pos->{$player->{'player'}};
+					mem->game('was', $p)=mem->game('pos', $p);
+					mem->game('pos', $p)=$pos->{$player->{'player'}};
 				}
 			}
 		}
@@ -14398,12 +14564,12 @@ core protecting the flag.
 		my($a2)=player::lookup($e->{'secondaryAssister'});
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 
-		$p->{'stats'}{'goals'}++;
-		$a->{'stats'}{'assists'}++;
-		$a2->{'stats'}{'assists'}++;
+		mem->game('goals', $p)++;
+		mem->game('assists', $a)++ if($a);
+		mem->game('assists', $a2)++ if($a2);
 
 		foreach my $player (player::list) {
-			$player->{'stats'}{'played'}+=$e->{'time'}-$player->{'spawn'};
+			mem->game('played', $player)+=$e->{'time'}-$player->{'spawn'};
 		}
 
 		records::help($p, 20);
@@ -14507,7 +14673,7 @@ core protecting the flag.
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
 		my($timers)=stash::get($p->{'team'}, 'timers', map::name, 'map');
-		my($spawn)=$p->{'stats'}{'spawns'}[-1];
+		my($spawn)=mem->game('spawns', $p)->[-1];
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my(@fake_event)=();
 
@@ -14532,7 +14698,7 @@ core protecting the flag.
 			map::goalbox($e) eq map::side($p)	&&
 			map::going_in($e)
 		) {
-			$p->{'stats'}{'saves'}++;
+			mem->game('saves', $p)++;
 			chat::snark($p, 'Nice Save', $p->{'nickname'}) if(chat::snarky);
 		}
 
@@ -14725,9 +14891,9 @@ core protecting the flag.
 		}
 
 		if($p && !$p->{'isBot'} && $p->{'team'}!=$v->{'team'}) {
-			$p->{'stats'}{'powerkill'}++ if($v->{'carrier'});
-			$p->{'stats'}{'kills'}++;
-			$p->{'stats'}{'kill'}{$v->{'nickname'}}++ unless($v->{'isBot'});
+			mem->game('powerkill', $p)++ if($v->{'carrier'});
+			mem->game('kills', $p)++;
+			mem->game($v, 'kill', $p)++ unless($v->{'isBot'});
 
 			if(map::type('mdg')) {
 				if(plus::prey($p)) {
@@ -14749,12 +14915,12 @@ core protecting the flag.
 		}
 
 		if($v && !$v->{'isBot'}) {
-			$v->{'stats'}{'fumble'}++ if($v->{'carrier'});
-			$v->{'stats'}{'played'}+=$e->{'time'}-$v->{'spawn'};
-			$v->{'stats'}{'died'}++;
+			mem->game('fumble', $v)++ if($v->{'carrier'});
+			mem->game('played', $v)+=$e->{'time'}-$v->{'spawn'};
+			mem->game('died', $v)++;
 
 			if($is_crash) {
-				$v->{'stats'}{'crashes'}++;
+				mem->game('crashes', $v)++;
 
 				if(	$v->{'perkGreen'} eq 'Rubberized Hull'	&&
 					$v->{'perkBlue'}  eq 'Reverse Thrust'	&&
@@ -14809,7 +14975,7 @@ core protecting the flag.
 					mem->game('wrong', $p)/=2;
 				} else {
 					chat::whisper($p, 'Only kill the player who is it! (',
-						mem->game('wrong', $p), '/', $limit, ')');
+						int(mem->game('wrong', $p)), '/', $limit, ')');
 				}
 			}
 		}
@@ -14824,7 +14990,7 @@ core protecting the flag.
 					mem->game('wrong', $p)/=2;
 				} else {
 					chat::whisper($p, "Don't kill your teammates! (",
-						mem->game('wrong', $p), '/', $limit, ')');
+						int(mem->game('wrong', $p)), '/', $limit, ')');
 				}
 			}
 		}
@@ -14851,14 +15017,14 @@ core protecting the flag.
 
 		if($p->{'team'} == $v->{'team'}) {
 			records::help($p, -5);
-			$p->{'stats'}{'collateral'}++;
+			mem->game('collateral', $p)++;
 			chat::snark($v, "$v->{'nickname'} was killed by friendly fire");
 		} elsif($e->{'multi'}>5) {
 			chat::snark($p, "$p->{'nickname'} says Booyah!!");
 		} elsif($e->{'streak'}>10 && $e->{'streak'}%2) {
 			chat::snark($p, "$p->{'nickname'}: $e->{'streak'}");
-		} elsif(($v->{'stats'}{'died'}%10)==0 && player::count>4) {
-			if($p->{'stats'}{'kill'}{$v->{'nickname'}} > $v->{'stats'}{'died'}/(player::count()/4)) {
+		} elsif((mem->game('died', $v)%10)==0 && player::count>4) {
+			if(mem->game($v, 'kill', $p) > mem->game('died', $v)/(player::count()/4)) {
 				if(chat::snarky) {
 					chat::snark($v, "$p->{'nickname'} must really like killing $v->{'nickname'}");
 				}
@@ -14884,11 +15050,11 @@ core protecting the flag.
 			records::help($p, $e->{'xp'}-5);
 
 			if(map::mode('1de', '1bd')) {
-				$p->{'stats'}{'base'}+=4;
+				mem->game('base', $p)+=4;
 
 				rank::score($p->{'team'}, 4);
 			} else {
-				$p->{'stats'}{'base'}+=$e->{'xp'}/30;
+				mem->game('base', $p)+=$e->{'xp'}/30;
 
 				rank::score($p->{'team'}, $e->{'xp'}/30);
 			}
@@ -14900,7 +15066,7 @@ core protecting the flag.
 	'structureDestroy'	=> sub {
 		my($e, $p)=@_;
 
-		$p->{'stats'}{$e->{'target'}}++;
+		mem->game($e->{'target'}, $p)++;
 
 		if($e->{'target'} eq 'base') {
 			records::help($p, 10);
@@ -14911,7 +15077,7 @@ core protecting the flag.
 		plus::destroy($e, $p);
 		records::destroy($e, $p);
 
-		if( ($p->{'stats'}{$e->{'target'}} % 35)==0 ) {
+		if( (mem->game($e->{'target'}, $p) % 35)==0 ) {
 			chat::snark($p, "$p->{'nickname'} is tearing down the house");
 		}
 	},
@@ -14967,21 +15133,23 @@ core protecting the flag.
 					records::help($player, -1);
 				}
 			} elsif(map::type('tag') && plus::hunted($player) && $now%2) {
-				$it=$e->{'time'} - $player->{'stats'}{'tagged'};
+				$it=$e->{'time'} - mem->game('tagged', $player);
 
 				if($player->{'alive'}) {
 					if($it < (24000+$count*3000)) {
 						chat::all($player->{'nickname'},
 							utils::usecs2mins($it));
-					} elsif($it<120000 && exists($player->{'stats'}{'pos'})) {
-						chat::allf('%s %s  (%s)', $player->{'nickname'},
-							utils::usecs2mins($it),
-							map::area($player->{'stats'}{'pos'}));
-					} elsif(exists($player->{'stats'}{'pos'})) {
-						chat::allf('%s %s  (%s: %s)', $player->{'nickname'},
-							utils::usecs2mins($it),
-							map::area($player->{'stats'}{'pos'}),
-							$player->{'stats'}{'pos'});
+					} elsif(mem->exists->game('pos', $player)) {
+						if($it<120000) {
+							chat::allf('%s %s  (%s)', $player->{'nickname'},
+								utils::usecs2mins($it),
+								map::area(mem->game('pos', $player)));
+						} else {
+							chat::allf('%s %s  (%s: %s)', $player->{'nickname'},
+								utils::usecs2mins($it),
+								map::area(mem->game('pos', $player)),
+								mem->game('pos', $player));
+						}
 					} else {
 						server::trigger('logPlanePositions', 'pingSummary',
 							$player, $it);
@@ -15100,10 +15268,6 @@ core protecting the flag.
 		my($pls)=$e->{'participants'};
 		my($place)=0;
 		my(%it)=();
-		my($ratio)=[];
-		my($cps)=[];
-		my($saves)=[];
-		my($keys)=[];
 		my($player, $n);
 
 		queue::clear;
@@ -15116,83 +15280,105 @@ core protecting the flag.
 		for(my $i=0; $i<@$pls; $i++) {
 			$player=player::lookup($pls->[$i]);
 
+			next if($player->{'isBot'});
+
 			foreach my $stat (keys(%stats)) {
 				mem->game($player, $stat, 'stats')+=$stats{$stat}[$i];
 			}
+
+			mem->game($player, 'Saves', 'stats')+=mem->game('saves', $player);
+			mem->game($player, 'Keys', 'stats')+=mem->game('keys', $player);
+			mem->game($player, 'Checkpoints', 'stats')+=mem->game('first_cp', $player);
+
+			mem->game($player, 'Ratio', 'stats')=
+				(mem->game($player, 'Kills', 'stats')//0) /
+				(mem->game($player, 'Deaths', 'stats')||0.9);
 		}
 
 		if(config::option('awards') && player::count>2) {
-			if($stats{'Crashes'} && List::Util::max(@{$stats{'Crashes'}})>8) {
-				plus::most('Training Wheels Award: ', $stats{'Crashes'}, $pls);
+			plus::most(
+					'Training Wheels Award: ',
+					mem->game('Crashes', 'stats'),
+					8
+				);
+
+			if(!map::type('race')) {
+				plus::most(
+					'Kenny McCormick Award: ',
+					mem->game('Deaths', 'stats'),
+					8
+				);
+				plus::most(
+					'Tank Award: ',
+					mem->game('Damage Received', 'stats'),
+					25
+				);
 			}
-			if($stats{'Deaths'} && !map::type('race')) {
-				plus::most('Kenny McCormick Award: ', $stats{'Deaths'}, $pls);
-			}
-			if($stats{'Damage Dealt'} && !map::type('race') && !(map::type('std') && map::mode('ball'))) {
-				plus::most('Sledge Hammer Award: ', $stats{'Damage Dealt'}, $pls);
-			}
-			if($stats{'Damage Received'} && !map::type('race')) {
-				plus::most('Tank Award: ', $stats{'Damage Received'}, $pls);
+			if(!map::type('race') && !(map::type('std') && map::mode('ball'))) {
+				plus::most(
+					'Sledge Hammer Award: ',
+					mem->game('Damage Dealt', 'stats'),
+					25
+				);
 			}
 	
-			if($stats{'Kills'} && $stats{'Deaths'} && !map::type('coop')) {
-				for(my $i=0; $i<@$pls; $i++) {
-					$stats{'Deaths'}->[$i]=1 unless($stats{'Deaths'}->[$i]);
-					$ratio->[$i]=$stats{'Kills'}->[$i]/$stats{'Deaths'}->[$i];
-				}
-				plus::most('Best Ratio: ', $ratio, $pls);
+			if(!map::type('coop')) {
+				plus::most(
+					'Best Ratio: ',
+					mem->game('Ratio', 'stats'),
+					1
+				);
 			}
 
 			if(map::type('race')) {
-				for(my $i=0; $i<@$pls; $i++) {
-					$player=player::lookup($pls->[$i]);
-					$cps->[$i]=$player->{'stats'}{'first_cp'} if($player);
-				}
-				plus::most('Front Runner: ', $cps, $pls);
+				plus::most(
+					'Front Runner: ',
+					mem->game('Checkpoints', 'stats'),
+					2
+				);
 			}
 
 			if(map::mode('ball')) {
-				for(my $i=0; $i<@$pls; $i++) {
-					$player=player::lookup($pls->[$i]);
-					$saves->[$i]=$player->{'stats'}{'saves'} if($player);
-				}
-				plus::most('Savior Award: ', $saves, $pls);
+				plus::most(
+					'Savior Award: ',
+					mem->game('Saves', 'stats'),
+					5
+				);
 			}
 
-			if('key master stats') {
-				for(my $i=0; $i<@$pls; $i++) {
-					if($player=player::lookup($pls->[$i])) {
-						$keys->[$i]=$player->{'stats'}{'keys'};
-					}
-				}
-				plus::most('Key Master: ', $keys, $pls);
-			}
+			plus::most(
+				'Key Master: ',
+				mem->game('Keys', 'stats'),
+				2
+			);
 
 			foreach my $v (player::list) {
 				$n=$v;
 				foreach my $p (player::list) {
-					$n=$p if(	$p->{'stats'}{'kill'}{$v->{'nickname'}} >
-					 		$n->{'stats'}{'kill'}{$v->{'nickname'}}	);
+					$n=$p if(	mem->game($v, 'kill', $p) >
+					 		mem->game($v, 'kill', $n) );
 				}
 
 				chat::whisper($v, 'Your Nemisis:', $n->{'nickname'})
-					if($n->{'stats'}{'kill'}{$v->{'nickname'}}>2);
+					if(mem->game($v, 'kill', $n)>2);
 			}
 		}
 
 		plus::finish_hunted;
 
 		foreach my $p (player::list) {
-			$p->{'stats'}{'played'}+=$e->{'time'} - $p->{'spawn'};
+			mem->game('played', $p)+=$e->{'time'} - $p->{'spawn'};
 
 			$p->{'alive'}=0;
 
 			rank::enter($p);
 
 			log::player($p);
+		}
 
-			if($p->{'stats'}{'it'}) {
-				$it{$p->{'nickname'}}=$p->{'stats'}{'it'};
+		foreach my $vid (mem->keys->game('active')) {
+			if(mem->game('it', $vid)) {
+				$it{mem->player('nickname', $vid)}=mem->game('it', $vid);
 			}
 		}
 
