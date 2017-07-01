@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.48';
+my($VERSION)='4.49';
 
 =head1 NAME
 
@@ -8883,6 +8883,10 @@ play though extended interfaces and server support.
 		my(@teams)=map::teams;
 		my($assign)=stash::get('assignTeam', map::name, 'map');
 
+		$Hunted=undef;
+		$Active=0;
+		$Captured=0;
+
 		mem->new_round;	#Setup stats and info table for new round
 		#$Hunted=undef;	#Should hunted change per round?
 
@@ -10048,9 +10052,6 @@ play though extended interfaces and server support.
 		my($assign)=stash::get('assignTeam', map::name, 'map');
 
 		%Reset=();
-		$Hunted=undef;
-		$Active=0;
-		$Captured=0;
 
 		player::reset;
 
