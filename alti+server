@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.49';
+my($VERSION)='4.50';
 
 =head1 NAME
 
@@ -3825,7 +3825,7 @@ garunteed to keep the format correct.
 							'allow_join_tournament'	=> json::false,
 							'commands_target_bots'	=> json::true,
 							'prevent_team_change'	=> json::false,
-							'name_prefix'			=> 'Bot ',
+							'name_prefix'			=> ' ',
 							'names'				=> [
 								'Alice',
 								'Bob',
@@ -9019,7 +9019,9 @@ play though extended interfaces and server support.
 			server::send('botPlaneRandom', 0);
 		}
 
-		xx::setup_bot(split(m/,/, utils::pluck(@keys))) if(xx::enabled);
+		if(@keys && xx::enabled) {
+			xx::setup_bot(split(m/,/, utils::pluck(@keys)));
+		}
 	}
 
 	sub build_planes {
