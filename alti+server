@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.50';
+my($VERSION)='4.51';
 
 =head1 NAME
 
@@ -1288,6 +1288,37 @@ L<perl(1)> should be used to ensure basic operation.
 		return($x+$d*cos($a), $y+$d*sin($a));
 	}
 
+	sub heading {
+		my($a)=@_;
+
+		if($a < -157.5) {
+			return('w');
+		} elsif($a<-112.5) {
+			return('sw');
+		} elsif($a<-67.5) {
+			return('s')
+		} elsif($a<-22.5) {
+			return('se')
+		} elsif($a<22.5) {
+			return('e');
+		} elsif($a<67.5) {
+			return('ne');
+		} elsif($a<112.5) {
+			return('n');
+		} elsif($a<157.5) {
+			return('nw');
+		} elsif($a<202.5) {
+			return('w');
+		} elsif($a<247.5) {
+			return('sw');
+		} elsif($a<292.5) {
+			return('s');
+		} elsif($a<337.5) {
+			return('se');
+		} else {
+			return('e');
+		}
+	}
 
 	sub transform {
 		my($t, $x, $y)=@_;
@@ -3057,7 +3088,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 		my($mapdir)=&option('mapDir');
 
 		if(&option('xxEnabled')) {
-			$packet_space+=$MB;
+			$packet_space=4095;
 			$Maplimit=1000;
 		}
 
@@ -3804,6 +3835,9 @@ garunteed to keep the format correct.
 			$Global[0]					=> {
 				$Global[1]				=> {
 					'fix_commands_latency'	=> json::true,
+					'features'			=> {
+						'log_plane_angle'	=> json::true,
+					},
 					'client_commands'		=> [
 					],
 				},
@@ -8608,11 +8642,10 @@ interface.
 
 	sub set_win {
 		my($score)=stash::get('win', map::name, 'map');
+		my($assign)=stash::get('assignTeam', map::name, 'map');
 		
 		if(@_) {
 			@Win=@_;
-		} elsif(map::mode('ball')) {
-			@Win=($config::Launcher{'goals'}, $config::Launcher{'goals'});
 		} elsif($score && @$score==2) {
 			@Win=@$score;
 		} elsif(map::type('ruin')) {
@@ -8620,6 +8653,14 @@ interface.
 				mem->game('total', map::team_number('left'), 'structure'),
 				mem->game('total', map::team_number('right'), 'structure'),
 			);
+
+			if(map::left($assign)) {
+				$Win[1]=$config::Launcher{'goals'};
+			} elsif(map::right($assign)) {
+				$Win[0]=$config::Launcher{'goals'};
+			}
+		} elsif(map::mode('ball')) {
+			@Win=($config::Launcher{'goals'}, $config::Launcher{'goals'});
 		} elsif($config::Launcher{'score'}{'tdm'}) {
 			@Win=(
 				$config::Launcher{'score'}{'tdm'},
@@ -8664,10 +8705,16 @@ interface.
 		}
 	}
 
+	sub get_score {
+		return(@Score);
+	}
+
 	sub set_score {
 		my($left)=POSIX::floor($_[0]);
 		my($right)=POSIX::floor($_[1]);
 
+		chat::debug('score', $left, $right);
+		ui::trace('set_score');
 		if(map::mode('ball')) {
 			server::send('overrideBallScore', $left, $right);
 		} elsif(map::mode('tdm') && xx::enabled) {
@@ -8678,7 +8725,7 @@ interface.
 	sub score {
 		my($p)=@_;
 
-		&update_score($p->{'team'}) if($p);
+		&update_score($p->{'team'}) if(ref($p) eq 'HASH');
 		&set_score(@Score);
 
 		return(@Score);
@@ -8710,13 +8757,17 @@ interface.
 		my($goals, $new);
 
 		if(map::left($p->{'team'})) {
-			$goals=$Win[0];
+			$goals=List::Util::min($config::Launcher{'goals'}, $Win[0]);
+			chat::debug('left win:', $goals);
 		} elsif(map::right($p->{'team'})) {
-			$goals=$Win[1];
+			$goals=List::Util::min($config::Launcher{'goals'}, $Win[1]);
+			chat::debug('right win:', $goals);
 		} else {
 			return(undef);
 		}
 		$new=POSIX::floor($amount*$goals);
+		chat::debug('new:', $new, ', amount:', $amount, ', goals:', $goals);
+		ui::trace('progress');
 
 		if($side eq 'left') {
 			return if($new==$Score[0]);
@@ -8922,7 +8973,7 @@ play though extended interfaces and server support.
 	sub score {
 		my($p)=@_;
 		my(@win)=ball::get_win;
-		my(@score)=ball::score($p);
+		my(@score)=ball::get_score;
 
 		return if(race::on);
 
@@ -8942,11 +8993,15 @@ play though extended interfaces and server support.
 				chat::debug('left');
 				mem->game('winner')='left';
 				records::winner($p);
+				ball::set_score($win[0], 0) if($win[1]>=$win[0]);
+				sleep(1);
 				xx::set_time(0);
 			} elsif(map::right($p->{'team'}) && $score[1] >= $win[1]) {
 				chat::debug('right');
 				mem->game('winner')='right';
 				records::winner($p);
+				ball::set_score(0, $win[1]) if($win[0]>=$win[1]);
+				sleep(1);
 				xx::set_time(0);
 			}
 		}
@@ -9028,6 +9083,34 @@ play though extended interfaces and server support.
 		my($planes)=stash::get('planes', map::name, 'map');
 		my($bots)=stash::get('bots', map::name, 'map');
 		my(%setups)=utils::all_setups;
+		my(%allowed)=(
+			'Full Random'		=> 0,
+			'Config Random'	=> 0,
+			'Tracker'			=> 0,
+			'Double Fire'		=> 0,
+			'Acid Bomb'		=> 0,
+			'Suppressor'		=> 0,
+			'Bombs'			=> 0,
+			'Flak Tailgun'		=> 0,
+			'Director'		=> 0,
+			'Thermobarics'		=> 0,
+			'Remote Mine'		=> 0,
+			'Dogfighter'		=> 0,
+			'Recoilless Gun'	=> 0,
+			'Heavy Cannon'		=> 0,
+			'Trickster'		=> 0,
+			'Laser'			=> 0,
+			'Time Anchor'		=> 0,
+			'Rubberized Hull'	=> 0,
+			'Heavy Armor'		=> 0,
+			'Repair Drone'		=> 0,
+			'Flexible Wings'	=> 0,
+			'Turbocharger'		=> 0,
+			'Ultracapacitor'	=> 0,
+			'Reverse Thrust'	=> 0,
+			'Ace Instincts'	=> 0,
+		);
+		my($restriction);
 
 		%Planes=();
 		%Bots=();
@@ -9076,8 +9159,39 @@ play though extended interfaces and server support.
 			}
 		}
 
-		if(%Bots || %Planes) {
-			&next_bot;
+		if(xx::enabled) {
+			server::send('resetPerks');
+
+			if($planes) {
+				$restriction='Planes: '.join(', ', map(
+					$planes->{$_}.utils::simplify($_), sort(keys(%$planes))
+				));
+			} else {
+				$allowed{'Full Random'}++;
+				$allowed{'Config Random'}++;
+			}
+
+			if(%Planes) {
+				foreach my $setup (keys(%Planes)) {
+					foreach my $perk (split(m/,+/, $setup)) {
+						$allowed{$perk}++;
+					}
+				}
+
+				foreach my $perk (keys(%allowed)) {
+					unless($allowed{$perk}) {
+						if($restriction) {
+							server::send('blockPerk', $perk, $restriction);
+						} else {
+							server::send('blockPerk', $perk, "$perk disallowed");
+						}
+					}
+				}
+			}
+
+			if(%Bots) {
+				&next_bot;
+			}
 		}
 	}
 
@@ -9548,7 +9662,7 @@ play though extended interfaces and server support.
 		my($e, $p)=@_;
 		my($pickup)=join(',', @$e{'positionX','positionY'});
 		my($checkpoints)=stash::get($p->{'team'}, 'powerups', map::name, 'map');
-		my($count)=$config::Launcher{'goals'};
+		my($count)=ball::get_win($p);
 		my($cp)=$checkpoints && $checkpoints->{$pickup};
 		my(@powerups)=();
 		my($is_cp)=0;
@@ -9557,10 +9671,6 @@ play though extended interfaces and server support.
 		return unless(defined($cp));
 		return unless(map::mode('ball', 'tdm'));
 		return if(&game_over);
-
-		if(map::mode('tdm')) {
-			$count=List::Util::max(@{stash::get('score', map::name, 'map')});
-		}
 
 		#Initialize team stats:
 		unless(mem->game($p->{'team'}, 'cp')) {
@@ -9632,7 +9742,12 @@ play though extended interfaces and server support.
 
 			$progress=1-$remaining/$total;
 
-			ball::progress($p, $progress);
+			chat::debug('remaining:', $remaining, ', total:', $total, ', progress:', $progress);
+			if(map::mode('ball')) {
+				ball::progress($p, $progress);
+			} else {
+				ball::score($p);
+			}
 			plus::score($p);
 
 			if($remaining>0 && $remaining<=5 && $progress>0.85) {
@@ -14910,6 +15025,10 @@ core protecting the flag.
 						$e->{'player'}	=> join(',',
 							$e->{'positionX'}+$e->{'playerVelX'},
 							$e->{'positionY'}+$e->{'playerVelY'},
+							plus::angle(
+								$e->{'positionX'}+$e->{'playerVelX'},
+								$e->{'positionY'}+$e->{'playerVelY'},
+							),
 						),
 					},
 				}, player::server
@@ -15038,9 +15157,25 @@ core protecting the flag.
 			if(map::mode('tdm')) {
 				if(map::type('race')) {
 					ball::score;
-				} elsif(map::type('ruin') && $v && $v->{'isBot'}) {
-					ball::score;
+				} elsif(map::type('ruin')) {
+					if($v && $v->{'isBot'}) {
+						ball::score('reset');
+					} elsif($assign && $p->{'isBot'}) {
+						ball::score($p);
+						plus::score($p);
+					}
 				} elsif($v && $v->{'team'} != $p->{'team'}) {
+					ball::score($p);
+					plus::score($p);
+					rank::score($p->{'team'}, 1);
+				}
+			} elsif(map::mode('ball')) {
+				if(map::type('ruin')
+					&& $assign
+					&& $p->{'isBot'}
+					&& $v && !$v->{'isBot'}
+				) {
+					ball::score($p);
 					plus::score($p);
 					rank::score($p->{'team'}, 1);
 				}
@@ -15171,6 +15306,7 @@ core protecting the flag.
 				} elsif($p->{'team'} == $v->{'team'}) {
 					'friendly fire';
 				} else {
+					ball::score($p);
 					plus::score($p);
 				}
 			}
@@ -15287,7 +15423,7 @@ core protecting the flag.
 		my(%pings)=%{$e->{'pingByPlayer'}};
 		my($count)=player::count;
 		my($now)=time();
-		my($player, $it);
+		my($player, $it, $pos);
 
 		foreach my $player_id (keys(%pings)) {
 			$player=player::lookup($player_id);
@@ -15307,15 +15443,20 @@ core protecting the flag.
 						chat::all($player->{'nickname'},
 							utils::usecs2mins($it));
 					} elsif(mem->exists->game('pos', $player)) {
+						$pos=mem->game('pos', $player);
+						if($pos=~m/^([\d.-]+),([\d.-]+),([\d.-]+)$/) {
+							$pos=join(',', $1, $2, utils::heading($3));
+						}
+
 						if($it<120000) {
 							chat::allf('%s %s  (%s)', $player->{'nickname'},
 								utils::usecs2mins($it),
-								map::area(mem->game('pos', $player)));
+								map::area($pos));
 						} else {
 							chat::allf('%s %s  (%s: %s)', $player->{'nickname'},
 								utils::usecs2mins($it),
-								map::area(mem->game('pos', $player)),
-								mem->game('pos', $player));
+								map::area($pos),
+								$pos);
 						}
 					} else {
 						server::trigger('logPlanePositions', 'pingSummary',
@@ -15344,7 +15485,11 @@ core protecting the flag.
 		my($pos)=$e->{'positionByPlayer'}{$player->{'player'}};
 		my($count)=player::count;
 
-		return if($pos eq '-1,-1');
+		return if($pos eq '-1,-1' || $pos eq '-1,-1,-1');
+
+		if($pos=~m/^([\d.-]+),([\d.-]+),([\d.-]+)$/) {
+			$pos=join(',', $1, $2, utils::heading($3));
+		}
 
 		if($it < (24000+$count*3000)) {
 			chat::all($player->{'nickname'}, utils::usecs2mins($it));
