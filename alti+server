@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.51';
+my($VERSION)='4.52';
 
 =head1 NAME
 
@@ -9600,6 +9600,7 @@ play though extended interfaces and server support.
 
 			chat::all($p->{'nickname'}, 'captured the flag!');
 			mem->game('capture', $p)++;
+			ball::score($p);
 			&score($p);
 			$Captured=$e->{'time'};
 		}
@@ -9695,6 +9696,7 @@ play though extended interfaces and server support.
 
 		if($p_stats->[0] eq $cp) {
 			if($t_stats->[0] eq $cp && @$p_stats == @$t_stats) {
+				ball::score($p);
 				&score($p);
 				mem->game('first_cp', $p)++;
 				chat::all($p->{'nickname'}, ': checkpoint', $cp, 'for',
