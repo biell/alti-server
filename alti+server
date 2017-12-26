@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.53';
+my($VERSION)='4.54';
 
 =head1 NAME
 
@@ -92,7 +92,7 @@ my(%OPTIONS)=(
 );
 
 my(@MODES)=qw(1bd 1de 1dm ball ffa tbd tdm);
-my(@TYPES)=qw(coop flag mdg tag race ruin zone 1lh);
+my(@TYPES)=qw(coop flag mdg tag race ruin zone 1lh 4ball);
 
 my($OPTIONS_HIDE)='pass|secret|token|auth';
 my($MB)=2**20;
@@ -6229,6 +6229,8 @@ types which alter the normal behavior.
 			$Map->{'type'}='tag';
 		} elsif(m/(^|_)1lh(_|$)/i) {
 			$Map->{'type'}='1lh';
+		} elsif(m/(^|_)(4ball|ball_4)/i) {
+			$Map->{'type'}='4ball';
 		} else {
 			$Map->{'type'}='std';
 		}
@@ -10202,6 +10204,12 @@ play though extended interfaces and server support.
 			stash::set('spawnHealth', map::name, 'map', 10) unless($health);
 			stash::set('weapons', map::name, 'map', 2) unless($weapons);
 			stash::set('planes', map::name, 'map', $bip) unless($planes);
+		} elsif(map::type('4ball')) {
+			my($camera)=stash::get('cameraScale', map::name, 'map');
+			my($maxp)=stash::get('maxPlayers', map::name, 'map');
+
+			stash::set('cameraScale', map::name, 'map', 110) unless($camera);
+			stash::set('maxPlayers', map::name, 'map', 8) unless($maxp);
 		}
 
 		if(map::type('race', 'mdg', 'tag') && xx::enabled) {
@@ -13061,7 +13069,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'These are Alti+ game types, which are extentions to the mode');
 		chat::whisper($p, '/list gameType');
-		chat::whisper($p, '/set gameType <mapname|std|coop|race|ruin|flag|zone|mdg|1lh>');
+		chat::whisper($p, '/set gameType <mapname|std|coop|race|ruin|flag|zone|mdg|1lh|4ball>');
 		chat::whisper($p, '/unset gameType');
 		chat::whisper($p, 'mapname causes the type to be inferred from the map name');
 	},
