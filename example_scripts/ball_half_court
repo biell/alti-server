@@ -26,13 +26,14 @@ HOOKS {
 		my($e, $p)=@_;
 		
 		return unless($e->{'powerup'} eq 'Ball');
+		return unless($e->{'time'}>$DEAD);
 
 		if($TEAM) {
 			if($p->{'team'} != $TEAM) {
 				server::send('resetBallTeam', -1);
 				plus::spawn_here($p, 1235, 360, 'w');
 				plus::clear_spawn($p);
-				$DEAD=$e->{'time'}+4000;
+				$DEAD=$e->{'time'}+3000;
 			}
 		}
 

@@ -12,7 +12,6 @@
 #  /add plane Loopy,Acid
 #  /add plane Bomber
 #  /add plane Biplane
-#  /set gravity 2
 #  /set botCount 0
 
 MAP 'ball_dodgeball';
@@ -60,7 +59,6 @@ sub eliminate {
 		$p->{'nickname'}, ($time-$DB{'safe'}{$vid})/1000, $DB{'count'}{$vid}+$inc);
 
 	return if($p->{'isBot'});
-	return if($time<$DB{'safe'}{$vid});
 
 	$DB{'count'}{$vid}+=$inc;
 	$DB{'safe'}{$vid}=$time+2000;
@@ -78,9 +76,12 @@ sub eliminate {
 sub position_check {
 	my($p, $x)=@_;
 
+	chat::debugf('position %s: side(%s) color(%s) x(%d)',
+		$p->{'nickname'}, map::side($p), map::team_color($p->{'team'}), $x);
+
 	if(
-		(map::left($p->{'team'})  && $x>642)  ||
-		(map::right($p->{'team'}) && $x<638)
+		(map::left($p->{'team'})  && $x>645)  ||
+		(map::right($p->{'team'}) && $x<635)
 	) {
 		&eliminate($p, 1);
 		chat::whisper($p, "Don't cross the line");
@@ -216,6 +217,7 @@ HOOKS {
 		my($vid)=$p->{'vaporId'};
 
 		$DB{'safe'}{$vid}=$e->{'time'}+3000;
+		$DB{'timer'}{$vid}=$e->{'time'}+30000;
 	},
 
 	'powerupUse'		=> sub {
@@ -237,6 +239,7 @@ HOOKS {
 	'powerupPickup'	=> sub {
 		my($e, $p)=@_;
 		my($vid)=$p->{'vaporId'};
+		my($time)=server::time;
 
 		chat::debugf('powerupPickup %s: shoot(%s) catch(%s) out(%.1f)',
 			$p->{'nickname'}, map::side($DB{'shoot'}), map::side($p), ($e->{'time'}-$DB{'hot'})/1000);
@@ -244,7 +247,8 @@ HOOKS {
 		if(
 			$DB{'shoot'}                          &&
 			$DB{'shoot'}{'team'} != $p->{'team'}  &&
-			$e->{'time'} < $DB{'hot'}
+			$e->{'time'} < $DB{'hot'}             &&
+			$time > $DB{'safe'}{$vid}
 		) {
 			$DB{'shoot'}=undef;
 			$DB{'carry'}=undef;
@@ -264,9 +268,9 @@ HOOKS {
 		my($v)=player::lookup($e->{'victim'});
 		my($vid)=$v->{'vaporId'};
 
-		return if($p->{'isBot'});
-
 		&position_check($v, $e->{'victimPositionX'});
+
+		return if($p->{'isBot'});
 
 		$DB{'safe'}{$vid}=$e->{'time'}+3000;
 		$DB{'timer'}{$vid}=$e->{'time'}+25000;
@@ -288,7 +292,11 @@ HOOKS {
 			$player=player::lookup($vid);
 
 			if($player && $player->{'alive'}) {
-				plus::bench($player) if($DB{'count'}{$vid}>=$DB{'outs'});
+				if($DB{'count'}{$vid}>=$DB{'outs'}) {
+					plus::bench($player);
+				} else {
+					$DB{'timer'}{$vid}=$e->{'time'}+30000;
+				}
 			} else {
 				if($e->{'time'}>$DB{'timer'}{$vid}) {
 					$DB{'timer'}{$vid}=$e->{'time'}+20000;

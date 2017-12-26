@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.52';
+my($VERSION)='4.53';
 
 =head1 NAME
 
@@ -138,6 +138,7 @@ my($FATAL_SERVER_ERRORS)=join('|',
 	'No suitable Java Virtual Machine could be found',
 	'no available nuons!',
 	'ERROR : serverLoop disrupted',
+	'ERROR : INVALID SERVER KEEP LOGGED IN RESPONSE: Your IP',
 );
 
 my(%CURL_RV)=(
@@ -9996,20 +9997,36 @@ play though extended interfaces and server support.
 	sub playing {
 		my($p)=@_;
 
-		return(mem->player($p, 'playing'));
+		return(mem->game($p, 'playing'));
 	}
 
 	sub leave {
 		my($p)=@_;
+		my($max)=stash::get('maxPlayers', map::name, 'map') || $config::Maxp;
 
-		if(mem->player($p, 'playing')) {
-			delete($Restart{$p});
-			queue::schedule { &restart_print; } 0;
+		return if(tourney::on);
 
-			mem->delete->player($p, 'playing');
-			if(mem->game('players') > 0) {
-				mem->game('players')--;
+		if(mem->game($p, 'playing')) {
+			if(delete($Restart{$p})) {
+				queue::schedule { &restart_print; } 0;
 			}
+
+			queue::schedule {
+				unless(player::lookup($p->{'vaporId'})) {
+					mem->delete->game($p, 'playing');
+
+					if(mem->game('players') > 0) {
+						mem->game('players')--;
+					}
+
+					chat::team('spec', 'A spot is open to join');
+				}
+			} 15;
+
+			if(mem->game('players')>=$max) {
+				chat::team('spec', $p->{'nickname'}, 'has 15 seconds to rejoin');
+			}
+
 			return(1);
 		} else {
 			return(0);
@@ -10127,13 +10144,13 @@ play though extended interfaces and server support.
 
 		if(!race::allowed($p)) {
 			return(0);
-		} elsif(mem->player($p, 'playing')) {  #Already entered
+		} elsif(mem->game($p, 'playing')) {  #Already entered
 			return(1);
 		} elsif(mem->game('players') < $max) {
 			queue::schedule { &restart_print; } 0;
 			&zone_init($p) if(stash::get('keys', map::name, 'map') & 1);
 
-			mem->player($p, 'playing')=1;
+			mem->game($p, 'playing')=1;
 			mem->game('players')++;
 			return(1);
 		} else {
@@ -14631,6 +14648,8 @@ core protecting the flag.
 			$p->{'team'}=-1;
 			player::infraction($p, 0.2);
 
+			chat::whisper($p, 'Maximum player count reached');
+
 			return;
 		}
 
@@ -14750,10 +14769,12 @@ core protecting the flag.
 			}
 		}
 
+		$p->{'joined'}=1;
 		$p->{'alive'}=1;
+		$p->{'team'}=$e->{'team'};
 		$p->{'spawn'}=$e->{'time'};
 
-		mem->game($p, 'active')=1;
+		mem->game('active', $p)=1;
 
 		race::spawn($p);
 
@@ -15422,6 +15443,7 @@ core protecting the flag.
 
 	'pingSummary'	=> sub {
 		my($e, $p)=@_;
+		my($map_team)=stash::get('assignTeam', map::name, 'map');
 		my(%pings)=%{$e->{'pingByPlayer'}};
 		my($count)=player::count;
 		my($now)=time();
@@ -15466,6 +15488,26 @@ core protecting the flag.
 					}
 				} elsif($it>10000) {
 					plus::change_hunted(player::random);
+				}
+			}
+
+			next unless($player->{'alive'});
+
+			#Check to make sure players are on the right team:
+			if(map::type('tag') && map::mode('tdm')) {
+				chat::debug("$player->{'nickname'}: $player->{'team'} == $map_team");
+				if(plus::hunted($player)) {
+					if($player->{'team'}==$map_team) {
+						if(map::right($map_team)) {
+							plus::assign($player, 'left');
+						} elsif(map::left($map_team)) {
+							plus::assign($player, 'right');
+						}
+					}
+				} else {
+					if($player->{'team'}!=$map_team) {
+						plus::assign($player, $map_team);
+					}
 				}
 			}
 		}
