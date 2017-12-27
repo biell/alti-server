@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.54';
+my($VERSION)='4.55';
 
 =head1 NAME
 
@@ -8706,6 +8706,12 @@ interface.
 		} elsif(map::right($team)) {
 			$Score[1]++;
 		}
+
+		if(xx::enabled) {
+			if($Score[0]>=$Win[0] || $Score[1]>=$Win[1]) {
+				server::send('endRound');
+			}
+		}
 	}
 
 	sub get_score {
@@ -10207,9 +10213,11 @@ play though extended interfaces and server support.
 		} elsif(map::type('4ball')) {
 			my($camera)=stash::get('cameraScale', map::name, 'map');
 			my($maxp)=stash::get('maxPlayers', map::name, 'map');
+			my($win)=stash::get('win', map::name, 'map');
 
 			stash::set('cameraScale', map::name, 'map', 110) unless($camera);
 			stash::set('maxPlayers', map::name, 'map', 8) unless($maxp);
+			stash::set('win', map::name, 'map', [4, 4]) unless($win);
 		}
 
 		if(map::type('race', 'mdg', 'tag') && xx::enabled) {
