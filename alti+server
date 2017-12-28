@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.55';
+my($VERSION)='4.56';
 
 =head1 NAME
 
@@ -2922,6 +2922,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 		$Launcher{'bots'}{'count'}=$config->{'BotConfig'}{'numberOfBots'};
 		$Launcher{'bots'}{'level'}=$config->{'BotConfig'}{'botDifficulty'};
+		$Launcher{'bots'}{'spec'}=$config->{'BotConfig'}{'botSpectateThreshold'};
 
 		$Launcher{'warmup'}={
 			'1bd' => $config->{'ObjectiveGameMode'}{'warmupTimeSeconds'},
@@ -5538,7 +5539,7 @@ directly with it to manage the instance.
 		s/\\/\\\\/g;
 		s/"/\\"/g;
 
-		if(m/[\s'`]/) {
+		if(m/[\s'`|]/) {
 			return('"'.$_.'"');
 		} else {
 			return($_);
@@ -8709,7 +8710,7 @@ interface.
 
 		if(xx::enabled) {
 			if($Score[0]>=$Win[0] || $Score[1]>=$Win[1]) {
-				server::send('endRound');
+				queue::schedule { server::send('endRound'); } 2.5;
 			}
 		}
 	}
@@ -10214,10 +10215,18 @@ play though extended interfaces and server support.
 			my($camera)=stash::get('cameraScale', map::name, 'map');
 			my($maxp)=stash::get('maxPlayers', map::name, 'map');
 			my($win)=stash::get('win', map::name, 'map');
+			my($bots)=stash::get('botCount', map::name, 'map');
 
 			stash::set('cameraScale', map::name, 'map', 110) unless($camera);
 			stash::set('maxPlayers', map::name, 'map', 8) unless($maxp);
 			stash::set('win', map::name, 'map', [4, 4]) unless($win);
+
+			unless(defined($bots)) {
+				$bots=$config::Launcher{'bots'}{'spec'}-1;
+				$bots=7 if($bots>7);
+
+				stash::set('botCount', map::name, 'map', $bots);
+			}
 		}
 
 		if(map::type('race', 'mdg', 'tag') && xx::enabled) {
@@ -14790,7 +14799,8 @@ core protecting the flag.
 		$p->{'team'}=$e->{'team'};
 		$p->{'spawn'}=$e->{'time'};
 
-		mem->game('active', $p)=1;
+		#Keep track of active players for tag winners
+		mem->game($p, 'active')=1;
 
 		race::spawn($p);
 
