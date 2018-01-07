@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.57';
+my($VERSION)='4.58';
 
 =head1 NAME
 
@@ -7544,6 +7544,10 @@ they make the top 5.
 
 		return unless(map::type(@types));
 
+		$time=sprintf("%0.2f", ($server::Time - $Start)/1000);
+
+		$save=0 unless($time>0);
+
 		$save=0 if(!defined($assign) && map::type('ruin'));
 
 		$save=0 if(defined($assign) && defined($win) && $assign!=$win);
@@ -7553,9 +7557,6 @@ they make the top 5.
 
 		$save=0 if(map::mode('ffa', 'tdm') && map::type('coop')
 				&& !plus::coop_timers());
-
-		$time=sprintf("%0.2f", ($server::Time - $Start)/1000);
-		return unless($time>0);
 
 		if(map::mode('tdm', '1dm', '1de', '1bd')) {
 			foreach my $player (keys(%Helpers)) {
@@ -7582,22 +7583,26 @@ they make the top 5.
 				$save=0;
 			}
 		} elsif(%Helpers && map::type('coop', 'ruin')) {
-			@nicks=sort({ $Helpers{$b} <=> $Helpers{$a} } keys(%Helpers));
+			if($Winner) {
+				@nicks=sort({ $Helpers{$b} <=> $Helpers{$a} } keys(%Helpers));
 
-			if($time>90 && $Helpers{$nicks[0]}>50 && !map::mode('1de', '1bd')) {
-				@nicks=grep($Helpers{$_}>25, @nicks);
-			} else {
-				@nicks=grep($Helpers{$_}>10, @nicks);
-			}
+				if($time>90 && $Helpers{$nicks[0]}>50 && !map::mode('1de', '1bd')) {
+					@nicks=grep($Helpers{$_}>25, @nicks);
+				} else {
+					@nicks=grep($Helpers{$_}>10, @nicks);
+				}
 
-			if(@nicks) {
-				splice(@nicks, 5, scalar(@nicks), $etal) if(@nicks>5);
-				push(@holder, join(', ', map(player::name($_), @nicks)));
-				if($holder[-1]=~m/, (,|$)/) { #DEBUG trailing comma issue
-					foreach my $rp (@nicks) {
-						ui::slog('record:', $Helpers{$rp}, json::encode($rp));
+				if(@nicks) {
+					splice(@nicks, 5, scalar(@nicks), $etal) if(@nicks>5);
+					push(@holder, join(', ', map(player::name($_), @nicks)));
+					if($holder[-1]=~m/, (,|$)/) { #DEBUG trailing comma issue
+						foreach my $rp (@nicks) {
+							ui::slog('record:', $Helpers{$rp}, json::encode($rp));
+						}
 					}
 				}
+			} else {
+				$save=0;
 			}
 		}
 
@@ -8927,17 +8932,9 @@ play though extended interfaces and server support.
 
 	sub pre_round {
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
-		my($zones);
 
 		if($Hunted && map::type('mdg', 'tag')) {
-			if(map::right($map_team)) {
-				$zones=stash::get('zones', map::left, 'zones', map::name, 'map');
-			} else {
-				$zones=stash::get('zones', map::right, 'zones', map::name, 'map');
-			}
-			if(ref($zones) eq 'HASH' && %$zones) {
-				plus::spawn_random($Hunted);
-			}
+			plus::spawn_random($Hunted);
 		}
 	}
 
@@ -9359,25 +9356,30 @@ play though extended interfaces and server support.
 
 	sub spawns {
 		my($p)=@_;
+		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($team)=$p->{'team'};
 		my($zones)=undef;
 		my(@points)=();
 
 		$team=100 if($team>100);
 
-		if($p->{'isBot'}) {
-			$zones=stash::get('zones', 'bot', 'zones', map::name, 'map');
-		}
+		if($spawn_mode eq 'team') {
+			@points=map::spawn_points($p);
+		} else {
+			if($p->{'isBot'}) {
+				$zones=stash::get('zones', 'bot', 'zones', map::name, 'map');
+			}
 
-		unless($zones) {
-			$zones=stash::get('zones', $team, 'zones', map::name, 'map');
-		}
+			unless($zones) {
+				$zones=stash::get('zones', $team, 'zones', map::name, 'map');
+			}
 
-		if(ref($zones)) {
-			foreach my $name (keys(%$zones)) {
-				next unless(mem->game($name, $team, 'zones') // 1);
-				next unless(mem->game($name, $team, 'zones', $p) // 1);
-				push(@points, $zones->{$name});
+			if(ref($zones)) {
+				foreach my $name (keys(%$zones)) {
+					next unless(mem->game($name, $team, 'zones') // 1);
+					next unless(mem->game($name, $team, 'zones', $p) // 1);
+					push(@points, $zones->{$name});
+				}
 			}
 		}
 
@@ -9455,8 +9457,13 @@ play though extended interfaces and server support.
 
 	sub spawn_random {
 		my($p)=@_;
-		my(@spawns)=&spawns($p);
-		my($random)=int(rand(@spawns));
+		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
+		my(@spawns, $random);
+
+		return unless($spawn_mode);
+
+		@spawns=&spawns($p);
+		$random=int(rand(@spawns));
 
 		if(@spawns) {
 			&spawn_here($p, @{$spawns[$random]});
@@ -12941,7 +12948,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'Change the behavior of how users spawn when they die, or pickup powerups');
 		chat::whisper($p, '/list spawnMode');
-		chat::whisper($p, '/set spawnMode <default|map|died|pickup|health|zone|near|after|portal>[,center|hmirror|vmirror]');
+		chat::whisper($p, '/set spawnMode <default|map|died|pickup|health|zone|team|near|after|portal>[,center|hmirror|vmirror]');
 		chat::whisper($p, '/unset spawnMode');
 	},
 
@@ -13002,6 +13009,9 @@ core protecting the flag.
 		} elsif($spawn=~m/zone/i) {
 			chat::all("Spawn zones enabled, use /spawnZone to use them");
 			stash::set('spawnMode', map::name, 'map', 'zone');
+		} elsif($spawn=~m/team/i) {
+			chat::all("Spawn on team zones from map always (even in TDM)");
+			stash::set('spawnMode', map::name, 'map', 'team');
 		} elsif($spawn=~m/near/i) {
 			chat::all("Spawn in closest zone enabled, use '/sz start' to spawn normal");
 			stash::set('spawnMode', map::name, 'map', 'near');
@@ -14527,6 +14537,7 @@ core protecting the flag.
 	'teamChange'		=> sub {
 		my($e, $p)=@_;
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
+		my($spawn_mode)=stash::get('assignTeam', map::name, 'map');
 		my($minlvl)=0;
 		my(@badge)=();
 		my(@found)=();
@@ -14542,9 +14553,8 @@ core protecting the flag.
 		}
 
 		if($p->{'isBot'}) {
-			$zones=stash::get('zones', 'bot', 'zones', map::name, 'map');
 			$p->{'team'}=$e->{'team'};
-			plus::spawn_random($p) if($zones);
+			plus::spawn_random($p);
 			return;
 		}
 
@@ -14681,14 +14691,8 @@ core protecting the flag.
 
 		#Ensure players are on the correct team:
 		if(map::type('mdg') && plus::prey($p)) {
-			if(map::right($map_team)) {
-				$zones=stash::get('zones', map::left, 'zones', map::name, 'map');
-			} else {
-				$zones=stash::get('zones', map::right, 'zones', map::name, 'map');
-			}
-			if(ref($zones) eq 'HASH' && %$zones) {
-				plus::spawn_random($p);
-			}
+			plus::spawn_random($p);
+
 			if(map::right($map_team) && map::right($p->{'team'})) {
 				plus::assign($p, 'left');
 			} elsif(map::left($map_team) && map::left($p->{'team'})) {
@@ -14718,7 +14722,6 @@ core protecting the flag.
 	'spawn'	=> sub {
 		my($e, $p)=@_;
 		my($map_team)=stash::get('assignTeam', map::name, 'map');
-		my($zones)=stash::get('zones', $p->{'team'}, 'zones', map::name, 'map');
 		my($timers)=stash::get('timers', map::name, 'map');
 		my(@records)=split(m/\W+/, config::option('recordsTypes'));
 		my($match);
@@ -14762,9 +14765,8 @@ core protecting the flag.
 
 		#Ensure players are on the correct team:
 		if(map::type('mdg') && plus::prey($p)) {
-			if(ref($zones) eq 'HASH' && %$zones) {
-				plus::spawn_random($p);
-			}
+			plus::spawn_random($p);
+
 			if(map::right($map_team) && map::right($p->{'team'})) {
 				plus::assign($p, 'left');
 			} elsif(map::left($map_team) && map::left($p->{'team'})) {
@@ -15197,7 +15199,6 @@ core protecting the flag.
 		my($v)=player::lookup($e->{'victim'});
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
 		my($assign)=stash::get('assignTeam', map::name, 'map');
-		my($zones)=stash::get('zones', map::name, 'map');
 		my($is_crash)=0;
 		my($angle, $limit);
 
@@ -15236,7 +15237,7 @@ core protecting the flag.
 			$v->{'alive'}=0;
 			ball::drop($v);
 
-			if($v->{'isBot'} && $zones && $zones->{'bot'}{'zones'}) {
+			if($v->{'isBot'}) {
 				plus::spawn_random($v);
 			}
 		}
