@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.59';
+my($VERSION)='4.60';
 
 =head1 NAME
 
@@ -6088,6 +6088,7 @@ types which alter the normal behavior.
 	my(%Spawns)=();
 	my(@Choices)=();
 
+	our($Xmax, $Ymax)=(0, 0);
 	our($Xmid, $Ymid)=(0, 0);
 
 	my(%Teams)=(
@@ -6617,8 +6618,10 @@ types which alter the normal behavior.
 
 		log::start(@$Map{'map', 'mode', 'type'});
 
-		$Xmid=$Ds->{'views'}{'Game'}{'bounds'}{'maxX'}/2;
-		$Ymid=$Ds->{'views'}{'Game'}{'bounds'}{'maxY'}/2;
+		$Xmax=$Ds->{'views'}{'Game'}{'bounds'}{'maxX'};
+		$Ymax=$Ds->{'views'}{'Game'}{'bounds'}{'maxY'};
+		$Xmid=$Xmax/2;
+		$Ymid=$Ymax/2;
 
 		$obj=$Ds->{'views'}{'Game'}{'Goal'}[0]{'Goal'};
 		if(ref($obj) eq 'ARRAY') {
@@ -9590,7 +9593,7 @@ play though extended interfaces and server support.
 
 		$rv=0 if(exists($p->{'timer'}{$obj}) && $time<$p->{'timer'}{$obj});
 			
-		$p->{'timer'}{$obj}=$time+800;
+		$p->{'timer'}{$obj}=$time+900;
 
 		return($rv);
 	}
@@ -14614,6 +14617,9 @@ core protecting the flag.
 			mem->game($p, 'intro')=1;
 		}
 
+		mem->delete->game($p, 'checkpoint');
+		mem->delete->game($p, 'cp');
+
 		if(map::type('tag')) {
 			if(map::mode('ffa')) {
 				if(!map::spec($e->{'team'}) && xx::enabled) {
@@ -15088,11 +15094,17 @@ core protecting the flag.
 		}
 
 		if(stash::get($pickup, 'oneways', map::name, 'map')) {
-			#This needs work, it is too easy to pick these up while turning
-			#This may never work, and we may need to keep the trigger forever
-			if(undef && @fake_event) {
+			if(@fake_event) {
 				server::fake_trigger('logPlanePositions', 'oneway',
 						@fake_event, $e, $p);
+
+				#The fast way doesn't always work when stressed with fast
+				#turns and players trying to break it, so do both.
+				if(plus::no_repeats($e, $p, 'oneway')) {
+					queue::schedule {
+						server::trigger('logPlanePositions', 'oneway', $e, $p)
+					} 1;
+				}
 			} else {
 				#Don't repeat triggered oneways for 0.8 seconds
 				if(plus::no_repeats($e, $p, 'oneway')) {
@@ -15176,8 +15188,19 @@ core protecting the flag.
 		my($x1, $y1)=split(m/,/,$e1->{'positionByPlayer'}{$p2->{'player'}});
 		my($x2, $y2)=@$e2{'positionX','positionY'};
 		my($allowed)=plus::angle($x2, $y2, stash::get("$x2,$y2", 'oneways', map::name, 'map'));
-		my($direction)=plus::angle($x2, $y2, $x1-$x2, $y1-$y2);
+		my($left_margin)=int($map::Xmax/8);
+		my($right_margin)=$map::Xmax-$left_margin;
 		my($wrong_way)=0;
+		my($direction);
+
+		#Catch when the plane wraps the screen:
+		if($x2<$left_margin && $x1>$right_margin) {
+			$x2+=$map::Xmax;
+		} elsif($x2>$right_margin && $x1<$left_margin) {
+			$x1+=$map::Xmax;
+		}
+
+		$direction=plus::angle($x2, $y2, $x1-$x2, $y1-$y2);
 
 		if($allowed>90 && $direction<0) {
 			$wrong_way=1 if(plus::angle($x2, $y2, $allowed+90)<$direction);
@@ -15190,6 +15213,7 @@ core protecting the flag.
 		if($wrong_way) {
 			plus::bench($p2);
 			plus::spawn_here($p2, $x2, $y2, $allowed);
+			plus::no_repeats($e2, $p2, 'oneway');
 			if($x1>0 && $x2>0) { #alive
 				chat::whisper($p2, 'Wrong way!');
 			}
