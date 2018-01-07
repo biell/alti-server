@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.56';
+my($VERSION)='4.57';
 
 =head1 NAME
 
@@ -4931,7 +4931,7 @@ Supported databases are SQLite and PostgreSQL.
 	sub records {
 		my($map, $record)=@_;
 
-		if($record) {
+		if($record>0) {
 			&insert('records', {
 					'map'     => $map,
 					'record'  => $record->[0],
@@ -7555,6 +7555,7 @@ they make the top 5.
 				&& !plus::coop_timers());
 
 		$time=sprintf("%0.2f", ($server::Time - $Start)/1000);
+		return unless($time>0);
 
 		if(map::mode('tdm', '1dm', '1de', '1bd')) {
 			foreach my $player (keys(%Helpers)) {
