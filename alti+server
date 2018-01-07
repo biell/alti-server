@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.58';
+my($VERSION)='4.59';
 
 =head1 NAME
 
@@ -15088,12 +15088,14 @@ core protecting the flag.
 		}
 
 		if(stash::get($pickup, 'oneways', map::name, 'map')) {
-			#Don't repeat any oneway for 0.8 seconds
-			if(plus::no_repeats($e, $p, 'oneway')) {
-				if(@fake_event) {
-					server::fake_trigger('logPlanePositions', 'oneway',
-							@fake_event, $e, $p);
-				} else {
+			#This needs work, it is too easy to pick these up while turning
+			#This may never work, and we may need to keep the trigger forever
+			if(undef && @fake_event) {
+				server::fake_trigger('logPlanePositions', 'oneway',
+						@fake_event, $e, $p);
+			} else {
+				#Don't repeat triggered oneways for 0.8 seconds
+				if(plus::no_repeats($e, $p, 'oneway')) {
 					queue::schedule {
 						server::trigger('logPlanePositions', 'oneway', $e, $p)
 					} 1;
