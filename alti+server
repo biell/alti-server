@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.60';
+my($VERSION)='4.61';
 
 =head1 NAME
 
@@ -14563,6 +14563,11 @@ core protecting the flag.
 
 		$p->{'alive'}=0;
 
+		if($p->{'team'}!=$e->{'team'}) {
+			mem->delete->game($p, 'checkpoint');
+			mem->delete->game($p, 'cp');
+		}
+
 		#Make sure players are the correct level for their aceRank:
 		if($p->{'aceRank'}==0) {
 			$minlvl=config::option('noviceLevel');
@@ -14616,9 +14621,6 @@ core protecting the flag.
 
 			mem->game($p, 'intro')=1;
 		}
-
-		mem->delete->game($p, 'checkpoint');
-		mem->delete->game($p, 'cp');
 
 		if(map::type('tag')) {
 			if(map::mode('ffa')) {
@@ -15103,7 +15105,7 @@ core protecting the flag.
 				if(plus::no_repeats($e, $p, 'oneway')) {
 					queue::schedule {
 						server::trigger('logPlanePositions', 'oneway', $e, $p)
-					} 1;
+					} 0.6;
 				}
 			} else {
 				#Don't repeat triggered oneways for 0.8 seconds
