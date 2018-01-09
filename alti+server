@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.61';
+my($VERSION)='4.62';
 
 =head1 NAME
 
@@ -9707,6 +9707,8 @@ play though extended interfaces and server support.
 		unless(mem->game($p, 'cp')) {
 			@powerups=utils::uniq(values(%$checkpoints));
 
+			mem->game('split', $p)=$p->{'spawn'};
+
 			for(my $i=0; $i<$count; $i++) {
 				mem->game($p, 'cp')->[$i]=$powerups[$i%@powerups];
 			}
@@ -9725,9 +9727,14 @@ play though extended interfaces and server support.
 
 				shift(@$t_stats);
 			} else {
-				chat::whisper($p, $cp);
+				chat::whisper($p, 'checkpoint', $cp);
 			}
 
+			#Encourages cheating?
+			#chat::whisperf($p, '%d (%.1f split)', $cp,
+			#	($e->{'time'} - mem->game('split', $p))/1000);
+
+			mem->game('split', $p)=$e->{'time'};
 			mem->game($p, 'checkpoint')++;
 			records::help($p, 1);
 			race::checkpoint($p, $cp);
