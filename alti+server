@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.62';
+my($VERSION)='4.63';
 
 =head1 NAME
 
@@ -6225,7 +6225,7 @@ types which alter the normal behavior.
 			$Map->{'type'}='coop';
 		} elsif(m/(^|_)ruin(_|$)/i) {
 			$Map->{'type'}='ruin';
-		} elsif(m/(^|_)mdg(_|$)/i) {
+		} elsif(m/(^|_)(mdg|koth)(_|$)/i) {
 			$Map->{'type'}='mdg';
 		} elsif(m/(^|_)tag(_|$)/i) {
 			$Map->{'type'}='tag';
@@ -14250,6 +14250,10 @@ core protecting the flag.
 				}
 			}
 			plus::spawn_reset($p);
+			if(map::type('race')) {
+				mem->delete->game($p, 'checkpoint');
+				mem->delete->game($p, 'cp');
+			}
 		} elsif($p->{'admin'} && $zone=~m/^here$/i) {
 			server::trigger('logPlanePositions', 'spawnHere', $e, $p);
 		} elsif($spawn_mode ne 'zone') {
