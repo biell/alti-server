@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.63';
+my($VERSION)='4.64';
 
 =head1 NAME
 
@@ -14925,6 +14925,7 @@ core protecting the flag.
 		records::help($p, 20);
 
 		ball::goal($p);
+		plus::score($p);
 
 		rank::score($p->{'team'}, 1);
 
