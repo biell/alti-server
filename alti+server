@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.64';
+my($VERSION)='4.65';
 
 =head1 NAME
 
@@ -15469,6 +15469,7 @@ core protecting the flag.
 		}
 
 		plus::destroy($e, $p);
+		records::winner($p);
 		records::destroy($e, $p);
 
 		if( (mem->game($e->{'target'}, $p) % 35)==0 ) {
