@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.65';
+my($VERSION)='4.66';
 
 =head1 NAME
 
@@ -7415,12 +7415,7 @@ they make the top 5.
 	}
 
 	sub print {
-		my(%opt)=(
-				'player'	=> undef,
-				'delta'	=> undef,
-				'short'	=> 0,
-				@_
-			);
+		my(%opt)=@_;
 		my($i)=1;
 		my($records, $time);
 		
