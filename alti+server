@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.70';
+my($VERSION)='4.71';
 
 =head1 NAME
 
@@ -6390,6 +6390,22 @@ types which alter the normal behavior.
 		return($p->{'team'} == &team_number($team));
 	}
 
+	sub player_team {
+		return(stash::get('assignTeam', map::name, 'map'));
+	}
+
+	sub server_team {
+		my($assign)=stash::get('assignTeam', map::name, 'map');
+
+		return(-1) unless($assign);
+
+		if(&left($assign)) {
+			return(&right());
+		} else {
+			return(&left());
+		}
+	}
+
 	sub elapsed {
 		return(($server::Time-$Map->{'time'})/1000);
 	}
@@ -7497,7 +7513,7 @@ they make the top 5.
 		return unless($e->{'target'} eq 'base');
 		return unless(map::left($team) || map::right($team));
 
-		$assign=map::team_number(stash::get('assignTeam', map::name, 'map'));
+		$assign=map::team_number(map::player_team);
 		return if($assign && $team!=$assign);
 
 
@@ -7529,7 +7545,7 @@ they make the top 5.
 	sub enter {
 		my($e)=@_;
 		my(@types)=split(m/\W+/, config::option('recordsTypes'));
-		my($assign)=map::team_number(stash::get('assignTeam', map::name, 'map'));
+		my($assign)=map::team_number(map::player_team);
 		my($score)=stash::get('score', map::name, 'map');
 		my($win)=ball::winner();
 		my($min_players)=scalar(map::spawn_points);
@@ -8395,7 +8411,7 @@ server switches the map and the race begins.
 	}
 
 	sub start_if_ready {
-		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($assign)=map::player_team;
 
 		foreach my $status (values(%Racers)) {
 			return unless($status==2);
@@ -8419,7 +8435,7 @@ server switches the map and the race begins.
 	}
 
 	sub start_now {
-		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($assign)=map::player_team;
 
 		foreach my $player (player::list) {
 			if(exists($Racers{$player})) {
@@ -8650,7 +8666,7 @@ interface.
 
 	sub set_win {
 		my($score)=stash::get('win', map::name, 'map');
-		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($assign)=map::player_team;
 		
 		if(@_) {
 			@Win=@_;
@@ -8887,7 +8903,7 @@ interface.
 
 	sub winner {
 		my($goals)=$config::Launcher{'goals'};
-		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($assign)=map::player_team;
 
 		if(map::mode('ball')) {
 			if($Score[0]>=$goals) {
@@ -8929,7 +8945,7 @@ play though extended interfaces and server support.
 	my($Captured)=0;
 
 	sub pre_round {
-		my($map_team)=stash::get('assignTeam', map::name, 'map');
+		my($map_team)=map::player_team;
 
 		if($Hunted && map::type('mdg', 'tag')) {
 			plus::spawn_random($Hunted);
@@ -8938,7 +8954,7 @@ play though extended interfaces and server support.
 
 	sub round {
 		my(@teams)=map::teams;
-		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($assign)=map::player_team;
 
 		$Hunted=undef;
 		$Active=0;
@@ -9428,7 +9444,7 @@ play though extended interfaces and server support.
 
 	sub spawn_reset {
 		my($p, %opt)=@_;
-		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($assign)=map::player_team;
 		my($start)=undef;
 
 		$opt{'force'}=1 if($Reset{$p});
@@ -10065,7 +10081,7 @@ play though extended interfaces and server support.
 
 	sub change_hunted {
 		my($p)=@_;
-		my($map_team)=stash::get('assignTeam', map::name, 'map');
+		my($map_team)=map::player_team;
 
 		return unless($p);
 		return if(map::spec($p->{'team'}));
@@ -10148,7 +10164,7 @@ play though extended interfaces and server support.
 
 	sub cower {
 		my($p)=@_;
-		my($map_team)=stash::get('assignTeam', map::name, 'map');
+		my($map_team)=map::player_team;
 
 		if(map::type('tag')) {
 			if(map::mode('ffa')) {
@@ -10207,7 +10223,7 @@ play though extended interfaces and server support.
 	}
 
 	sub new {
-		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($assign)=map::player_team;
 
 		%Reset=();
 
@@ -10262,7 +10278,7 @@ play though extended interfaces and server support.
 	}
 		
 	sub assign_teams {
-		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($assign)=map::player_team;
 
 		if(map::mode('ffa') && !xx::enabled) {
 			1; #team assignments not allowed
@@ -10788,11 +10804,12 @@ sub event {
 		$player=player::server;
 	} elsif($event->{'source'} eq '00000000-0000-0000-0000-000000000000') {
 		$player=player::server;
-	} elsif($event->{'source'} eq 'turret') {
-		$player=player::server;
-		$player->{'isTurret'}=1;
 	} elsif($event->{'player'} == -1) {
 		$player=player::server;
+		if($event->{'source'} eq 'turret') {
+			$player->{'isTurret'}=1;
+			$player->{'team'}=map::server_team;
+		}
 	} else {
 		$player=player::event_search($event);
 	}
@@ -12530,7 +12547,7 @@ core protecting the flag.
 
 	'list assignTeam'	=> sub {
 		my($e, $p)=@_;
-		my($team)=stash::get('assignTeam', map::name, 'map');
+		my($team)=map::player_team;
 		my($color);
 
 		if($team) {
@@ -12543,7 +12560,7 @@ core protecting the flag.
 
 	'enable assignTeam'	=> sub {
 		my($e, $p)=@_;
-		my($team)=stash::get('assignTeam', map::name, 'map');
+		my($team)=map::player_team;
 		my($color);
 
 		if(!$team && map::mode('tdm') && map::type('tag')) {
@@ -14554,8 +14571,8 @@ core protecting the flag.
 
 	'teamChange'		=> sub {
 		my($e, $p)=@_;
-		my($map_team)=stash::get('assignTeam', map::name, 'map');
 		my($spawn_mode)=stash::get('assignTeam', map::name, 'map');
+		my($map_team)=map::player_team;
 		my($minlvl)=0;
 		my(@badge)=();
 		my(@found)=();
@@ -14744,8 +14761,8 @@ core protecting the flag.
 
 	'spawn'	=> sub {
 		my($e, $p)=@_;
-		my($map_team)=stash::get('assignTeam', map::name, 'map');
 		my($timers)=stash::get('timers', map::name, 'map');
+		my($map_team)=map::player_team;
 		my(@records)=split(m/\W+/, config::option('recordsTypes'));
 		my($match);
 
@@ -15242,7 +15259,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my($v)=player::lookup($e->{'victim'});
 		my($spawn_mode)=stash::get('spawnMode', map::name, 'map');
-		my($assign)=stash::get('assignTeam', map::name, 'map');
+		my($assign)=map::player_team;
 		my($is_crash)=0;
 		my($angle, $limit);
 
@@ -15270,7 +15287,8 @@ core protecting the flag.
 					&& $p->{'isBot'}
 					&& $v && !$v->{'isBot'}
 				) {
-					ball::progress($p, 1);
+					chat::debug('turret killed', $v->{'nickname'});
+					ball::score($p);
 					plus::score($p);
 				}
 			}
@@ -15515,7 +15533,7 @@ core protecting the flag.
 
 	'pingSummary'	=> sub {
 		my($e, $p)=@_;
-		my($map_team)=stash::get('assignTeam', map::name, 'map');
+		my($map_team)=map::player_team;
 		my(%pings)=%{$e->{'pingByPlayer'}};
 		my($count)=player::count;
 		my($now)=time();
