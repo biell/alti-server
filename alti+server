@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.69';
+my($VERSION)='4.70';
 
 =head1 NAME
 
@@ -10788,6 +10788,9 @@ sub event {
 		$player=player::server;
 	} elsif($event->{'source'} eq '00000000-0000-0000-0000-000000000000') {
 		$player=player::server;
+	} elsif($event->{'source'} eq 'turret') {
+		$player=player::server;
+		$player->{'isTurret'}=1;
 	} elsif($event->{'player'} == -1) {
 		$player=player::server;
 	} else {
