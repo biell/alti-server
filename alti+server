@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.68';
+my($VERSION)='4.69';
 
 =head1 NAME
 
@@ -15267,9 +15267,8 @@ core protecting the flag.
 					&& $p->{'isBot'}
 					&& $v && !$v->{'isBot'}
 				) {
-					ball::score($p);
+					ball::progress($p, 1);
 					plus::score($p);
-					rank::score($p->{'team'}, 1);
 				}
 			}
 		}
