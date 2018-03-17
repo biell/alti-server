@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-#use strict;
+use strict;
 
 my($VERSION)='4.66';
 
@@ -14244,6 +14244,7 @@ core protecting the flag.
 					plus::bench($p);
 				}
 			}
+			plus::clear_spawn($p);
 			plus::spawn_reset($p);
 			if(map::type('race')) {
 				mem->delete->game($p, 'checkpoint');
@@ -14304,12 +14305,17 @@ core protecting the flag.
 
 	'changePlane'	=> sub {
 		my($e, $p)=@_;
+		my(@pos)=split(m/,/, $e->{'positionByPlayer'}{$p->{'player'}});
 		my($cp)=stash::get('changePlane', map::name, 'map') // config::option('changePlane');
 
 		if($p->{'carrier'}) {
 			chat::whisper($p, 'You cannot /changePlane as a carrier');
 		} elsif(player::count > $cp) {
 			chat::whisper($p, 'Too many players to /cp or /changePlane');
+		} elsif(@pos==3) {
+			plus::bench($p);
+			plus::spawn_here($p, @pos);
+			plus::clear_spawn($p);
 		} else {
 			server::trigger('logPlanePositions', 'changePlane', $e, $p);
 		}
@@ -14342,7 +14348,7 @@ core protecting the flag.
 			chat::whisper($p3, 'changePlane aborted, you are a carrier');
 		} else {
 			plus::bench($p3);
-			plus::spawn_here($p3, @pos1, $pos2[0]-$pos1[0], $pos2[1]-$pos1[1]);
+			plus::spawn_here($p3, @pos1[0,1], $pos2[0]-$pos1[0], $pos2[1]-$pos1[1]);
 			plus::clear_spawn($p3);
 		}
 	},
@@ -15249,6 +15255,7 @@ core protecting the flag.
 					} elsif($assign && $p->{'isBot'}) {
 						ball::score($p);
 						plus::score($p);
+						rank::score($p->{'team'}, 1);
 					}
 				} elsif($v && $v->{'team'} != $p->{'team'}) {
 					ball::score($p);
