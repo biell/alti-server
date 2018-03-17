@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='4.66';
+my($VERSION)='4.68';
 
 =head1 NAME
 
@@ -8727,7 +8727,7 @@ interface.
 		my($left)=POSIX::floor($_[0]);
 		my($right)=POSIX::floor($_[1]);
 
-		chat::debug('score', $left, $right);
+		chat::debug('score (', $_[0], $left, ') (', $_[1], $right, ')');
 		ui::trace('set_score');
 		if(map::mode('ball')) {
 			server::send('overrideBallScore', $left, $right);
@@ -15255,7 +15255,6 @@ core protecting the flag.
 					} elsif($assign && $p->{'isBot'}) {
 						ball::score($p);
 						plus::score($p);
-						rank::score($p->{'team'}, 1);
 					}
 				} elsif($v && $v->{'team'} != $p->{'team'}) {
 					ball::score($p);
