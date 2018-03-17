@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.71';
+my($VERSION)='4.72';
 
 =head1 NAME
 
@@ -15288,6 +15288,8 @@ core protecting the flag.
 					&& $v && !$v->{'isBot'}
 				) {
 					chat::debug('turret killed', $v->{'nickname'});
+					chat::debug('player', $p);
+					chat::debug('vic', $v);
 					ball::score($p);
 					plus::score($p);
 				}
