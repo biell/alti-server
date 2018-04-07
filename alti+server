@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.72';
+my($VERSION)='4.73';
 
 =head1 NAME
 
@@ -8743,8 +8743,6 @@ interface.
 		my($left)=POSIX::floor($_[0]);
 		my($right)=POSIX::floor($_[1]);
 
-		chat::debug('score (', $_[0], $left, ') (', $_[1], $right, ')');
-		ui::trace('set_score');
 		if(map::mode('ball')) {
 			server::send('overrideBallScore', $left, $right);
 		} elsif(map::mode('tdm') && xx::enabled) {
@@ -15287,9 +15285,6 @@ core protecting the flag.
 					&& $p->{'isBot'}
 					&& $v && !$v->{'isBot'}
 				) {
-					chat::debug('turret killed', $v->{'nickname'});
-					chat::debug('player', $p);
-					chat::debug('vic', $v);
 					ball::score($p);
 					plus::score($p);
 				}
@@ -15589,7 +15584,7 @@ core protecting the flag.
 			if(map::type('tag') && map::mode('tdm')) {
 				chat::debug("$player->{'nickname'}: $player->{'team'} == $map_team");
 				if(plus::hunted($player)) {
-					if($player->{'team'}==$map_team) {
+					if(map::team($player, $map_team)) {
 						if(map::right($map_team)) {
 							plus::assign($player, 'left');
 						} elsif(map::left($map_team)) {
@@ -15597,7 +15592,7 @@ core protecting the flag.
 						}
 					}
 				} else {
-					if($player->{'team'}!=$map_team) {
+					unless(map::team($player, $map_team)) {
 						plus::assign($player, $map_team);
 					}
 				}
