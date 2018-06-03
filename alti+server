@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.73';
+my($VERSION)='4.74';
 
 =head1 NAME
 
@@ -6293,27 +6293,39 @@ types which alter the normal behavior.
 	sub type		{ &_value_or_query('type', @_);		}
 
 	sub left		{
-		foreach(@_) {
+		my(@query)=map({
+			ref($_) eq 'HASH' && exists($_->{'team'}) && $_->{'team'} || $_
+		} @_);
+
+		foreach(@query) {
 			return(1) if($_ >= 100);
 			return(1) if(m/^$Teams{$Map->{'leftTeam'}}$/i);
 			return(1) if(m/^(left|<|all|both|\*|0)$/i);
 		}
-		&_value_or_query('leftTeam', @_);
+		&_value_or_query('leftTeam', @query);
 	}
 
 	sub right		{
+		my(@query)=map({
+			ref($_) eq 'HASH' && exists($_->{'team'}) && $_->{'team'} || $_
+		} @_);
+
 		return(undef) if(map::mode('ffa'));
 
-		foreach(@_) {
+		foreach(@query) {
 			return(1) if(m/^$Teams{$Map->{'rightTeam'}}$/i);
 			return(1) if(m/^(right|>|all|both|\*|1)$/i);
 		}
-		&_value_or_query('rightTeam', @_);
+		&_value_or_query('rightTeam', @query);
 	}
 
 	sub spec		{
-		if(@_) {
-			foreach(@_) {
+		my(@query)=map({
+			ref($_) eq 'HASH' && exists($_->{'team'}) && $_->{'team'} || $_
+		} @_);
+
+		if(@query) {
+			foreach(@query) {
 				return(1) if(m/^(spec.*|\^|all|\*|-1|$Teams{'spec'})$/i);
 			}
 			return(0);
@@ -6993,13 +7005,13 @@ is updated with them as the games progress.
 
 		if($filter) {
 			if(map::left($filter)) {
-				push(@players, grep(map::left($_->{'team'}), @Players));
+				push(@players, grep(map::left($_), @Players));
 			}
 			if(map::right($filter)) {
-				push(@players, grep(map::right($_->{'team'}), @Players));
+				push(@players, grep(map::right($_), @Players));
 			}
 			if(map::spec($filter)) {
-				push(@players, grep(map::spec($_->{'team'}), @Players));
+				push(@players, grep(map::spec($_), @Players));
 			}
 
 			return(@players);
@@ -7022,11 +7034,11 @@ is updated with them as the games progress.
 		my($filter)=@_;
 
 		if(map::left($filter)) {
-			return(grep(map::left($_->{'team'}), @Bots));
+			return(grep(map::left($_), @Bots));
 		} elsif(map::right($filter)) {
-			return(grep(map::right($_->{'team'}), @Bots));
+			return(grep(map::right($_), @Bots));
 		} elsif(map::spec($filter)) {
-			return(grep(map::spec($_->{'team'}), @Bots));
+			return(grep(map::spec($_), @Bots));
 		} else {
 			return(@Bots);
 		}
@@ -7045,8 +7057,8 @@ is updated with them as the games progress.
 
 	sub handicap {
 		my($team)=@_;
-		my($left)=scalar(grep(map::left($_->{'team'}), @Players));
-		my($right)=scalar(grep(map::right($_->{'team'}), @Players));
+		my($left)=scalar(grep(map::left($_), @Players));
+		my($right)=scalar(grep(map::right($_), @Players));
 		my($competition)=player::count()/$config::Maxp;
 
 		if(map::type('coop')) {
@@ -8098,7 +8110,7 @@ These rankings can also be configured to select evenly matched teams.
 		#return unless(player::count>$minimum);
 
 		foreach my $player (player::list) {
-			next if(map::spec($player->{'team'}));
+			next if(map::spec($player));
 
 			if($player->{'team'}==$team) {
 				mem->game('differential', $player)+=$update;
@@ -8784,10 +8796,10 @@ interface.
 		my($side)=map::side($p);
 		my($goals, $new);
 
-		if(map::left($p->{'team'})) {
+		if(map::left($p)) {
 			$goals=List::Util::min($config::Launcher{'goals'}, $Win[0]);
 			chat::debug('left win:', $goals);
-		} elsif(map::right($p->{'team'})) {
+		} elsif(map::right($p)) {
 			$goals=List::Util::min($config::Launcher{'goals'}, $Win[1]);
 			chat::debug('right win:', $goals);
 		} else {
@@ -9009,14 +9021,14 @@ play though extended interfaces and server support.
 			}
 		} elsif(map::mode('tdm') && xx::enabled && @win) {
 			chat::debug('tdm');
-			if(map::left($p->{'team'}) && $score[0] >= $win[0]) {
+			if(map::left($p) && $score[0] >= $win[0]) {
 				chat::debug('left');
 				mem->game('winner')='left';
 				records::winner($p);
 				ball::set_score($win[0], 0) if($win[1]>=$win[0]);
 				sleep(1);
 				xx::set_time(0);
-			} elsif(map::right($p->{'team'}) && $score[1] >= $win[1]) {
+			} elsif(map::right($p) && $score[1] >= $win[1]) {
 				chat::debug('right');
 				mem->game('winner')='right';
 				records::winner($p);
@@ -9582,9 +9594,9 @@ play though extended interfaces and server support.
 			return;
 		} elsif(map::mode('ffa') && $p->{'oteam'}) {
 			server::send('assignTeam', $p->{'nickname'}, $p->{'oteam'});
-		} elsif(map::left($p->{'team'})) {
+		} elsif(map::left($p)) {
 			server::send('assignTeam', $p->{'nickname'}, 0);
-		} elsif(map::right($p->{'team'})) {
+		} elsif(map::right($p)) {
 			server::send('assignTeam', $p->{'nickname'}, 1);
 		} else {
 			server::send('assignTeam', $p->{'nickname'}, -1);
@@ -10082,25 +10094,22 @@ play though extended interfaces and server support.
 		my($map_team)=map::player_team;
 
 		return unless($p);
-		return if(map::spec($p->{'team'}));
+		return if(map::spec($p));
 
 		if($Hunted==$p) {
-			return(1);
+			1;
 		} elsif(map::type('tag')) {
 			if(map::mode('ffa')) {
 				if(xx::enabled) {
 					&assign($Hunted, 'blue') if($Hunted && $Hunted->{'joined'});
-					&assign($p, 'red');
-					&spawn_random($p);
+					&assign($p, 'red') if($p->{'joined'});
 				}
 			} elsif(map::right($map_team)) {
 				&assign($Hunted, 'right') if($Hunted && $Hunted->{'joined'});
-				&assign($p, 'left');
-				&spawn_random($p);
+				&assign($p, 'left') if($p->{'joined'});
 			} else {
 				&assign($Hunted, 'left') if($Hunted && $Hunted->{'joined'});
-				&assign($p, 'right');
-				&spawn_random($p);
+				&assign($p, 'right') if($p->{'joined'});
 			}
 			if($Hunted && mem->exists->game('tagged', $Hunted)) {
 				mem->game('it', $Hunted)+=
@@ -10110,27 +10119,31 @@ play though extended interfaces and server support.
 
 			mem->game('tagged', $p)=$server::Time;
 		} elsif(!$Hunted) {
-			if(map::left($map_team) && map::right($p->{'team'})) {
-				return(1);
-			} elsif(map::right($map_team) && map::left($p->{'team'})) {
-				return(1);
+			if(map::left($map_team) && map::right($p)) {
+				1;
+			} elsif(map::right($map_team) && map::left($p)) {
+				1;
 			} elsif(map::left($map_team)) {
-				&assign($p, 'right');
-			} else {
-				&assign($p, 'left');
+				&assign($p, 'right') if($p->{'joined'});
+			} elsif(map::right($map_team)) {
+				&assign($p, 'left') if($p->{'joined'});
 			}
 		} else {
 			if(map::right($map_team)) {
 				&assign($Hunted, 'right') if($Hunted && $Hunted->{'joined'});
-				&assign($p, 'left');
-			} else {
+				&assign($p, 'left') if($p->{'joined'});
+			} elsif(map::left($map_team)) {
 				&assign($Hunted, 'left') if($Hunted && $Hunted->{'joined'});
-				&assign($p, 'right');
+				&assign($p, 'right') if($p->{'joined'});
 			}
 		}
 
-		chat::all('*', $p->{'nickname'}, 'is it *');
-		$Hunted=$p;
+		&spawn_random($p);
+
+		unless($Hunted==$p) {
+			chat::all('*', $p->{'nickname'}, 'is it *');
+			$Hunted=$p;
+		}
 	}
 
 	sub finish_hunted {
@@ -12586,14 +12599,14 @@ core protecting the flag.
 			chat::all(map::name, 'is configured to force players left');
 
 			foreach my $m (player::list) {
-				plus::assign($m, 'left') if(map::right($m->{'team'}));
+				plus::assign($m, 'left') if(map::right($m));
 			}
 		} elsif(map::right($side)) {
 			stash::set('assignTeam', map::name, 'map', 'right');
 			chat::all(map::name, 'is configured to force players right');
 
 			foreach my $m (player::list) {
-				plus::assign($m, 'right') if(map::left($m->{'team'}));
+				plus::assign($m, 'right') if(map::left($m));
 			}
 		} elsif($side=~m/none/i) {
 			stash::delete('assignTeam', map::name, 'map');
@@ -13442,11 +13455,11 @@ core protecting the flag.
 		my($sep)=':';
 		my($doors, $keys, $names, $status);
 
-		if($e->{'admin'} || map::spec($p->{'team'})) {
+		if($e->{'admin'} || map::spec($p)) {
 			@teams=(map::left, map::right);
-		} elsif(map::left($p->{'team'})) {
+		} elsif(map::left($p)) {
 			@teams=(map::left);
-		} elsif(map::right($p->{'team'})) {
+		} elsif(map::right($p)) {
 			@teams=(map::right);
 		}
 		foreach my $team (@teams) {
@@ -13871,11 +13884,11 @@ core protecting the flag.
 		my($sep)=':';
 		my($zones, $keys, $names, $status);
 
-		if($e->{'admin'} || map::spec($p->{'team'})) {
+		if($e->{'admin'} || map::spec($p)) {
 			@teams=('bot', map::left, map::right);
-		} elsif(map::left($p->{'team'})) {
+		} elsif(map::left($p)) {
 			@teams=(map::left);
-		} elsif(map::right($p->{'team'})) {
+		} elsif(map::right($p)) {
 			@teams=(map::right);
 		}
 		foreach my $team (@teams) {
@@ -14147,13 +14160,13 @@ core protecting the flag.
 				utils::timer($timers->{'start'}));
 		}
 
-		if($e->{'admin'} || map::left($p->{'team'})) {
+		if($e->{'admin'} || map::left($p)) {
 			$team=$timers->{map::left()};
 			foreach my $timer (sort(keys(%$team))) {
 				chat::whisper($p, $timer, ':',
 					utils::timer($team->{$timer}, 1));
 			}
-		} elsif($e->{'admin'} || map::right($p->{'team'})) {
+		} elsif($e->{'admin'} || map::right($p)) {
 			$team=$timers->{map::right()};
 			foreach my $timer (sort(keys(%$team))) {
 				chat::whisper($p, $timer, ':',
@@ -14609,7 +14622,7 @@ core protecting the flag.
 		if($p->{'level'} < $minlvl) {
 			$p->{'team'}=$e->{'team'};
 
-			return if(map::spec($e->{'team'}));
+			return if(map::spec($e));
 
 			plus::assign($p, 'spec');
 			player::infraction($p, 2);
@@ -14654,7 +14667,7 @@ core protecting the flag.
 
 		if(map::type('tag')) {
 			if(map::mode('ffa')) {
-				if(!map::spec($e->{'team'}) && xx::enabled) {
+				if(!map::spec($e) && xx::enabled) {
 					if(plus::hunted($p)) {
 						plus::assign($p, 'red') unless($p->{'oteam'}==3);
 					} else {
@@ -14669,9 +14682,9 @@ core protecting the flag.
 						plus::assign($p, 'right');
 					}
 				} else {
-					if(map::right($map_team) && map::left($p->{'team'})) {
+					if(map::right($map_team) && map::left($p)) {
 						plus::assign($p, 'right');
-					} elsif(map::right($p->{'team'})) {
+					} elsif(map::right($p)) {
 						plus::assign($p, 'left');
 					}
 				}
@@ -14679,8 +14692,8 @@ core protecting the flag.
 		}
 
 		#Keep track of players and allow access only as necessary:
-		if(map::spec($e->{'team'})) {
-			if(map::spec($p->{'team'})) {
+		if(map::spec($e)) {
+			if(map::spec($p)) {
 				$p->{'team'}=$e->{'team'};
 				return;
 			} else {
@@ -14731,25 +14744,25 @@ core protecting the flag.
 		if(map::type('mdg') && plus::prey($p)) {
 			plus::spawn_random($p);
 
-			if(map::right($map_team) && map::right($p->{'team'})) {
+			if(map::right($map_team) && map::right($p)) {
 				plus::assign($p, 'left');
-			} elsif(map::left($map_team) && map::left($p->{'team'})) {
+			} elsif(map::left($map_team) && map::left($p)) {
 				plus::assign($p, 'right');
 			}
 		} elsif(map::type('tag') && plus::prey($p)) {
-			if(map::spec($p->{'team'})) {
+			if(map::spec($p)) {
 				plus::change_hunted(player::random);
 			}
-		} elsif(map::right($map_team) && map::left($p->{'team'})) {
+		} elsif(map::right($map_team) && map::left($p)) {
 			plus::assign($p, 'right');
 			return;
-		} elsif(map::left($map_team) && map::right($p->{'team'})) {
+		} elsif(map::left($map_team) && map::right($p)) {
 			plus::assign($p, 'left');
 			return;
-		} elsif(!rank::team_check($p) && map::left($p->{'team'})) {
+		} elsif(!rank::team_check($p) && map::left($p)) {
 			plus::assign($p, 'right');
 			return;
-		} elsif(!rank::team_check($p) && map::right($p->{'team'})) {
+		} elsif(!rank::team_check($p) && map::right($p)) {
 			plus::assign($p, 'left');
 			return;
 		} else {
@@ -14805,17 +14818,17 @@ core protecting the flag.
 		if(map::type('mdg') && plus::prey($p)) {
 			plus::spawn_random($p);
 
-			if(map::right($map_team) && map::right($p->{'team'})) {
+			if(map::right($map_team) && map::right($p)) {
 				plus::assign($p, 'left');
-			} elsif(map::left($map_team) && map::left($p->{'team'})) {
+			} elsif(map::left($map_team) && map::left($p)) {
 				plus::assign($p, 'right');
 			}
 		} elsif(map::type('tag') && plus::prey($p)) {
 			mem->game('tagged', $p)=$e->{'time'};
-		} elsif(map::right($map_team) && map::left($p->{'team'})) {
+		} elsif(map::right($map_team) && map::left($p)) {
 			plus::assign($p, 'right');
 			return;
-		} elsif(map::left($map_team) && map::right($p->{'team'})) {
+		} elsif(map::left($map_team) && map::right($p)) {
 			plus::assign($p, 'left');
 			return;
 		}
@@ -14900,7 +14913,7 @@ core protecting the flag.
 			@$p{'aceRank','level'}=@$e{'aceRank','level'};
 		}
 
-		if(map::mode('ffa') && map::type('tag') && !map::spec($e->{'team'}) && xx::enabled) {
+		if(map::mode('ffa') && map::type('tag') && !map::spec($e) && xx::enabled) {
 			if(plus::hunted($p)) {
 				plus::assign($p, 'red') unless($p->{'oteam'}==3);
 			} else {
