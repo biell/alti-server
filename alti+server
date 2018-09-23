@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.74';
+my($VERSION)='4.75';
 
 =head1 NAME
 
@@ -9605,6 +9605,18 @@ play though extended interfaces and server support.
 		$p->{'alive'}=0;
 	}
 
+	sub ensure_team {
+		my($p, $team)=@_;
+		my($msg)=sprintf("Join %s team to play", map::team_color($team));
+
+		if(!$team || map::team($p, $team)) {
+			server::send('allowSpawn', $p->{'player'}) if(xx::enabled);
+		} else {
+			server::send('denySpawn', $p->{'player'}, $msg) if(xx::enabled);
+			&assign($p, $team);
+		}
+	}
+
 	sub no_repeats {
 		my($e, $p, $obj)=@_;
 		my($time)=$e->{'time'};
@@ -14460,6 +14472,7 @@ core protecting the flag.
 
 		return unless($e && $p);
 
+
 		$p->{'spawn'}=undef;
 		$p->{'spawn_point'}=[0, 0, 0];
 
@@ -14487,6 +14500,7 @@ core protecting the flag.
 			chat::whisper($p, $statement);
 		}
 
+
 		if(length($p->{'name'})>1 && length($p->{'nickname'})>1) {
 			unless(utils::like($p->{'name'}, $p->{'nickname'})) {
 				queue::schedule {
@@ -14500,6 +14514,7 @@ core protecting the flag.
 		race::block($p) if(race::on);
 
 		server::power_normal if(player::count==1);
+
 	},
 
 	'clientNicknameChange'	=> sub {
@@ -14549,7 +14564,7 @@ core protecting the flag.
 
 		map::busy;
 
-		if(exists($e->{'reason'}) && $e->{'reason'} ne 'Client left.') {
+		if(exists($e->{'reason'}) && $e->{'message'} ne 'left') {
 			$reason=$e->{'reason'};
 			$reason=~s/\..*$//s;
 			ui::display('', '', "< $name $e->{'message'} ($reason)>");
@@ -14677,15 +14692,19 @@ core protecting the flag.
 			} else {
 				if(plus::hunted($p)) {
 					if(map::right($map_team)) {
-						plus::assign($p, 'left');
+						#plus::assign($p, 'left');
+						plus::ensure_team($p, 'left');
 					} else {
-						plus::assign($p, 'right');
+						#plus::assign($p, 'right');
+						plus::ensure_team($p, 'right');
 					}
 				} else {
 					if(map::right($map_team) && map::left($p)) {
-						plus::assign($p, 'right');
+						#plus::assign($p, 'right');
+						plus::ensure_team($p, 'right');
 					} elsif(map::right($p)) {
-						plus::assign($p, 'left');
+						#plus::assign($p, 'left');
+						plus::ensure_team($p, 'right');
 					}
 				}
 			}
@@ -14745,27 +14764,34 @@ core protecting the flag.
 			plus::spawn_random($p);
 
 			if(map::right($map_team) && map::right($p)) {
-				plus::assign($p, 'left');
+				#plus::assign($p, 'left');
+				plus::ensure_team($p, 'left');
 			} elsif(map::left($map_team) && map::left($p)) {
-				plus::assign($p, 'right');
+				#plus::assign($p, 'right');
+				plus::ensure_team($p, 'right');
 			}
 		} elsif(map::type('tag') && plus::prey($p)) {
 			if(map::spec($p)) {
 				plus::change_hunted(player::random);
 			}
 		} elsif(map::right($map_team) && map::left($p)) {
-			plus::assign($p, 'right');
+			#plus::assign($p, 'right');
+			plus::ensure_team($p, 'right');
 			return;
 		} elsif(map::left($map_team) && map::right($p)) {
-			plus::assign($p, 'left');
+			#plus::assign($p, 'left');
+			plus::ensure_team($p, 'left');
 			return;
 		} elsif(!rank::team_check($p) && map::left($p)) {
-			plus::assign($p, 'right');
+			#plus::assign($p, 'right');
+			plus::ensure_team($p, 'right');
 			return;
 		} elsif(!rank::team_check($p) && map::right($p)) {
-			plus::assign($p, 'left');
+			#plus::assign($p, 'left');
+			plus::ensure_team($p, 'left');
 			return;
 		} else {
+			plus::ensure_team($p, $p->{'team'});
 			plus::spawn_reset($p);
 		}
 	},
@@ -14786,6 +14812,7 @@ core protecting the flag.
 			}
 		}
 
+		$p->{'spawn'}=$e->{'time'};
 		$p->{'team'}=$e->{'team'};
 		mem->game('turret', $p)=0;
 
@@ -14793,14 +14820,13 @@ core protecting the flag.
 			@$e{'plane','perkRed','perkGreen','perkBlue','skin'};
 
 		if($p->{'isBot'}) {
-			$p->{'team'}=$e->{'team'};
 			plus::next_bot if(xx::enabled);
 			plus::check_spawn($p);
 			return;
 		} elsif(plus::capture_wait) {
 			plus::bench($p);
 		} elsif(plus::enter($p)) {
-			$p->{'team'}=$e->{'team'};
+			1;
 		} else {
 			plus::assign($p, 'spec');
 			$p->{'team'}=-1;
@@ -14850,8 +14876,6 @@ core protecting the flag.
 
 		$p->{'joined'}=1;
 		$p->{'alive'}=1;
-		$p->{'team'}=$e->{'team'};
-		$p->{'spawn'}=$e->{'time'};
 
 		#Keep track of active players for tag winners
 		mem->game($p, 'active')=1;
@@ -15591,10 +15615,8 @@ core protecting the flag.
 				}
 			}
 
-			next unless($player->{'alive'});
-
 			#Check to make sure players are on the right team:
-			if(map::type('tag') && map::mode('tdm')) {
+			if($map_team && !$p->{'alive'}) {
 				chat::debug("$player->{'nickname'}: $player->{'team'} == $map_team");
 				if(plus::hunted($player)) {
 					if(map::team($player, $map_team)) {
@@ -15610,6 +15632,7 @@ core protecting the flag.
 					}
 				}
 			}
+
 		}
 
 		return unless(chat::snarky);
@@ -16731,6 +16754,18 @@ while(1) {
 				exit(1);
 			} elsif($SOUT=~m/Error processing packet .*, playerId=(\d+)/) {
 				player::infraction(player::lookup($1), 1);
+			} elsif($SOUT=~m/WARN\s*:\*invalidBEGFPos/) {
+				queue::schedule {
+					chat::all('Sorry about the server error, bugs happen!');
+				} 4;
+				&event({
+					'port' => $config::Port,
+					'time' => $server::Time,
+					'type' => 'roundEnd',
+					'participants' => [0],
+					'participantStatsByName' => { },
+					'winnerByAward' => { },
+				});
 			} elsif($SOUT=~m/$FATAL_SERVER_ERRORS/) {
 				ui::slog($SOUT);
 				ui::slog(server::flush);

@@ -121,9 +121,6 @@ sub log_event {
 		$MAP->{$e->{'player'}}{'vaporId'}=$e->{'vaporId'};
 		$MAP->{$e->{'player'}}{'nickname'}=$e->{'nickname'};
 		$MAP->{$e->{'vaporId'}}{'nickname'}=$e->{'nickname'};
-	} elsif($e->{'type'} eq 'clientRemove') {
-		delete($MAP->{$e->{'player'}});
-		delete($MAP->{$e->{'vaporId'}});
 	} elsif($e->{'type'} eq 'clientNicknameChange') {
 		$MAP->{$e->{'player'}}{'nickname'}=$e->{'nickname'};
 		$MAP->{$e->{'vaporId'}}{'nickname'}=$e->{'nickname'};
@@ -202,6 +199,11 @@ sub log_event {
 
 	$e->{'time'}/=1000;
 	$e->{'date'}=&fmt_date($e->{'time'}) if($START);
+
+	if($e->{'type'} eq 'clientRemove') {
+		delete($MAP->{$e->{'player'}});
+		delete($MAP->{$e->{'vaporId'}});
+	}
 
 	return(map(&protect($e->{$_}), @KEYS, @STATS, @AWARDS));
 }
