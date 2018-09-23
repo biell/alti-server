@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.75';
+my($VERSION)='4.76';
 
 =head1 NAME
 
@@ -10062,8 +10062,9 @@ play though extended interfaces and server support.
 
 	sub leave {
 		my($p)=@_;
-		my($max)=stash::get('maxPlayers', map::name, 'map') || $config::Maxp;
+		my($max)=stash::get('maxPlayers', map::name, 'map');
 
+		return unless($max);
 		return if(tourney::on);
 
 		if(mem->game($p, 'playing')) {
@@ -15612,24 +15613,6 @@ core protecting the flag.
 					}
 				} elsif($it>10000) {
 					plus::change_hunted(player::random);
-				}
-			}
-
-			#Check to make sure players are on the right team:
-			if($map_team && !$p->{'alive'}) {
-				chat::debug("$player->{'nickname'}: $player->{'team'} == $map_team");
-				if(plus::hunted($player)) {
-					if(map::team($player, $map_team)) {
-						if(map::right($map_team)) {
-							plus::assign($player, 'left');
-						} elsif(map::left($map_team)) {
-							plus::assign($player, 'right');
-						}
-					}
-				} else {
-					unless(map::team($player, $map_team)) {
-						plus::assign($player, $map_team);
-					}
 				}
 			}
 
