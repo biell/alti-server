@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.77';
+my($VERSION)='4.78';
 
 =head1 NAME
 
@@ -9608,13 +9608,14 @@ play though extended interfaces and server support.
 	sub ensure_team {
 		my($p, $team)=@_;
 		my($msg)=sprintf("Join %s team to play", map::team_color($team));
+		my($force)=xx::enabled;
 
-		return if(map::mode('ffa'));
+		$force=0 if(map::mode('ffa'));
 
 		if(!$team || map::team($p, $team)) {
-			server::send('allowSpawn', $p->{'player'}) if(xx::enabled);
+			server::send('allowSpawn', $p->{'player'}) if($force);
 		} else {
-			server::send('denySpawn', $p->{'player'}, $msg) if(xx::enabled);
+			server::send('denySpawn', $p->{'player'}, $msg) if($force);
 			&assign($p, $team);
 		}
 	}
@@ -9757,8 +9758,8 @@ play though extended interfaces and server support.
 				ball::score($p);
 				&score($p);
 				mem->game('first_cp', $p)++;
-				chat::all($p->{'nickname'}, ': checkpoint', $cp, 'for',
-					map::team_color($p->{'team'}));
+				chat::all(map::team_color($p->{'team'}), 'checkpoint',
+					$cp, ':', $p->{'nickname'});
 
 				shift(@$t_stats);
 			} else {
@@ -14687,9 +14688,9 @@ core protecting the flag.
 			if(map::mode('ffa')) {
 				if(!map::spec($e) && xx::enabled) {
 					if(plus::hunted($p)) {
-						plus::assign($p, 'red') unless($p->{'oteam'}==3);
+						plus::ensure_team($p, 'red') unless($p->{'oteam'}==3);
 					} else {
-						plus::assign($p, 'blue') unless($p->{'oteam'}==4);
+						plus::ensure_team($p, 'blue') unless($p->{'oteam'}==4);
 					}
 				}
 			} else {
@@ -15877,7 +15878,7 @@ core protecting the flag.
 		my($e, $p)=@_;
 		my(@alive)=();
 
-		if(map::type('coop')) {
+		if(map::type('coop') || map::type('race')) {
 			foreach my $player (player::list('both')) {
 				if($player->{'alive'} && !$player->{'isBot'}) {
 					push(@alive, $player);
@@ -15900,7 +15901,7 @@ core protecting the flag.
 				plus::restart_request($p);
 			}
 		} else {
-			chat::whisper($p, 'This command is only available for coop');
+			chat::whisper($p, 'Command only available for coop & race');
 		}
 	},
 
