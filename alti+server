@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.82';
+my($VERSION)='4.83';
 
 =head1 NAME
 
@@ -7539,6 +7539,7 @@ they make the top 5.
 		my($p, $points)=@_;
 
 		return unless($p->{'nickname'});
+		return if($p->{'isBot'});
 
 		unless(exists($Helpers{$p})) {
 			foreach my $helper (keys(%Helpers)) {
