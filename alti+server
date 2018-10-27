@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.79';
+my($VERSION)='4.80';
 
 =head1 NAME
 
@@ -6792,12 +6792,6 @@ is updated with them as the games progress.
 		} else {
 			$p->{'isBot'}=0;
 			push(@Players, $p);
-
-			if($bot_count eq 'balance') {
-				queue::schedule {
-					xx::configure_bots($bot_level, player::count());
-				} 4;
-			}
 		}
 
 		if(config::admin_vid($p->{'vaporId'})) {
@@ -6885,7 +6879,6 @@ is updated with them as the games progress.
 
 	sub remove {
 		my($p)=@_;
-		my($bot_count, $bot_level)=plus::bot_count();
 
 		delete($Pdb{$p->{'nickname'}});
 		delete($Pdb{$p->{'vaporId'}});
@@ -6909,12 +6902,6 @@ is updated with them as the games progress.
 			if($Admins[$i]==$p) {
 				splice(@Admins, $i, 1);
 				last;
-			}
-		}
-
-		unless($p->{'isBot'}) {
-			if($bot_count eq 'balance') {
-				xx::configure_bots($bot_level, player::count());
 			}
 		}
 
@@ -10358,6 +10345,22 @@ play though extended interfaces and server support.
 				#}
 			} $config::Launcher{'warmup'}{map::mode}-3;
 		}
+	}
+
+	sub balance_bots {
+		my($bot_count, $bot_level)=&bot_count();
+
+		if($bot_count eq 'balance') {
+			$bot_count=0;
+
+			foreach my $player (player::list) {
+				$bot_count++ if($player->{'joined'});
+			}
+		}
+
+		queue::schedule {
+			xx::configure_bots($bot_level, $bot_count);
+		} 2;
 	}
 
 }
@@ -14572,6 +14575,7 @@ core protecting the flag.
 		race::del($p);
 		plus::leave($p);
 		player::remove($p);
+		plus::balance_bots();
 
 		if(map::type('tag') && plus::hunted($p)) {
 			plus::change_hunted(player::random);
@@ -14677,6 +14681,8 @@ core protecting the flag.
 
 			return;
 		}
+
+		plus::balance_bots();
 
 		#Display the intro after users join (first teamChange to spec):
 		unless(mem->game($p, 'intro')) {
