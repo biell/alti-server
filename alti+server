@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.80';
+my($VERSION)='4.81';
 
 =head1 NAME
 
@@ -10353,7 +10353,7 @@ play though extended interfaces and server support.
 		if($bot_count eq 'balance') {
 			$bot_count=0;
 
-			foreach my $player (player::list) {
+			foreach my $player (player::list('both')) {
 				$bot_count++ if($player->{'joined'});
 			}
 		}
