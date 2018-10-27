@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.78';
+my($VERSION)='4.79';
 
 =head1 NAME
 
@@ -4398,6 +4398,9 @@ garunteed to keep the format correct.
 	sub configure_bots {
 		my($level, $count)=@_;
 		my(@bots)=player::bots();
+		if($count eq 'balance') {
+			$count=player::count();
+		}
 
 		return unless(&enabled);
 
@@ -6789,6 +6792,12 @@ is updated with them as the games progress.
 		} else {
 			$p->{'isBot'}=0;
 			push(@Players, $p);
+
+			if($bot_count eq 'balance') {
+				queue::schedule {
+					xx::configure_bots($bot_level, player::count());
+				} 4;
+			}
 		}
 
 		if(config::admin_vid($p->{'vaporId'})) {
@@ -6876,6 +6885,7 @@ is updated with them as the games progress.
 
 	sub remove {
 		my($p)=@_;
+		my($bot_count, $bot_level)=plus::bot_count();
 
 		delete($Pdb{$p->{'nickname'}});
 		delete($Pdb{$p->{'vaporId'}});
@@ -6899,6 +6909,12 @@ is updated with them as the games progress.
 			if($Admins[$i]==$p) {
 				splice(@Admins, $i, 1);
 				last;
+			}
+		}
+
+		unless($p->{'isBot'}) {
+			if($bot_count eq 'balance') {
+				xx::configure_bots($bot_level, player::count());
 			}
 		}
 
@@ -13251,7 +13267,7 @@ core protecting the flag.
 		if(xx::enabled) {
 			chat::whisper($p, 'Change the round time for this map');
 			chat::whisper($p, '/list botCount');
-			chat::whisper($p, '/set botCount # [easy|normal|hard|expert]');
+			chat::whisper($p, '/set botCount <#|balance> [easy|normal|hard|expert]');
 			chat::whisper($p, '/unset botCount');
 		} else {
 			chat::whisper($p, 'botCount not supported without xx extensions');
@@ -13289,6 +13305,11 @@ core protecting the flag.
 	'set botCount'		=> sub {
 		my($e, $p, $count, $difficulty)=@_;
 
+		if($count=~m/bal/i) {
+			$count='balance';
+		} elsif($count!=m/\d/) {
+			return;
+		}
 		return unless(xx::enabled);
 
 		stash::set('botCount', map::name, 'map', $count);
