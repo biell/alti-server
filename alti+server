@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.81';
+my($VERSION)='4.82';
 
 =head1 NAME
 
@@ -4399,7 +4399,7 @@ garunteed to keep the format correct.
 		my($level, $count)=@_;
 		my(@bots)=player::bots();
 		if($count eq 'balance') {
-			$count=player::count();
+			$count=player::list('both');
 		}
 
 		return unless(&enabled);
@@ -10348,19 +10348,13 @@ play though extended interfaces and server support.
 	}
 
 	sub balance_bots {
-		my($bot_count, $bot_level)=&bot_count();
+		my($count, $level)=&bot_count();
 
-		if($bot_count eq 'balance') {
-			$bot_count=0;
-
-			foreach my $player (player::list('both')) {
-				$bot_count++ if($player->{'joined'});
-			}
+		if(xx::enabled) {
+			queue::schedule {
+				xx::configure_bots($level, $count);
+			} 2;
 		}
-
-		queue::schedule {
-			xx::configure_bots($bot_level, $bot_count);
-		} 2;
 	}
 
 }
@@ -14505,6 +14499,7 @@ core protecting the flag.
 		$p->{'spawn_point'}=[0, 0, 0];
 
 		player::add($p);
+		plus::balance_bots();
 
 		return if($p->{'isBot'});
 
