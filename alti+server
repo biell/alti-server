@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.83';
+my($VERSION)='4.84';
 
 =head1 NAME
 
@@ -14500,9 +14500,10 @@ core protecting the flag.
 		$p->{'spawn_point'}=[0, 0, 0];
 
 		player::add($p);
-		plus::balance_bots();
 
 		return if($p->{'isBot'});
+
+		plus::balance_bots();
 
 		rank::update($p);
 
@@ -14571,13 +14572,14 @@ core protecting the flag.
 		race::del($p);
 		plus::leave($p);
 		player::remove($p);
-		plus::balance_bots();
 
 		if(map::type('tag') && plus::hunted($p)) {
 			plus::change_hunted(player::random);
 		}
 
 		return if($p->{'isBot'});
+
+		plus::balance_bots();
 
 		if($p->{'spawn'}) {
 			mem->game('played', $p)+=$e->{'time'} - $p->{'spawn'};
