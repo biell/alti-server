@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.84';
+my($VERSION)='4.85';
 
 =head1 NAME
 
@@ -14721,19 +14721,19 @@ core protecting the flag.
 			} else {
 				if(plus::hunted($p)) {
 					if(map::right($map_team)) {
-						#plus::assign($p, 'left');
-						plus::ensure_team($p, 'left');
+						#plus::assign($e, 'left');
+						plus::ensure_team($e, 'left');
 					} else {
-						#plus::assign($p, 'right');
-						plus::ensure_team($p, 'right');
+						#plus::assign($e, 'right');
+						plus::ensure_team($e, 'right');
 					}
 				} else {
-					if(map::right($map_team) && map::left($p)) {
-						#plus::assign($p, 'right');
-						plus::ensure_team($p, 'right');
-					} elsif(map::right($p)) {
-						#plus::assign($p, 'left');
-						plus::ensure_team($p, 'right');
+					if(map::right($map_team) && map::left($e)) {
+						#plus::assign($e, 'right');
+						plus::ensure_team($e, 'right');
+					} elsif(map::right($e)) {
+						#plus::assign($e, 'left');
+						plus::ensure_team($e, 'right');
 					}
 				}
 			}
@@ -14800,7 +14800,7 @@ core protecting the flag.
 				plus::ensure_team($p, 'right');
 			}
 		} elsif(map::type('tag') && plus::prey($p)) {
-			if(map::spec($p)) {
+			if(map::spec($p) && player::count('both')>1) {
 				plus::change_hunted(player::random);
 			}
 		} elsif(map::right($map_team) && map::left($p)) {
