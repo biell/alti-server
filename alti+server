@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.85';
+my($VERSION)='4.86';
 
 =head1 NAME
 
@@ -15960,6 +15960,7 @@ core protecting the flag.
 
 		server::start;
 		server::reopen_log;
+		script::install;
 		player::init;
 		race::init;
 		ball::new;
@@ -16808,6 +16809,7 @@ while(1) {
 
 				server::start;
 				server::reopen_log;
+				script::install;
 				ui::setup_screen;
 
 				player::init;
@@ -16869,6 +16871,7 @@ while(1) {
 
 			server::start;
 			server::reopen_log;
+			script::install;
 			player::init;
 			race::init;
 			ball::new;
