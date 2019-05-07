@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.86';
+my($VERSION)='4.87';
 
 =head1 NAME
 
@@ -3328,7 +3328,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'help' => {
 		'name'			=> 'help',
-		'arguments'		=> [['game', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'win', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'archive', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['game', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'bounds', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'archive', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3343,7 +3343,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'list' => {
 		'name'			=> 'list',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'win', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'timer', 'zones', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'bounds', 'timer', 'zones', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3351,7 +3351,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'set' => {
 		'name'			=> 'set',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'win', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'intro', 'keys', 'timer'], 'string'],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'intro', 'keys', 'timer'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3359,7 +3359,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'unset' => {
 		'name'			=> 'unset',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'win', 'spawnMode', 'changePlane', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'intro', 'keys', 'timer']],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'intro', 'keys', 'timer']],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3367,7 +3367,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'add' => {
 		'name'			=> 'add',
-		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'timer', 'zone'], 'string'],
+		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'bound', 'timer', 'zone'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3375,7 +3375,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'del' => {
 		'name'			=> 'del',
-		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'timer', 'zone', 'record'], 'string'],
+		'arguments'		=> [['note', 'plane', 'powerup', 'portal', 'door', 'key', 'diverter', 'oneway', 'bound', 'timer', 'zone', 'record'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -7564,7 +7564,7 @@ they make the top 5.
 		my($assign)=map::team_number(map::player_team);
 		my($score)=stash::get('score', map::name, 'map');
 		my($win)=ball::winner();
-		my($min_players)=scalar(map::spawn_points);
+		my($min_players)=stash::get('minPlayers', map::name, 'map');
 		my(@holder)=(time());
 		my($place)=1;
 		my($save)=1;
@@ -7573,6 +7573,8 @@ they make the top 5.
 		my($time, @nicks);
 
 		return unless(map::type(@types));
+
+		$min_players ||= scalar(map::spawn_points);
 
 		$time=sprintf("%0.2f", ($server::Time - $Start)/1000);
 
@@ -12136,6 +12138,7 @@ core protecting the flag.
 			gameType
 			roundTime
 			botCount
+			minPlayers
 			maxPlayers
 			changePlane
 			win
@@ -12242,6 +12245,7 @@ core protecting the flag.
 			gameType
 			roundTime
 			botCount
+			minPlayers
 			maxPlayers
 			changePlane
 			win
@@ -12975,6 +12979,38 @@ core protecting the flag.
 		} else {
 			chat::whisper($p, 'Initial winning score override not set');
 		}
+	},
+
+	'help minPlayers'	=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, 'Do not save records when fewer than # players');
+		chat::whisper($p, '/list minPlayers');
+		chat::whisper($p, '/set minPlayers #');
+		chat::whisper($p, '/unset minPlayers');
+	},
+
+	'list minPlayers'	=> sub {
+		my($e, $p)=@_;
+		my($count)=stash::get('minPlayers', map::name, 'map');
+
+		chat::whisper($p, 'minPlayers:', $count || $config::Maxp);
+	},
+
+	'set minPlayers'	=> sub {
+		my($e, $p, $count)=@_;
+
+		if($count>0) {
+			stash::set('minPlayers', map::name, 'map', $count);
+		} else {
+			stash::delete('minPlayers', map::name, 'map');
+		}
+	},
+
+	'unset minPlayers'	=> sub {
+		my($e, $p)=@_;
+
+		stash::delete('minPlayers', map::name, 'map');
 	},
 
 	'help maxPlayers'	=> sub {
@@ -13899,6 +13935,34 @@ core protecting the flag.
 		my($e, $p, $x, $y)=@_;
 
 		stash::delete("$x,$y", 'oneways', map::name, 'map');
+	},
+
+	'help bounds'	=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, 'Ensure anyone picking up a powerup is despawned');
+		chat::whisper($p, '/list bounds');
+		chat::whisper($p, '/add bound <x>,<y>');
+		chat::whisper($p, '/del bound <x>,<y>');
+	},
+
+	'list bounds'	=> sub {
+		my($e, $p)=@_;
+		my($bound)=stash::get('bounds', map::name, 'map');
+
+		chat::whisper($p, 'Bounds:', keys(%$bound));
+	},
+
+	'add bound'	=> sub {
+		my($e, $p, $x, $y)=@_;
+
+		stash::set("$x,$y", 'bounds', map::name, 'map', 1);
+	},
+
+	'del bound'	=> sub {
+		my($e, $p, $x, $y)=@_;
+
+		stash::delete("$x,$y", 'bounds', map::name, 'map');
 	},
 
 	'help zones'	=> sub {
@@ -15211,6 +15275,11 @@ core protecting the flag.
 						server::trigger('logPlanePositions', 'oneway', $e, $p)
 					} 1;
 				}
+			}
+		} elsif(stash::get($pickup, 'bounds', map::name, 'map')) {
+			if(plus::no_repeats($e, $p, 'bounds')) {
+				plus::bench($p);
+				chat::whisper($p, 'Do not cross boundary!');
 			}
 		} elsif($spawn_mode eq 'health') {
 			if(map::powerup($e, 'Health') && (
