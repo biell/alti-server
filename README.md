@@ -429,6 +429,12 @@ manage Alti+ game maps.
     their action, and they will be able to respawn at the same place they
     were when they ran the `/changePlane` command.
 
+  * **/set minPlayers [#]**<br>
+    For maps which store records, only store records if the map has at
+    least `#` players.  The `minPlayers` is normally set based on the
+    number of spawn points, but this command can override that value
+    when necessary.
+
   * **/set maxPlayers [#]**<br>
     Set the maximum number of players who can spawn simultaneously on the
     map.  This allows a game to have a lower number of maximum players
@@ -534,6 +540,22 @@ manage Alti+ game maps.
 
   * **/del oneway [x],[y]**<br>
     Delete the oneway powerup located at coordinates `x`,`y`.
+
+  * **/add bound [x],[y]**<br>
+    Specify that picking up the powerup at `x`,`y` will cause the player to
+    respawn.  This allows powerups to be used as a boundary whereby a player
+    cannot cross a threshold, but they can fire, bomb, shoot a ball, etc.
+    through that space.  Normally this would be a Health powerup, which is
+    auto used and therefore applies for all players.  If a powerup should
+    only apply to one team, then it should have it's team attribute set
+    to only that team, so the players are aware of for whom it applies.
+    There is a possible use case for non Health powerups in Coop maps where
+    players would need to have some other kind of powerup to pass through
+    a space.  Presumably this would be a bomb or ball, depending on the
+    Coop type.
+
+  * **/del bound [x],[y]**<br>
+    Delete the boundary powerup located at coordinates `x`,`y`.
 
   * **/add zone [name] [team] [sx],[sy],[sa]**<br>
     Create (or overwrite) a spawn zone named `name`. When invoked, spawn
