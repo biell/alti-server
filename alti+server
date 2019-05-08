@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='4.87';
+my($VERSION)='4.89';
 
 =head1 NAME
 
@@ -16820,6 +16820,12 @@ while(1) {
 				dlfmhs::remove($1);
 			} elsif($SOUT=~m/DLFMHS releasing file data for (.*)\.altx/) {
 				dlfmhs::release($1);
+			} elsif($SOUT=~m/Unresponsive client Client\[name=.*?, ip=0.0.0.0:10\d+,/) {
+				&event({
+					'port' => $config::Port,
+					'time' => $server::Time,
+					'type' => 'enable botCount',
+				});
 			} elsif($SOUT=~m/\[Nickname Changed\] '(.*)' -> '(.*)'/) {
 				1; #put code here if xal's patch doesn't fix name change bug
 			} elsif($SOUT=~m/ERROR .* java.lang.NullPointerException/) {
