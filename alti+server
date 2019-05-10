@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.89';
+my($VERSION)='4.90';
 
 =head1 NAME
 
@@ -9613,15 +9613,8 @@ play though extended interfaces and server support.
 
 	sub ensure_team {
 		my($p, $team)=@_;
-		my($msg)=sprintf("Join %s team to play", map::team_color($team));
-		my($force)=xx::enabled;
 
-		$force=0 if(map::mode('ffa'));
-
-		if(!$team || map::team($p, $team)) {
-			server::send('allowSpawn', $p->{'player'}) if($force);
-		} else {
-			server::send('denySpawn', $p->{'player'}, $msg) if($force);
+		if($team && !map::team($p, $team)) {
 			&assign($p, $team);
 		}
 	}
