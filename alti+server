@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.90';
+my($VERSION)='4.91';
 
 =head1 NAME
 
@@ -12131,6 +12131,7 @@ core protecting the flag.
 			gameType
 			roundTime
 			botCount
+			minPlayers
 			minPlayers
 			maxPlayers
 			changePlane
