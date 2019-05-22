@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.91';
+my($VERSION)='4.92';
 
 =head1 NAME
 
@@ -8887,6 +8887,46 @@ interface.
 		$Carrier=undef;
 	}
 
+	sub spawn_here {
+		my($x, $y)=@_;
+
+		return unless(xx::enabled);
+
+		server::send('resetBall', $x, $y);
+	}
+
+	sub assign_team {
+		my($team)=@_;
+
+		return unless(xx::enabled);
+
+		if(map::left($team)) {
+			server::send('resetBallTeam', 0);
+		} elsif(map::right($team)) {
+			server::send('resetBallTeam', 1);
+		} else {
+			server::send('resetBallTeam', -1);
+		}
+	}
+
+	sub turnover {
+		my($p)=@_;
+
+		return unless(xx::enabled);
+
+		if(map::left($p)) {
+			&assign_team('right');
+		} elsif(map::right($p)) {
+			&assign_team('left');
+		}
+	}
+
+	sub carrier {
+		my($p)=@_;
+
+		return($Carrier==$p);
+	}
+
 	sub goal {
 		my($p)=@_;
 		my($airtime);
@@ -13246,7 +13286,7 @@ core protecting the flag.
 		if(xx::enabled) {
 			chat::whisper($p, 'Change the round time for this map');
 			chat::whisper($p, '/list roundTime');
-			chat::whisper($p, '/set roundTime #');
+			chat::whisper($p, '/set roundTime #|##:##');
 			chat::whisper($p, '/unset roundTime');
 		} else {
 			chat::whisper($p, 'roundTime not supported without xx extensions');
@@ -13275,8 +13315,12 @@ core protecting the flag.
 	'set roundTime'		=> sub {
 		my($e, $p, $time)=@_;
 
+		if($time=~m/(\d+):(\d+)/) {
+			$time=$1*60+$2;
+		}
+
 		stash::set('roundTime', map::name, 'map', $time);
-		chat::all('roundTime:', utils::timer($time));
+		$HOOKS{'enable roundTime'}->($e, $p);
 	},
 
 	'unset roundTime'		=> sub {
