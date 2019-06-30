@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.92';
+my($VERSION)='4.93';
 
 =head1 NAME
 
@@ -11440,17 +11440,17 @@ core protecting the flag.
 			@duration=qw( 1 week );
 		}
 
-		if($type=~m/chat/i) {
+		if($type=~m/ch/i) {
 			chat::whisper($a, 'Stop abusing chat');
 			server::send('addChatBlock', $a->{'vaporId'}, 'AllChat',
 				@duration, 'Stop abusing chat');
 			server::send('addChatBlock', $ip, 'AllChat',
 				@duration, 'Stop abusing chat');
 			player::infraction($a, 1);
-		} elsif($type=~m/ban/i) {
+		} elsif($type=~m/b/i) {
 			server::send('ban', $anick, @duration, 'You are in time out, go to your quiet corner!');
 		} elsif($type=~m/nick/i) {
-			stash::set('nick', $a->{'vaporId'}, 'abuse', $anick);
+			stash::set('ni', $a->{'vaporId'}, 'abuse', $anick);
 			chat::whisper($a, 'If you want to play on this server, change your nickname');
 			queue::schedule {
 				chat::whisper($a, 'If you do not change your nickname, you will be kicked');
@@ -11459,15 +11459,21 @@ core protecting the flag.
 				server::send('kick', $anick);
 			} 20;
 			player::infraction($a, 2);
-		} elsif($type=~m/rude/i) {
+		} elsif($type=~m/r/i) {
 			player::infraction($a, 5);
 			chat::whisper($a, 'You are being rude, knock it off or get kicked');
 		} else {
-			chat::whisper($a, '/abuse [chat|ban|nick|rude] [player]');
+			chat::whisper($a, '/abuse [player] [chat|ban|nick|rude]');
 		}
 
 		stash::set('last', $a->{'vaporId'}, 'abuse', $today);
 		stash::set('count', $a->{'vaporId'}, 'abuse', $count);
+	},
+
+	'help abuse'	=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, '/abuse [player] [chat|ban|nick|rude]');
 	},
 
 	'upload'		=> sub {
