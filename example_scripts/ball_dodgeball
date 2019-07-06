@@ -74,7 +74,8 @@ sub eliminate {
 }
 
 sub position_check {
-	my($p, $x)=@_;
+	my($e, $p)=@_;
+	my($x)=$e->{'positionX'};
 
 	chat::debugf('position %s: side(%s) color(%s) x(%d)',
 		$p->{'nickname'}, map::side($p), map::team_color($p->{'team'}), $x);
@@ -83,8 +84,10 @@ sub position_check {
 		(map::left($p->{'team'})  && $x>645)  ||
 		(map::right($p->{'team'}) && $x<635)
 	) {
-		&eliminate($p, 1);
-		chat::whisper($p, "Don't cross the line");
+		if(plus::no_repeats($e, $p, 'eliminate')) {
+			&eliminate($p, 1);
+			chat::whisper($p, "Don't cross the line");
+		}
 		return(undef);
 	} else {
 		return(1);
@@ -226,7 +229,7 @@ HOOKS {
 		chat::debugf('powerupUse %s: side(%s) x(%s)', $p->{'nickname'},
 			map::side($p), ($e->{'positionX'}<640)?'<':'>');
 
-		if(&position_check($p, $e->{'positionX'})) {
+		if(&position_check($e, $p)) {
 			$DB{'hot'}=$e->{'time'}+1020;
 			$DB{'shoot'}=$DB{'carry'};
 			$DB{'carry'}=undef;
@@ -248,7 +251,8 @@ HOOKS {
 			$DB{'shoot'}                          &&
 			$DB{'shoot'}{'team'} != $p->{'team'}  &&
 			$e->{'time'} < $DB{'hot'}             &&
-			$time > $DB{'safe'}{$vid}
+			$time > $DB{'safe'}{$vid}             &&
+			plus::no_repeats($e, $p, 'eliminate')
 		) {
 			$DB{'shoot'}=undef;
 			$DB{'carry'}=undef;
@@ -268,7 +272,7 @@ HOOKS {
 		my($v)=player::lookup($e->{'victim'});
 		my($vid)=$v->{'vaporId'};
 
-		&position_check($v, $e->{'victimPositionX'});
+		&position_check($e, $v);
 
 		return if($p->{'isBot'});
 
