@@ -1,0 +1,57 @@
+#Bring ball out on ball_half_court
+
+MAP 'ball_3asteroids_reset';
+
+my($TEAM)=undef;
+my($DEAD)=0;
+
+HOOKS {
+	'mapChange'		=> sub {
+		$TEAM=undef;
+	},
+
+	'ballLost'		=> sub {
+		foreach my $player (player::list) {
+			plus::spawn_reset($player);
+		}
+
+		$TEAM=undef;
+	},
+
+	'goal'			=> sub {
+		my($e, $p)=@_;
+
+		ball::rollback_score($p->{'team'}) if($e->{'time'}<$DEAD);
+
+		foreach my $player (player::list) {
+			plus::spawn_reset($player);
+		}
+
+		$TEAM=undef;
+	},
+
+	'powerupPickup'	=> sub {
+		my($e, $p)=@_;
+		
+		return unless($e->{'powerup'} eq 'Ball');
+
+		if($TEAM) {
+			if($p->{'team'} != $TEAM) {
+				if(map::left($p->{'team'})) {
+					server::send('resetBallTeam', 0);
+				} elsif(map::right($p->{'team'})) {
+					server::send('resetBallTeam', 1);
+				} else {
+					server::send('resetBallTeam', -1);
+				}
+				foreach my $player (player::list) {
+					plus::spawn_reset($player);
+				}
+				$DEAD=$e->{'time'}+4000;
+			}
+		}
+
+		$TEAM=$p->{'team'};
+	},
+};
+
