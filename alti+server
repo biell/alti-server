@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='4.93';
+my($VERSION)='4.94';
 
 =head1 NAME
 
@@ -7592,8 +7592,8 @@ they make the top 5.
 
 		if(map::mode('tdm', '1dm', '1de', '1bd')) {
 			foreach my $player (keys(%Helpers)) {
-				&help($player, $player->{'kills'}/$player->{'died'}*20-20)
-					if($player->{'died'}>2);
+				&help($player, mem->game('kills', $player)/mem->game('died', $player)*20-20)
+					if(mem->game('died', $player)>2);
 			}
 		}
 
@@ -14665,6 +14665,7 @@ core protecting the flag.
 
 	'clientRemove'		=> sub {
 		my($e, $p)=@_;
+		my($elapsed)=($e->{'time'} - $p->{'time'})/1000;
 		my($reason)='';
 		my(%stats);
 		my($name);
@@ -14709,7 +14710,8 @@ core protecting the flag.
 
 		server::power_save if(player::count==0);
 
-		if(exists($e->{'stats'})) { #LewisH server patch add-on (xx patches)
+		#LewisH server patch add-on (xx patches)
+		if(exists($e->{'stats'}) && $elapsed>60) {
 			%stats=%{$e->{'stats'}};
 
 			foreach my $stat (keys(%stats)) {
