@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='4.95';
+my($VERSION)='4.97';
 
 =head1 NAME
 
@@ -1686,10 +1686,10 @@ pure-perl C<JSON::PP>, and this will be used if C<JSON::XS> is not found.
 	if($Json=eval('use JSON::XS; JSON::XS->new()')) {
 		$Json->relaxed(1); #in case of hand editing of json_stash.txt
 		$Json->canonical(1); #output in-order for comparing
-		ui::slog('using JSON::XS (good)');
+		ui::slog('Using JSON::XS (good)');
 	} elsif($Json=eval('use JSON::PP; JSON::PP->new()')) {
 		$Json->relaxed(1); #in case of hand editing of json_stash.txt
-		ui::slog('using JSON::PP, consider installing JSON::XS (its faster)');
+		ui::slog('Using JSON::PP, consider installing JSON::XS (its faster)');
 	} else {
 		die('Could not find a JSON library, please install JSON::XS');
 	}
@@ -2906,8 +2906,12 @@ has occured.  After too many infractions, the player is kicked by the server.
 			$config=$server->{'AltitudeServerConfig'};
 		}
 
-		foreach my $admin (@{$config->{'adminsByVaporID'}{'UUID'}}) {
-			$Admins{$admin->{'UUID'}}=1;
+		if(ref($config->{'adminsByVaporID'}{'UUID'}) eq 'ARRAY') {
+			foreach my $admin (@{$config->{'adminsByVaporID'}{'UUID'}}) {
+				$Admins{$admin->{'UUID'}}=1;
+			}
+		} else {
+			$Admins{$config->{'adminsByVaporID'}{'UUID'}}=1;
 		}
 
 		$Name=$config->{'serverName'};
@@ -3861,7 +3865,7 @@ garunteed to keep the format correct.
 							'allow_join_tournament'	=> json::false,
 							'commands_target_bots'	=> json::true,
 							'prevent_team_change'	=> json::false,
-							'name_prefix'			=> ' ',
+							'name_prefix'			=> 'Bot ',
 							'names'				=> [
 								'Alice',
 								'Bob',
@@ -3887,6 +3891,7 @@ garunteed to keep the format correct.
 								'Victor',
 								'Wendy',
 								'Xavier',
+								'Yoko',
 								'Zeus'
 							],
 						},
@@ -4463,7 +4468,7 @@ Supported databases are SQLite and PostgreSQL.
 				{'PrintError' => config::option('debug')}
 			);
 			if($Dbh=eval('use DBI; DBI->connect(@connect)')) {
-				ui::slog('using DBD::Pg (ok)');
+				ui::slog('Using DBD::Pg (ok)');
 				$Type='pg';
 			} else {
 				ui::slog('No database libraries, falling back to stash-only mode');
@@ -4487,7 +4492,7 @@ Supported databases are SQLite and PostgreSQL.
 			}
 
 			if($Dbh=eval('use DBI; DBI->connect(@connect)')) {
-				ui::slog('using DBD::SQLite (ok)');
+				ui::slog('Using DBD::SQLite (ok)');
 				$Type='sqlite';
 			} else {
 				ui::slog('No database libraries, falling back to stash-only mode');
@@ -7274,18 +7279,20 @@ debugging or to make funny comments.
 
 	sub all {
 		my($msg)=join(' ', @_);
-		server::send('serverMessage', $msg);
+		server::send('serverMessage', $msg) if($msg);
 	}
 
 	sub allf {
 		my($fmt)=shift;
-		server::send('serverMessage', sprintf($fmt, @_));
+		server::send('serverMessage', sprintf($fmt, @_)) if(@_);
 	}
 
 	sub team {
 		my($team)=shift;
 		my($msg)=join(' ', @_);
 		my($any)=0;
+
+		return unless($msg);
 
 		if(ref($team) eq 'HASH' && exists($team->{'team'})) {
 			$team=$team->{'team'};
@@ -8712,6 +8719,12 @@ interface.
 			@Win=();
 		}
 
+		foreach my $w (@Win) {
+			if($w<0) {
+				$w+=$config::Launcher{'goals'};
+			}
+		}
+
 		return(@Win);
 	}
 
@@ -8763,8 +8776,10 @@ interface.
 
 		if(map::mode('ball')) {
 			server::send('overrideBallScore', $left, $right);
+			@Score=($left, $right);
 		} elsif(map::mode('tdm') && xx::enabled) {
 			server::send('overrideTdmScore', $left, $right);
+			@Score=($left, $right);
 		}
 	}
 

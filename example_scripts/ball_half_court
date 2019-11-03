@@ -8,6 +8,7 @@ my($DEAD)=0;
 HOOKS {
 	'mapChange'		=> sub {
 		$TEAM=undef;
+		ball::set_win(-1, -1);
 	},
 
 	'ballLost'		=> sub {

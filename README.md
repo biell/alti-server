@@ -1005,8 +1005,8 @@ Use the console-only `/server list`, `/server set`, `/server unset`,
     the password or other authentication data with a pad.  The pad
     is, by default, generated using system data which doesn't
     usually change.  Users can use the environment variable
-    `ALTITUDE_SALT` to manually set the seed for this pad.  Another,
-    almost secure, method is to provide the salt manually on startup.
+    `ALTITUDE_SALT` to manually set the seed for this pad.  The least
+    insecure method is to provide the salt manually on startup.
     With this option set to 1, the server will pause and wait for
     input before continuing.
  
@@ -1350,6 +1350,26 @@ Use the console-only `/xx list`, `/xx set`, `/xx unset`,
     Enable (if set to true) the above restriction engine.  The default is
     disabled (false).
 
+  * **botPrefix [string]**<br>
+    Change the prefix for bots from the default of `"Bot "`.  It is not
+    advised to use this feature, as the Altitude base code uses this
+    prefix to figure out if a bot is really a bot.  Certain things may
+    break on certain game types if you change this.  **Use with care.**
+
+  * **botNames [name]**<br>
+    An array containing the names of Bots.  The default Altitude names are
+    1, 2, 3, ... and the default `alti+server` names are Alice, Bot, Carol ...
+    Whatever you put here, it will be prefixed by `botPrefix`, which really
+    shouldn't be anything other than the default `"Bot "`.
+
+  * **botTournament [true|false]**<br>
+    If set to `true`, allow bots to join tournaments.  The default is
+    `false`.
+
+  * **autoStopTournament [true|false]**<br>
+    if set to the default value of `true`, then automatically stop a
+    tournament if all players have left.
+
   * **whitelist [true|false]**<br>
     Enable (if set to true) the whitelist join engine.  If this is enabled
     (which it is not by default), then only players in the special `allow`
@@ -1357,8 +1377,9 @@ Use the console-only `/xx list`, `/xx set`, `/xx unset`,
 
   * **allow [player]**<br>
     Use `/xx add allow [player]` to add players to this list and
-    `/xx del allow [player]` to remove players from this list.  You can
-    specify players via their VaporID, or if they are already a part of
+    `/xx del allow [player]` to remove players from this list.  See the
+    `whitelist` command above for more information on why to use this.  You
+    can specify players via their VaporID, or if they are already a part of
     the `alti+server` player database (you must have database support
     enabled for this), then it will search for them by their player name
     or most recent in-game nickname.  This feature is very useful when
@@ -1488,6 +1509,12 @@ loading and unloading of script modules.  And, it is an easy way to change
 the behaviour of the server.  This is helpful for setting up league events
 and could be used for a map which required tight integration with the server
 code.  See the `example_scripts` directory on github for examples.
+
+A directory will be created under your `altitude/servers` directory called
+`alti+scripts`.  Place scripts into this directory and they will be read
+when the `alti+server` process starts.  If scripts are added or changed
+during a running server, the `/script reload` command can be used to re-read
+all scripts, including new ones.
 
 A special command `/vote modify` is available to tune scripts
 

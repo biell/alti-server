@@ -130,12 +130,35 @@ really should consider taking immediate action on configuring the following:
 Step 3, Start alti+server
 =========================
 You should be ready to go to start your server, give it a try.  It is highly
-recommended that alti+server be run from a detatchable terminal.  Good
+recommended that `alti+server` be run from a detatchable terminal.  Good
 choices are GNU Screen, tmux, and dtach.  This will allow for the game server
 to continue to function normally, even in the event of a disconnect.
 
 At this time, there is no version of alti+server which can run headless, and
 in the background.
+
+If it doesn't already exist, on the first start of `alti+server` will create
+the directory `$INSTALL_ROOT/servers/alti+scripts` for you to put any
+custom scripts into to modify the behaviour of the altitude+ server.
+
+============================================
+Step 4, Optionally enable extended behaviour
+============================================
+Many of the features in `alti+server` rely on
+[Xal's server patches](https://gitlab.com/alti2d/server_patches)
+for complete behavior.  It is recommended that this functionality be
+enabled when running this software.  It is not, however, required as
+this is 3rd-party, open-source code which modifies the default behaivor
+of the server.
+
+To enable this code and unlock full `alti+server` functionality, run
+the following commands from the console.  This will work if you installed
+`alti+server` by cloning (as suggested in Appendix 1) or downloading the
+entire repository.  If you only copied down the `alti+server` script,
+then this step will fail.
+
+  /server set xxEnabled true
+  /restartServer
 
 ==========================================
 Appendix 1, How the author sets up servers
@@ -165,11 +188,16 @@ This setup will leave you with an "altitude", "bin", and "lib" directory at
 the base of your user's home directory.  I like it, because I can update my
 server code easilly with the following steps:
 
-  1. Type "/shutdown" in the alti+server console
-  2. Run "cd ~/src/alti-server"
-  3. Run "git pull"
-  4. Run "cd ~"
-  5. Run "bin/alti+server"
+  1. Type `/shutdown` in the alti+server console
+  2. Run `cd ~/src/alti-server`
+  3. Run `git pull`
+  4. Run `cd ~`
+  5. Run `bin/alti+server`
+
+Optionally (see Step 4 for more information)
+
+  6. Type `/server set xxEnabled true` in the alti+server console
+  7. Type `/restartServer` in the alti+server console
 
 =============================
 Appendix 2, Setting up screen
