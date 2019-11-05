@@ -74,8 +74,7 @@ sub eliminate {
 }
 
 sub position_check {
-	my($e, $p)=@_;
-	my($x)=$e->{'positionX'};
+	my($e, $p, $x)=@_;
 
 	chat::debugf('position %s: side(%s) color(%s) x(%d)',
 		$p->{'nickname'}, map::side($p), map::team_color($p->{'team'}), $x);
@@ -229,7 +228,7 @@ HOOKS {
 		chat::debugf('powerupUse %s: side(%s) x(%s)', $p->{'nickname'},
 			map::side($p), ($e->{'positionX'}<640)?'<':'>');
 
-		if(&position_check($e, $p)) {
+		if(&position_check($e, $p, $p->{'positionX'})) {
 			$DB{'hot'}=$e->{'time'}+1020;
 			$DB{'shoot'}=$DB{'carry'};
 			$DB{'carry'}=undef;
@@ -272,7 +271,7 @@ HOOKS {
 		my($v)=player::lookup($e->{'victim'});
 		my($vid)=$v->{'vaporId'};
 
-		&position_check($e, $v);
+		&position_check($e, $v, $e->{'victimPositionX'});
 
 		return if($p->{'isBot'});
 
