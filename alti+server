@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-#use strict;
+use strict;
 
-my($VERSION)='4.98';
+my($VERSION)='4.99';
 
 =head1 NAME
 
@@ -13400,7 +13400,7 @@ core protecting the flag.
 
 		if($count=~m/bal/i) {
 			$count='balance';
-		} elsif($count!=m/\d/) {
+		} elsif($count!~m/\d/) {
 			return;
 		}
 		return unless(xx::enabled);

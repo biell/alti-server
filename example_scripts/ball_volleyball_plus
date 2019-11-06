@@ -1,0 +1,22 @@
+#volleyball Alti+ script for game specific code
+#
+# Rules:
+#  Make baskets, but don't cross lines (e.g. pick up a Health powerup)
+#
+
+MAP 'ball_volleyball_plus';
+
+HOOKS {
+	'powerupAutoUse'	=> sub {
+		my($e, $p)=@_;
+
+		return unless($e->{'powerup'} eq 'Health');
+
+		if(plus::no_repeats($e, $p, 'line')) {
+			plus::bench($p);
+			ball::turnover($p) if(ball::carrier($p));
+		}
+	},
+
+};
+
