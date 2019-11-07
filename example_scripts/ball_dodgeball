@@ -228,7 +228,7 @@ HOOKS {
 		chat::debugf('powerupUse %s: side(%s) x(%s)', $p->{'nickname'},
 			map::side($p), ($e->{'positionX'}<640)?'<':'>');
 
-		if(&position_check($e, $p, $p->{'positionX'})) {
+		if(&position_check($e, $p, $e->{'positionX'})) {
 			$DB{'hot'}=$e->{'time'}+1020;
 			$DB{'shoot'}=$DB{'carry'};
 			$DB{'carry'}=undef;
