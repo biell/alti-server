@@ -443,7 +443,8 @@ manage Alti+ game maps.
     likely to cause players to leave the game.  However, it is useful for
     MDG games, where 13 against 1 seems a little too asymmetric.
 
-  * **/set gameType [coop|flag|race|ruin|zone|mdg|1lh|std|normal]**<br>
+  * **/set gameType [mapname|std|coop|race|ruin|flag|zone|mdg|1lh|4ball]**<br>
+
     Normally the type of a game is ascertained by te file name.
     If that cannot be done properly, the game type can be set via this
     mechanism.

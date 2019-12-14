@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 
-use strict;
+#use strict;
 
-my($VERSION)='4.99';
+my($VERSION)='5.01';
 
 =head1 NAME
 
@@ -92,7 +92,7 @@ my(%OPTIONS)=(
 );
 
 my(@MODES)=qw(1bd 1de 1dm ball ffa tbd tdm);
-my(@TYPES)=qw(coop flag mdg tag race ruin zone 1lh 4ball);
+my(@TYPES)=qw(coop flag mdg tag race ruin zone 1lh 1fa 4ball);
 
 my($OPTIONS_HIDE)='pass|secret|token|auth';
 my($MB)=2**20;
@@ -2333,9 +2333,10 @@ kept across server restarts.
 	}
 
 	sub new_round {
-		&log;
 		vacuum->game;
 		vacuum->player;
+
+		&log;
 	}
 }
 
@@ -6239,6 +6240,8 @@ types which alter the normal behavior.
 			$Map->{'type'}='tag';
 		} elsif(m/(^|_)1lh(_|$)/i) {
 			$Map->{'type'}='1lh';
+		} elsif(m/(^|_)1fa(_|$)/i && xx::enabled) {
+			$Map->{'type'}='1fa';
 		} elsif(m/(^|_)(4ball|ball_4)/i) {
 			$Map->{'type'}='4ball';
 		} else {
@@ -9038,6 +9041,12 @@ play though extended interfaces and server support.
 		records::init;
 		race::init;
 
+		if(xx::enabled) {
+			queue::schedule {
+				&set_spawn_restrictions;
+			} $config::Launcher{'warmup'}{map::mode}-3;
+		}
+
 		if(map::type('ruin')) {
 			foreach my $t (0, 1) {
 				mem->game('total', $teams[$t], 'structure')=0;
@@ -9637,7 +9646,11 @@ play though extended interfaces and server support.
 		return if(tourney::assign($p, $team));
 
 		if(map::mode('ffa') && xx::enabled) {
-			server::send('assignTeam', $p->{'nickname'}, map::team_number($team));
+			if($team>=100) {
+				server::send('assignTeam', $p->{'nickname'}, $p->{'oteam'});
+			} else {
+				server::send('assignTeam', $p->{'nickname'}, map::team_number($team));
+			}
 		} elsif(map::left($team)) {
 			server::send('assignTeam', $p->{'nickname'}, 0);
 		} elsif(map::right($team)) {
@@ -9650,7 +9663,9 @@ play though extended interfaces and server support.
 	sub bench {
 		my($p)=@_;
 
-		if(map::mode('ffa') && !xx::enabled) {
+		if(map::type('1fa')) {
+			server::send('assignTeam', $p->{'nickname'}, -1);
+		} elsif(map::mode('ffa') && !xx::enabled) {
 			chat::whisper($p, 'Players cannot be forced to respawn in FFA');
 			return;
 		} elsif(map::mode('ffa') && $p->{'oteam'}) {
@@ -10257,6 +10272,70 @@ play though extended interfaces and server support.
 		$Hunted=undef;
 	}
 
+	sub onewinner {
+		my($alive)=0;
+		my($winner);
+
+		return(undef) unless(map::type('1fa'));
+
+		foreach my $player (player::list('both')) {
+			if(!mem->game('out', $player) && $player->{'alive'}) {
+				mem->game('winner')=$player;
+				$alive++;
+			}
+		}
+
+		if($alive<=1) {
+			if($winner=mem->game('winner')) {
+				chat::allf('!! %s WINS !!', $winner->{'nickname'});
+			}
+			queue::schedule { server::send('endRound'); } 2.5;
+		}
+	}
+
+	sub onekill {
+		my($p, $v)=@_;
+
+		return(undef) unless(map::type('1fa'));
+
+		if($v && !$v->{'isBot'}) {
+			server::send('denySpawn', $v->{'player'}, '1-Life FFA: You are out');
+			mem->game('out', $v)=1;
+			chat::allf('%s is out', $v->{'nickname'});
+		}
+
+		&onewinner;
+	}
+
+	sub onejoin {
+		my($p)=@_;
+
+		if(map::type('1fa') && mem->game('out', $p)) {
+			queue::schedule {
+				server::send('denySpawn', $p->{'player'}, '1-Life FFA: You are out');
+				chat::whisper($p, 'You are out');
+				&bench($p);
+			} 3;
+		}
+	}
+
+	sub set_spawn_restrictions {
+		if(map::type('1fa')) {
+			foreach my $player (player::list) {
+				if(mem->game('out', $player)) {
+					player::infraction($player, 1);
+					server::send('denySpawn', $player->{'player'}, '1-Life FFA: You are out');
+				} else {
+					server::send('allowSpawn', $player->{'player'});
+				}
+			}
+		} else {
+			foreach my $player (player::list) {
+				server::send('allowSpawn', $player->{'player'});
+			}
+		}
+	}
+
 	sub enter {
 		my($p)=@_;
 		my($max)=stash::get('maxPlayers', map::name, 'map') || $config::Maxp;
@@ -10336,6 +10415,12 @@ play though extended interfaces and server support.
 				$bots=7 if($bots>7);
 
 				stash::set('botCount', map::name, 'map', $bots);
+			}
+		} elsif(map::type('1fa')) {
+			my($bots)=stash::get('botCount', map::name, 'map');
+
+			unless(defined($bots)) {
+				stash::set('botCount', map::name, 'map', 0);
 			}
 		}
 
@@ -13254,7 +13339,7 @@ core protecting the flag.
 
 		chat::whisper($p, 'These are Alti+ game types, which are extentions to the mode');
 		chat::whisper($p, '/list gameType');
-		chat::whisper($p, '/set gameType <mapname|std|coop|race|ruin|flag|zone|mdg|1lh|4ball>');
+		chat::whisper($p, '/set gameType <mapname|std|coop|race|ruin|flag|zone|mdg|1lh|1fa|4ball>');
 		chat::whisper($p, '/unset gameType');
 		chat::whisper($p, 'mapname causes the type to be inferred from the map name');
 	},
@@ -14661,6 +14746,8 @@ core protecting the flag.
 
 		race::block($p) if(race::on);
 
+		plus::onejoin($p);
+
 		server::power_normal if(player::count==1);
 
 	},
@@ -14703,7 +14790,8 @@ core protecting the flag.
 
 		return if($p->{'isBot'});
 
-		plus::balance_bots();
+		plus::balance_bots;
+		plus::onewinner;
 
 		if($p->{'spawn'}) {
 			mem->game('played', $p)+=$e->{'time'} - $p->{'spawn'};
@@ -14756,15 +14844,6 @@ core protecting the flag.
 		my(@found)=();
 		my($zones, $doors, $keys, $planes, $intro);
 		
-		if(map::mode('ffa') && $e->{'team'}>2) {
-			$p->{'oteam'}=$e->{'team'};
-			if(map::type('coop', 'ruin')) {
-				$e->{'team'}=100;
-			} else {
-				$e->{'team'}=100+$p->{'player'};
-			}
-		}
-
 		if($p->{'isBot'}) {
 			$p->{'team'}=$e->{'team'};
 			plus::spawn_random($p);
@@ -14829,6 +14908,8 @@ core protecting the flag.
 				chat::whisper($p, '** This is tag, only try to kill the player who is it **');
 			} elsif(map::type('1lh')) {
 				chat::whisper($p, '** 1 hit kills **');
+			} elsif(map::type('1fa')) {
+				chat::whisper($p, '** 1-life FFA **');
 			}
 
 			mem->game($p, 'intro')=1;
@@ -14947,6 +15028,15 @@ core protecting the flag.
 		} else {
 			plus::ensure_team($p, $p->{'team'});
 			plus::spawn_reset($p);
+		}
+
+		if(map::mode('ffa') && $e->{'team'}>2) {
+			$p->{'oteam'}=$e->{'team'};
+			if(map::type('coop', 'ruin')) {
+				$e->{'team'}=100;
+			} else {
+				$e->{'team'}=100+$p->{'player'};
+			}
 		}
 	},
 
@@ -15495,6 +15585,8 @@ core protecting the flag.
 				plus::spawn_random($v);
 			}
 		}
+
+		plus::onekill($p, $v);
 
 		if($p && !$p->{'isBot'} && $p->{'team'}!=$v->{'team'}) {
 			mem->game('powerkill', $p)++ if($v->{'carrier'});

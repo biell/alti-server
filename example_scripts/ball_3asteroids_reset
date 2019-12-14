@@ -1,4 +1,4 @@
-#Bring ball out on ball_half_court
+#Try resetting the ball on an asteroids map
 
 MAP 'ball_3asteroids_reset';
 
