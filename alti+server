@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='5.02';
+my($VERSION)='5.03';
 
 =head1 NAME
 
@@ -10281,17 +10281,23 @@ play though extended interfaces and server support.
 	sub onewinner {
 		my($lives)=stash::get('lives', map::name, 'map') || 1;
 		my($alive, $out)=(0, 0);
-		my($winner);
+		my($player, $winner);
 
 		return unless(map::type('1fa'));
 		return if(mem->game('done'));
 
-		foreach my $player (player::list) {
-			if(mem->game('oneout', $player)>=$lives) {
+		foreach my $vid (mem->keys->game('active')) {
+			$player=player::lookup($vid);
+
+			if($player) {
+				if(mem->game('oneout', $player)>=$lives) {
+					$out++;
+				} elsif($player->{'alive'}) {
+					mem->game('winner')=$player;
+					$alive++;
+				}
+			} else {
 				$out++;
-			} elsif($player->{'alive'}) {
-				mem->game('winner')=$player;
-				$alive++;
 			}
 		}
 
@@ -10356,17 +10362,34 @@ play though extended interfaces and server support.
 
 	sub onetimeout {
 		my($lives)=stash::get('lives', map::name, 'map') || 1;
+		my($player);
 
 		return unless(map::type('1fa'));
 
 		mem->game('oneclosed')=1;
 
 		foreach my $player (player::list) {
-			if(	!$player->{'alive'} &&
-				$player->{'diedTime'} < $server::Time-9000 &&
-				mem->game('oneout', $player)<$lives
-			) {
-				&onekill($player);
+			unless(mem->game($player, 'active')) {
+				server::send('denySpawn', $player->{'player'},
+					"$lives-Life FFA: Wait until this round is over");
+			}
+		}
+
+		#This involves knowing that package mem stores players by their
+		#VaporID so that the objects can be used between player
+		#disconnect/reconnects.
+		foreach my $vid (mem->keys->game('active')) {
+			$player=player::lookup($vid);
+
+			if($player) {
+				next if($player->{'alive'});
+				next if(mem->game('oneout', $player)>=$lives);
+
+				if($player->{'diedTime'} < $server::Time-9000) {
+					&onekill($player);
+				}
+			} else {
+				mem->game('oneout', $vid)++;
 			}
 		}
 
@@ -15206,7 +15229,7 @@ core protecting the flag.
 		$p->{'joined'}=1;
 		$p->{'alive'}=1;
 
-		#Keep track of active players for tag winners
+		#Keep track of active players for tag winners and 1fa players
 		mem->game($p, 'active')=1;
 
 		race::spawn($p);
