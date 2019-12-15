@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='5.01';
+my($VERSION)='5.02';
 
 =head1 NAME
 
@@ -3333,7 +3333,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'help' => {
 		'name'			=> 'help',
-		'arguments'		=> [['game', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'bounds', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'archive', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
+		'arguments'		=> [['game', 'map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'lives', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'bounds', 'timer', 'zones', 'rank', 'official', 'alti+', 'altitudegame', 'archive', 'ladder', 'tinyupload', 'url', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3348,7 +3348,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'list' => {
 		'name'			=> 'list',
-		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'bounds', 'timer', 'zones', 'intro', 'records']],
+		'arguments'		=> [['map', 'nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'planes', 'lives', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'notes', 'powerups', 'portals', 'doors', 'keys', 'diverters', 'oneways', 'bounds', 'timer', 'zones', 'intro', 'records']],
 		'voteThreshold'	=> 0,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3356,7 +3356,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'set' => {
 		'name'			=> 'set',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'intro', 'keys', 'timer'], 'string'],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'lives', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'intro', 'keys', 'timer'], 'string'],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -3364,7 +3364,7 @@ has occured.  After too many infractions, the player is kicked by the server.
 
 	'unset' => {
 		'name'			=> 'unset',
-		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'intro', 'keys', 'timer']],
+		'arguments'		=> [['nextMap', 'gravity', 'weapons', 'spawnHealth', 'cameraScale', 'planeScale', 'assignTeam', 'lives', 'score', 'win', 'spawnMode', 'changePlane', 'minPlayers', 'maxPlayers', 'gameType', 'roundTime', 'botCount', 'intro', 'keys', 'timer']],
 		'voteThreshold'	=> 100,
 		'enabled'			=> 1,
 		'restrict'		=> 'tiny',
@@ -9043,9 +9043,10 @@ play though extended interfaces and server support.
 
 		if(xx::enabled) {
 			queue::schedule {
-				&set_spawn_restrictions;
+				&clear_spawn_restrictions;
 			} $config::Launcher{'warmup'}{map::mode}-3;
 		}
+
 
 		if(map::type('ruin')) {
 			foreach my $t (0, 1) {
@@ -9063,6 +9064,11 @@ play though extended interfaces and server support.
 					}
 				}
 			}
+		} elsif(map::type('1fa')) {
+			queue::schedule {
+				plus::onetimeout();
+			} $config::Launcher{'warmup'}{map::mode}+9;
+			
 		}
 	}
 
@@ -10273,35 +10279,56 @@ play though extended interfaces and server support.
 	}
 
 	sub onewinner {
-		my($alive)=0;
+		my($lives)=stash::get('lives', map::name, 'map') || 1;
+		my($alive, $out)=(0, 0);
 		my($winner);
 
-		return(undef) unless(map::type('1fa'));
+		return unless(map::type('1fa'));
+		return if(mem->game('done'));
 
-		foreach my $player (player::list('both')) {
-			if(!mem->game('out', $player) && $player->{'alive'}) {
+		foreach my $player (player::list) {
+			if(mem->game('oneout', $player)>=$lives) {
+				$out++;
+			} elsif($player->{'alive'}) {
 				mem->game('winner')=$player;
 				$alive++;
 			}
 		}
 
-		if($alive<=1) {
+		if($alive<=1 && $out>=1) {
 			if($winner=mem->game('winner')) {
-				chat::allf('!! %s WINS !!', $winner->{'nickname'});
+				mem->game('done')=1;
+
+				queue::schedule {
+					if(mem->game('oneout', $winner)<$lives) {
+						chat::allf('!! Winner: %s !!',
+							$winner->{'nickname'});
+					} else {
+						chat::allf('!! TIE !!');
+					}
+				} 1;
 			}
 			queue::schedule { server::send('endRound'); } 2.5;
 		}
 	}
 
 	sub onekill {
-		my($p, $v)=@_;
+		my($v)=@_;
+		my($lives)=stash::get('lives', map::name, 'map') || 1;
 
 		return(undef) unless(map::type('1fa'));
 
 		if($v && !$v->{'isBot'}) {
-			server::send('denySpawn', $v->{'player'}, '1-Life FFA: You are out');
-			mem->game('out', $v)=1;
-			chat::allf('%s is out', $v->{'nickname'});
+			mem->game('oneout', $v)++;
+
+			if( mem->game('oneout', $v) >= $lives ) {
+				server::send('denySpawn', $v->{'player'},
+					"$lives-Life FFA: You are out");
+				chat::allf('%s is out', $v->{'nickname'});
+			} else {
+				chat::allf('%s: %d lives',
+					$v->{'nickname'}, $lives - mem->game('oneout', $v));
+			}
 		}
 
 		&onewinner;
@@ -10309,30 +10336,46 @@ play though extended interfaces and server support.
 
 	sub onejoin {
 		my($p)=@_;
+		my($lives)=stash::get('lives', map::name, 'map') || 1;
 
-		if(map::type('1fa') && mem->game('out', $p)) {
+		if(map::type('1fa') && mem->game('oneclosed')) {
+			if(player::count() <= 2) {
+				chat::all('Reseting for new players');
+				queue::schedule {
+					server::send('changeMap', map::name);
+				} 10;
+			}
 			queue::schedule {
-				server::send('denySpawn', $p->{'player'}, '1-Life FFA: You are out');
-				chat::whisper($p, 'You are out');
+				server::send('denySpawn', $p->{'player'},
+					"$lives-Life FFA: Wait until this round is over");
+				chat::whisper($p, 'You joined late and must wait');
 				&bench($p);
 			} 3;
 		}
 	}
 
-	sub set_spawn_restrictions {
-		if(map::type('1fa')) {
-			foreach my $player (player::list) {
-				if(mem->game('out', $player)) {
-					player::infraction($player, 1);
-					server::send('denySpawn', $player->{'player'}, '1-Life FFA: You are out');
-				} else {
-					server::send('allowSpawn', $player->{'player'});
-				}
+	sub onetimeout {
+		my($lives)=stash::get('lives', map::name, 'map') || 1;
+
+		return unless(map::type('1fa'));
+
+		mem->game('oneclosed')=1;
+
+		foreach my $player (player::list) {
+			if(	!$player->{'alive'} &&
+				$player->{'diedTime'} < $server::Time-9000 &&
+				mem->game('oneout', $player)<$lives
+			) {
+				&onekill($player);
 			}
-		} else {
-			foreach my $player (player::list) {
-				server::send('allowSpawn', $player->{'player'});
-			}
+		}
+
+		queue::schedule { &onetimeout; } 9;
+	}
+
+	sub clear_spawn_restrictions {
+		foreach my $player (player::list) {
+			server::send('allowSpawn', $player->{'player'});
 		}
 	}
 
@@ -12284,6 +12327,7 @@ core protecting the flag.
 			win
 			score
 			keys
+			lives
 			planes
 			assignTeam
 			spawnMode
@@ -12391,6 +12435,7 @@ core protecting the flag.
 			win
 			score
 			keys
+			lives
 			planes
 			assignTeam
 			spawnMode
@@ -12969,6 +13014,46 @@ core protecting the flag.
 		}
 
 		plus::build_planes;
+	},
+
+	'help lives'	=> sub {
+		my($e, $p)=@_;
+
+		chat::whisper($p, 'Number of lives for modes with life limits');
+		chat::whisper($p, '/list lives');
+		chat::whisper($p, '/set lives #');
+		chat::whisper($p, '/unset lives');
+	},
+
+	'list lives'	=> sub {
+		my($e, $p)=@_;
+		my($lives)=stash::get('lives', map::name, 'map') || 1;
+
+		chat::whisper($p, 'lives:', $lives);
+	},
+
+	'enable lives'	=> sub {
+		my($e, $p)=@_;
+		my($lives)=stash::get('lives', map::name, 'map') || 1;
+
+		chat::all('lives:', $lives) if($lives);
+	},
+
+	'set lives' 	=> sub {
+		my($e, $p, $lives)=@_;
+
+		stash::set('lives', map::name, 'map', $lives);
+		chat::whisper($p, 'lives:', $lives);
+	},
+
+	'unset lives'	=> sub {
+		my($e, $p)=@_;
+
+		if(stash::delete('lives', map::name, 'map')) {
+			chat::whisper($p, 'Removed lives count');
+		} else {
+			chat::whisper($p, 'Lives count not set');
+		}
 	},
 
 	'help score'	=> sub {
@@ -15579,14 +15664,13 @@ core protecting the flag.
 
 		if($v) {
 			$v->{'alive'}=0;
+			$v->{'diedTime'}=$e->{'time'};
 			ball::drop($v);
 
 			if($v->{'isBot'}) {
 				plus::spawn_random($v);
 			}
 		}
-
-		plus::onekill($p, $v);
 
 		if($p && !$p->{'isBot'} && $p->{'team'}!=$v->{'team'}) {
 			mem->game('powerkill', $p)++ if($v->{'carrier'});
@@ -15652,7 +15736,10 @@ core protecting the flag.
 			}
 		}
 
-		if(map::type('tag')) {
+
+		if(map::type('1fa')) {
+			plus::onekill($v);
+		} elsif(map::type('tag')) {
 			if(plus::hunted($v)) {
 				if($is_crash || !$p || $p->{'isBot'}) {
 					plus::change_hunted(player::random);
