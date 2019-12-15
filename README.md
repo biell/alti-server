@@ -443,6 +443,12 @@ manage Alti+ game maps.
     likely to cause players to leave the game.  However, it is useful for
     MDG games, where 13 against 1 seems a little too asymmetric.
 
+  * **/set lives [#]**<br>
+    Sets the number of lives a player has before they cannot spawn for
+    game types which have a maximum number of lives.  This is used by
+    the `1fa` game type to change the number of lives from the default
+    of 1.
+
   * **/set gameType [mapname|std|coop|race|ruin|flag|zone|mdg|1lh|1fa|4ball]**<br>
 
     Normally the type of a game is ascertained by te file name.

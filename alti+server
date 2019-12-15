@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='5.03';
+my($VERSION)='5.04';
 
 =head1 NAME
 
@@ -6240,7 +6240,7 @@ types which alter the normal behavior.
 			$Map->{'type'}='tag';
 		} elsif(m/(^|_)1lh(_|$)/i) {
 			$Map->{'type'}='1lh';
-		} elsif(m/(^|_)1fa(_|$)/i && xx::enabled) {
+		} elsif(m/(^|_)\dfa(_|$)/i && xx::enabled) {
 			$Map->{'type'}='1fa';
 		} elsif(m/(^|_)(4ball|ball_4)/i) {
 			$Map->{'type'}='4ball';
@@ -9067,7 +9067,7 @@ play though extended interfaces and server support.
 		} elsif(map::type('1fa')) {
 			queue::schedule {
 				plus::onetimeout();
-			} $config::Launcher{'warmup'}{map::mode}+9;
+			} $config::Launcher{'warmup'}{map::mode}+5;
 			
 		}
 	}
@@ -10279,23 +10279,17 @@ play though extended interfaces and server support.
 	}
 
 	sub onewinner {
-		my($lives)=stash::get('lives', map::name, 'map') || 1;
+		my($lives)=stash::get('lives', map::name, 'map');
 		my($alive, $out)=(0, 0);
-		my($player, $winner);
+		my($winner);
 
 		return unless(map::type('1fa'));
 		return if(mem->game('done'));
 
-		foreach my $vid (mem->keys->game('active')) {
-			$player=player::lookup($vid);
-
-			if($player) {
-				if(mem->game('oneout', $player)>=$lives) {
-					$out++;
-				} elsif($player->{'alive'}) {
-					mem->game('winner')=$player;
-					$alive++;
-				}
+		foreach my $player (mem->keys->game('active')) {
+			if(mem->game('oneout', $player)<$lives) {
+				mem->game('winner')=player::lookup($player);
+				$alive++;
 			} else {
 				$out++;
 			}
@@ -10320,7 +10314,7 @@ play though extended interfaces and server support.
 
 	sub onekill {
 		my($v)=@_;
-		my($lives)=stash::get('lives', map::name, 'map') || 1;
+		my($lives)=stash::get('lives', map::name, 'map');
 
 		return(undef) unless(map::type('1fa'));
 
@@ -10330,10 +10324,10 @@ play though extended interfaces and server support.
 			if( mem->game('oneout', $v) >= $lives ) {
 				server::send('denySpawn', $v->{'player'},
 					"$lives-Life FFA: You are out");
-				chat::allf('%s is out', $v->{'nickname'});
+				chat::allf('%s: out', $v->{'nickname'});
 			} else {
-				chat::allf('%s: %d lives',
-					$v->{'nickname'}, $lives - mem->game('oneout', $v));
+				chat::allf('%s: %d / %d',
+					$v->{'nickname'}, mem->game('oneout', $v), $lives);
 			}
 		}
 
@@ -10342,9 +10336,11 @@ play though extended interfaces and server support.
 
 	sub onejoin {
 		my($p)=@_;
-		my($lives)=stash::get('lives', map::name, 'map') || 1;
+		my($lives)=stash::get('lives', map::name, 'map');
 
 		if(map::type('1fa') && mem->game('oneclosed')) {
+			return if(mem->game('oneout', $p)<$lives);
+
 			if(player::count() <= 2) {
 				chat::all('Reseting for new players');
 				queue::schedule {
@@ -10361,7 +10357,7 @@ play though extended interfaces and server support.
 	}
 
 	sub onetimeout {
-		my($lives)=stash::get('lives', map::name, 'map') || 1;
+		my($lives)=stash::get('lives', map::name, 'map');
 		my($player);
 
 		return unless(map::type('1fa'));
@@ -10390,6 +10386,7 @@ play though extended interfaces and server support.
 				}
 			} else {
 				mem->game('oneout', $vid)++;
+				&onewinner;
 			}
 		}
 
@@ -13050,14 +13047,28 @@ core protecting the flag.
 
 	'list lives'	=> sub {
 		my($e, $p)=@_;
-		my($lives)=stash::get('lives', map::name, 'map') || 1;
+		my($lives)=stash::get('lives', map::name, 'map');
 
-		chat::whisper($p, 'lives:', $lives);
+		if($lives) {
+			chat::whisper($p, 'lives:', $lives);
+		} else {
+			chat::whisper($p, 'lives: default');
+		}
 	},
 
 	'enable lives'	=> sub {
 		my($e, $p)=@_;
-		my($lives)=stash::get('lives', map::name, 'map') || 1;
+		my($lives)=stash::get('lives', map::name, 'map');
+		my($map)=map::name;
+
+		if(map::type('1fa') && !$lives) {
+			if($map=~m/(^|_)(\d)fa(_|$)/) {
+				$lives=$2;
+			} else {
+				$lives=1;
+			}
+			stash::set('lives', map::name, 'map', $lives);
+		}
 
 		chat::all('lives:', $lives) if($lives);
 	},
@@ -13072,11 +13083,8 @@ core protecting the flag.
 	'unset lives'	=> sub {
 		my($e, $p)=@_;
 
-		if(stash::delete('lives', map::name, 'map')) {
-			chat::whisper($p, 'Removed lives count');
-		} else {
-			chat::whisper($p, 'Lives count not set');
-		}
+		stash::delete('lives', map::name, 'map');
+		$HOOKS{'enable lives'}->($e, $p);
 	},
 
 	'help score'	=> sub {
@@ -14946,6 +14954,7 @@ core protecting the flag.
 	'teamChange'		=> sub {
 		my($e, $p)=@_;
 		my($spawn_mode)=stash::get('assignTeam', map::name, 'map');
+		my($lives)=stash::get('lives', map::name, 'map');
 		my($map_team)=map::player_team;
 		my($minlvl)=0;
 		my(@badge)=();
@@ -15017,7 +15026,7 @@ core protecting the flag.
 			} elsif(map::type('1lh')) {
 				chat::whisper($p, '** 1 hit kills **');
 			} elsif(map::type('1fa')) {
-				chat::whisper($p, '** 1-life FFA **');
+				chat::whisper($p, "** $lives-Life FFA **");
 			}
 
 			mem->game($p, 'intro')=1;
