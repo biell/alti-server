@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='5.04';
+my($VERSION)='5.05';
 
 =head1 NAME
 
@@ -1214,23 +1214,17 @@ L<perl(1)> should be used to ensure basic operation.
 
 	sub ping {
 		my($host)=@_;
-		my($pid);
+		my($out);
 
 		return(1) unless($Ping);
 
-		if($pid=fork()) {
-			waitpid($pid, 0);
-			if($?==0) {
-				ui::slog('Ping of', $host, 'successful.');
-				return(1);
-			} else{
-				ui::slog('Ping of', $host, 'FAILED.');
-				return(undef);
-			}
-		} else {
-			close(STDOUT);
-			close(STDERR);
-			exec($Ping, '-c', 2, $host);
+		$out=`$Ping -c 2 $host 2>&1`;
+		if($?==0) {
+			ui::slog('Ping of', $host, 'successful.');
+			return(1);
+		} else{
+			ui::slog('Ping of', $host, 'FAILED.');
+			return(undef);
 		}
 	}
 
@@ -9068,7 +9062,15 @@ play though extended interfaces and server support.
 			queue::schedule {
 				plus::onetimeout();
 			} $config::Launcher{'warmup'}{map::mode}+5;
-			
+			queue::schedule {
+				server::send('testPlaneScale', 110);
+			} $config::Launcher{'warmup'}{map::mode} + map::round_time()*0.7;
+			queue::schedule {
+				server::send('testPlaneScale', 125);
+			} $config::Launcher{'warmup'}{map::mode} + map::round_time()*0.8;
+			queue::schedule {
+				server::send('testPlaneScale', 150);
+			} $config::Launcher{'warmup'}{map::mode} + map::round_time()*0.9;
 		}
 	}
 
@@ -10352,7 +10354,7 @@ play though extended interfaces and server support.
 					"$lives-Life FFA: Wait until this round is over");
 				chat::whisper($p, 'You joined late and must wait');
 				&bench($p);
-			} 3;
+			} 4;
 		}
 	}
 
@@ -10481,9 +10483,17 @@ play though extended interfaces and server support.
 			}
 		} elsif(map::type('1fa')) {
 			my($bots)=stash::get('botCount', map::name, 'map');
+			my($time)=stash::get('roundTime', map::name, 'map');
+			my($health)=stash::get('spawnHealth', map::name, 'map');
 
 			unless(defined($bots)) {
 				stash::set('botCount', map::name, 'map', 0);
+			}
+			unless(defined($time)) {
+				stash::set('roundTime', map::name, 'map', 180);
+			}
+			unless(defined($health)) {
+				stash::set('spawnHealth', map::name, 'map', 95);
 			}
 		}
 
@@ -10502,8 +10512,6 @@ play though extended interfaces and server support.
 		}
 
 		&zone_init() unless(stash::get('keys', map::name, 'map') & 1);
-
-		&round;
 	}
 		
 	sub assign_teams {
@@ -12470,6 +12478,7 @@ core protecting the flag.
 
 		map::new($e);
 		plus::new;
+		plus::round;
 		plus::assign_teams;
 		rank::map_change;
 
