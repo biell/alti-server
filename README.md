@@ -523,6 +523,16 @@ manage Alti+ game maps.
   * **/del key [name|zone|door]**<br>
     Delete all keys named `name`, or for the door or zone listed.
 
+  * **/add force [x],[y] [fx],[fy]**<br>
+    When a player picks up the powerup locaed at `x,y`, then push the
+    plan in the direction specified by `fx,yx`.  These coordinates specify
+    the force applied in both the `x` and `y` coordinate systems with
+    `-15` being a full left or down force and `15` being a full up or right
+    force.  Numbers closer to 0 will provde a more gentle nudge.
+
+  * **/del force [x],[y]**<br>
+    Remove the force associated with the powerup at `x,y`.
+
   * **/add diverter [name] [x1],[y1] [x2],[y2]**<br>
     Create a diverter pair called `name` with one powerup diverter
     at coordinates `x1`,`y1` and the other at coordinates `x2`,`y2`.
