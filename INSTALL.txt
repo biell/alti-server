@@ -61,10 +61,12 @@ which runs the software's ~/bin directory.  If you prefer to keep the code
 up-to-date via GIT, you can also create a symbolic link from this location
 to where you keep the code checked-out.
 
-Find the $INSTALL_ROOT variable and change it to the directory where you
-installed the altitude server.  This defaults to ~/altitude, as that is
-what the altitude.sh program defaults to.  If you chaned this value when
-you installed altitude, then change it here too.
+The best way to make sure alti+server can find your altitude install
+directory is to either install altitude in ~/altitude or use the
+$ALTITUDE_ROOT environment variable before running alti+server.  Setting,
+and exporting, this variable will ensure that alti+server can find your
+install.  If you use the altitude.sh installer's default (~/altitude) this
+is not necessary.
 
 You have to options to configure how the software works.  One method is to
 edit the defaults in %OPTIONS at the top of the script.  This is nice,
