@@ -2,7 +2,7 @@
 
 #use strict;
 
-my($VERSION)='5.07';
+my($VERSION)='5.09';
 
 =head1 NAME
 
@@ -9437,7 +9437,7 @@ play though extended interfaces and server support.
 
 		if(exists($Restart{$p})) {
 			$count=keys(%Restart);
-			chat::whisperf('/restartMap: %d/%d', $count, $threshold);
+			chat::whisperf($p, '/restartMap: %d/%d', $count, $threshold);
 		} else {
 			$Restart{$p}=1;
 
@@ -14813,6 +14813,10 @@ core protecting the flag.
 		$server::Start=POSIX::mktime(@time[5,4,3,2,1,0])*1000+$time[6];
 
 		server::power_save;
+
+		if($e->{'mods'} =~ m/xx/) {
+			xx::initialize_mods(3.25);
+		}
 	},
 
 	'serverPatches'	=> sub {	#LewisH server patch add-on
@@ -16732,7 +16736,10 @@ also only available from the console.
 	},
 
 	'updateNames'		=> sub {
-		queue::background { planeball::update } 0;
+		chat::whisper(player::server, 'No longer supported,',
+			'VaporIDs not available from planeball website.');
+
+		# queue::background { planeball::update } 0;
 	},
 
 	'setPlayerName'	=> sub {
