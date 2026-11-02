@@ -262,8 +262,8 @@ After=default.target
 [Services]
 User=user0
 WorkingDirectory=/home/user0
-ExecStart=/usr/bin/screen -D -m -c .screenrc-altitude
-ExecStop=/usr/bin/screen -S altitude -X quit
+ExecStart=runcon -t unconfined_service_t /usr/bin/screen -D -m -c .screenrc-altitude
+ExecStop=runcon -t unconfined_service_t /usr/bin/screen -S altitude -X quit
 
 [Install]
 WantedBy=default.target
